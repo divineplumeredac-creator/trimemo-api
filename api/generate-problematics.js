@@ -8,26 +8,26 @@ STYLE ACADÉMIQUE OBLIGATOIRE
 - Aucun remplissage.
 
 2. LONGUEUR DES PHRASES
-- Maximum absolu : 25 mots par phrase.
-- Toute phrase dépassant 30 mots est interdite.
-- Privilégier les phrases courtes et autonomes.
+- Référence recommandée: 28 mots maximum par phrase.
+- Une légère variation ne doit jamais bloquer la génération.
+- Préférer des phrases courtes et autonomes.
 - Éviter les enchâssements et les formulations hermétiques.
 
 3. INTERDICTIONS FORMELLES
 - Pas de connecteurs abusifs.
 - Éviter les répétitions de « en effet », « de plus » et « cependant ».
-- Interdire « parce que », « afin de » et « dans le but de ».
+- Éviter « parce que », « afin de » et « dans le but de ».
 - Éviter l'accumulation de « ceci » et « cela ».
 - Éviter les prépositions en cascade.
 - Limiter les adverbes en -ment.
-- Interdire les clichés et formulations automatisées.
-- Interdire les constructions symétriques artificielles.
+- Éviter les clichés et formulations automatisées.
+- Éviter les constructions symétriques artificielles.
 - Éviter les répétitions, redondances et parallélismes.
 - Ne pas produire de plan tiroir.
 - Ne pas produire une structure mécanique ou prévisible.
 
-4. EXPRESSIONS IA INTERDITES
-Ne jamais employer :
+4. EXPRESSIONS À ÉVITER
+Ne pas employer inutilement:
 « Dans un monde en constante évolution »
 « Il est important de noter »
 « Il devient crucial »
@@ -50,33 +50,30 @@ Ne jamais employer :
 « permet de mieux comprendre »
 « il importe de »
 « il est essentiel de »
-Toute formulation proche doit être reformulée.
 
 5. SIGLES
 - Définir chaque sigle à sa première occurrence.
-- Exemple : RBV (Resource-Based View).
-- Exemple : OCDE (Organisation de Coopération et de Développement Économiques).
-- Réutiliser ensuite le sigle seul.
+- Exemple:
+  « RBV (Resource-Based View) »
+  « OCDE (Organisation de Coopération et de Développement Économiques) »
 
 6. STRUCTURE
-- Une idée principale par paragraphe.
-- Les affirmations théoriques doivent être appuyées par une référence.
-- Ajouter un exemple de terrain uniquement s'il est pertinent.
+- Un paragraphe porte une idée principale.
+- Les affirmations théoriques ou factuelles doivent idéalement être appuyées par une référence.
+- Ajouter un exemple de terrain seulement s'il est réellement soutenu.
 - Ne jamais inventer un terrain, une organisation, une population ou une donnée.
 
 7. CITATIONS
 - APA par défaut.
-- Citation interlinéaire : (Auteur, année).
-- Citation avec page : (Auteur, année, p. xx).
+- Citation interlinéaire: (Auteur, année).
+- Citation avec page: (Auteur, année, p. xx).
 - Ne jamais inventer une référence.
-- Si les consignes exigent des notes, utiliser [^1], [^2].
-- Fournir alors la référence complète en APA.
+- Si les consignes exigent des notes de bas de page, utiliser [^1], [^2].
 
 8. ANTI-GPT
 - Texte naturel et spécifique au sujet.
 - Aucun contenu passe-partout.
-- Aucune généralisation sans rapport avec le sujet.
-- Aucun pays, ville, institution, terrain ou culture imposé.
+- Aucun pays, ville, institution, terrain ou culture absent des données utilisateur.
 `;
 
 const OPENAI_URL = "https://api.openai.com/v1/responses";
@@ -84,13 +81,246 @@ const OPENAI_URL = "https://api.openai.com/v1/responses";
 function cors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Accept");
+  res.setHeader(
+    "Access-Control-Allow-Headers",
+    "Content-Type, Accept"
+  );
 }
 
 function fail(message, status = 400) {
   const error = new Error(message);
   error.status = status;
   return error;
+}
+
+function extractDataUrl(dataUrl) {
+  const match =
+    /^data:([^;]+);base64,(.+)$/s.exec(dataUrl || "");
+
+  if (!match) return null;
+
+  return {
+    mime: match[1],
+    buffer: Buffer.from(match[2], "base64"),
+  };
+}
+
+async function uploadProjectFiles(files, apiKey) {
+  const uploaded = [];
+
+  for (const file of Array.isArray(files) ? files : []) {
+    if (!file?.content) continue;
+
+    const decoded = extractDataUrl(file.content);
+
+    if (!decoded) continue;
+
+    const form = new FormData();
+
+    form.append("purpose", "user_data");
+
+    form.append(
+      "file",
+      new Blob([decoded.buffer], {
+        type:
+          decoded.mime ||
+          file.type ||
+          "application/octet-stream",
+      }),
+      file.name || "document"
+    );
+
+    const response = await fetch(
+      "https://api.openai.com/v1/files",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: form,
+      }
+    );
+
+    if (!response.ok) {
+      const detail = await response.text();
+
+      throw fail(
+        `Impossible de transmettre le fichier ${
+          file.name || ""
+        } à OpenAI. ${detail}`,
+        502
+      );
+    }
+
+    const data = await response.json();
+
+    if (data.id) {
+      uploaded.push(data.id);
+    }
+  }
+
+  return uploaded;
+}
+
+function buildProjectContext(project, citationMode) {
+  return `
+SUJET EXACT:
+${project?.sujet || ""}
+
+CONTEXTE FOURNI PAR L'UTILISATEUR:
+${project?.contexte || ""}
+
+CONSIGNES FOURNIES PAR L'UTILISATEUR:
+${project?.consignes || ""}
+
+NIVEAU ACADÉMIQUE:
+${project?.niveau || ""}
+
+TYPE DE DOCUMENT:
+${project?.typeDoc || ""}
+
+FORMULE:
+${project?.formula || ""}
+
+MODE DE CITATION:
+${citationMode}
+
+VOLUME:
+${Number(project?.pages || 0)} page(s), à raison de 320 mots par page.
+`;
+}
+
+const SYSTEM_PROMPT = `
+Tu es le moteur de conception académique de Trimémo.
+
+${STYLE_RULES}
+
+RÈGLES DE FOND:
+
+1. Pars uniquement des informations réellement transmises.
+2. N'impose jamais un pays, une ville, une institution ou un terrain.
+3. Ne change jamais le sens du sujet.
+4. Ne transforme pas artificiellement le sujet en « impact », « adoption », « performance » ou « innovation ».
+5. N'invente aucune donnée.
+6. N'invente aucune population.
+7. N'invente aucune organisation.
+8. N'invente aucun résultat.
+9. N'invente aucune référence.
+10. N'utilise aucun contenu de secours.
+11. Les problématiques doivent ouvrir des axes réellement différents.
+12. Les formulations doivent être précises et exploitables.
+
+Retourne uniquement le JSON demandé.
+`;
+
+const SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    problematiques: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          id: {
+            type: "string",
+          },
+          title: {
+            type: "string",
+          },
+          question: {
+            type: "string",
+          },
+          rationale: {
+            type: "string",
+          },
+          angle: {
+            type: "string",
+          },
+        },
+        required: [
+          "id",
+          "title",
+          "question",
+          "rationale",
+          "angle",
+        ],
+      },
+    },
+  },
+  required: ["problematiques"],
+};
+
+function extractResponseText(data) {
+  if (
+    typeof data?.output_text === "string" &&
+    data.output_text.trim()
+  ) {
+    return data.output_text.trim();
+  }
+
+  if (data?.status === "incomplete") {
+    throw fail(
+      `La réponse OpenAI est incomplète: ${
+        data?.incomplete_details?.reason ||
+        "raison inconnue"
+      }.`,
+      502
+    );
+  }
+
+  const refusal = Array.isArray(data?.output)
+    ? data.output
+        .filter(
+          (item) => item?.type === "message"
+        )
+        .flatMap((item) =>
+          Array.isArray(item.content)
+            ? item.content
+            : []
+        )
+        .find(
+          (part) =>
+            part?.type === "refusal"
+        )
+    : null;
+
+  if (refusal?.refusal) {
+    throw fail(
+      `OpenAI a refusé la génération: ${refusal.refusal}`,
+      502
+    );
+  }
+
+  const parts = Array.isArray(data?.output)
+    ? data.output
+        .filter(
+          (item) => item?.type === "message"
+        )
+        .flatMap((item) =>
+          Array.isArray(item.content)
+            ? item.content
+            : []
+        )
+        .filter(
+          (part) =>
+            part?.type === "output_text" &&
+            typeof part.text === "string"
+        )
+        .map((part) => part.text)
+    : [];
+
+  const text = parts.join("").trim();
+
+  if (!text) {
+    throw fail(
+      "La réponse OpenAI ne contient aucun texte exploitable.",
+      502
+    );
+  }
+
+  return text;
 }
 
 function normalizeText(value) {
@@ -111,15 +341,17 @@ function countWords(value) {
 function splitSentences(value) {
   return String(value || "")
     .replace(/\[\^[^\]]+\]/g, " ")
-    .split(/(?<=[.!?])\s+(?=[A-ZÀ-ÖØ-Þ0-9«"'])/)
+    .split(
+      /(?<=[.!?])\s+(?=[A-ZÀ-ÖØ-Þ0-9«"'])/
+    )
     .map((item) => item.trim())
     .filter(Boolean);
 }
 
-function getStyleViolations(value) {
+function getStyleWarnings(value) {
   const text = String(value || "").trim();
   const normalized = normalizeText(text);
-  const violations = [];
+  const warnings = [];
 
   const forbiddenPhrases = [
     "dans un monde en constante evolution",
@@ -146,402 +378,164 @@ function getStyleViolations(value) {
     "il est essentiel de",
     "afin de",
     "dans le but de",
-    "parce que"
+    "parce que",
   ];
 
   for (const phrase of forbiddenPhrases) {
     if (normalized.includes(phrase)) {
-      violations.push(`Expression interdite : "${phrase}"`);
+      warnings.push(
+        `Expression à reformuler: "${phrase}"`
+      );
     }
-  }
-
-  const ceciCela =
-    normalized.match(/\b(ceci|cela)\b/g) || [];
-
-  if (ceciCela.length > 1) {
-    violations.push("Abondance de « ceci » ou « cela ».");
-  }
-
-  const enEffet =
-    normalized.match(/\ben effet\b/g) || [];
-
-  const dePlus =
-    normalized.match(/\bde plus\b/g) || [];
-
-  const cependant =
-    normalized.match(/\bcependant\b/g) || [];
-
-  if (enEffet.length > 1) {
-    violations.push("Répétition de « en effet ».");
-  }
-
-  if (dePlus.length > 1) {
-    violations.push("Répétition de « de plus ».");
-  }
-
-  if (cependant.length > 1) {
-    violations.push("Répétition de « cependant ».");
   }
 
   for (const sentence of splitSentences(text)) {
     const words = countWords(sentence);
 
-    if (words > 20) {
-      violations.push(
-        `Phrase de ${words} mots. Maximum autorisé : 20.`
-      );
-    }
-
-    const adverbs =
-      sentence.match(/\b[\p{L}'-]+ment\b/giu) || [];
-
-    if (adverbs.length > 3) {
-      violations.push(
-        "Accumulation d'adverbes en -ment."
+    if (words > 28) {
+      warnings.push(
+        `Phrase de ${words} mots; référence recommandée: 28.`
       );
     }
   }
 
-  return violations;
+  return warnings;
 }
 
 function assertStyle(value, label) {
-  const violations = getStyleViolations(value);
+  const warnings = getStyleWarnings(value);
 
-  if (violations.length) {
-    throw fail(
-      `${label} ne respecte pas le style imposé : ${violations.join(" | ")}`,
-      502
+  if (warnings.length) {
+    console.warn(
+      `[Contrôle de style non bloquant] ${label}: ${warnings.join(
+        " | "
+      )}`
     );
   }
-}
-
-function extractDataUrl(dataUrl) {
-  const match =
-    /^data:([^;]+);base64,(.+)$/s.exec(
-      dataUrl || ""
-    );
-
-  if (!match) return null;
 
   return {
-    mime: match[1],
-    buffer: Buffer.from(match[2], "base64")
+    valid: warnings.length === 0,
+    warnings,
   };
 }
 
-async function uploadProjectFiles(files, apiKey) {
-  const uploaded = [];
+function detectCitationMode(project) {
+  const source = normalizeText(
+    `${project?.consignes || ""} ${
+      project?.contexte || ""
+    }`
+  );
 
-  for (
-    const file of Array.isArray(files)
-      ? files
-      : []
-  ) {
-    if (!file?.content) continue;
-
-    const decoded =
-      extractDataUrl(file.content);
-
-    if (!decoded) continue;
-
-    const form = new FormData();
-
-    form.append(
-      "purpose",
-      "user_data"
-    );
-
-    form.append(
-      "file",
-      new Blob(
-        [decoded.buffer],
-        {
-          type:
-            decoded.mime ||
-            file.type ||
-            "application/octet-stream"
-        }
-      ),
-      file.name || "document"
-    );
-
-    const response = await fetch(
-      "https://api.openai.com/v1/files",
-      {
-        method: "POST",
-        headers: {
-          Authorization:
-            `Bearer ${apiKey}`
-        },
-        body: form
-      }
-    );
-
-    if (!response.ok) {
-      const detail =
-        await response.text();
-
-      throw fail(
-        `Impossible de transmettre le fichier ${
-          file.name || ""
-        } à OpenAI. ${detail}`,
-        502
-      );
-    }
-
-    const data =
-      await response.json();
-
-    if (data.id) {
-      uploaded.push(data.id);
-    }
-  }
-
-  return uploaded;
+  return /(
+    note de bas de page|
+    notes de bas de page|
+    footnotes?|
+    notes bibliographiques
+  )/.test(source)
+    ? "footnotes"
+    : "apa";
 }
-
-function extractResponseText(data) {
-  if (
-    typeof data?.output_text === "string" &&
-    data.output_text.trim()
-  ) {
-    return data.output_text.trim();
-  }
-
-  if (data?.status === "incomplete") {
-    throw fail(
-      `La réponse OpenAI est incomplète : ${
-        data?.incomplete_details?.reason ||
-        "raison inconnue"
-      }.`,
-      502
-    );
-  }
-
-  const parts =
-    Array.isArray(data?.output)
-      ? data.output
-          .filter(
-            (item) =>
-              item?.type === "message"
-          )
-          .flatMap((item) =>
-            Array.isArray(item.content)
-              ? item.content
-              : []
-          )
-          .filter(
-            (part) =>
-              part?.type === "output_text" &&
-              typeof part.text === "string"
-          )
-          .map((part) => part.text)
-      : [];
-
-  const text =
-    parts.join("").trim();
-
-  if (!text) {
-    throw fail(
-      "La réponse OpenAI ne contient aucun texte exploitable.",
-      502
-    );
-  }
-
-  return text;
-}
-
-function buildProjectContext(project) {
-  return `
-SUJET EXACT :
-${project?.sujet || ""}
-
-CONTEXTE FOURNI PAR L'UTILISATEUR :
-${project?.contexte || ""}
-
-CONSIGNES FOURNIES PAR L'UTILISATEUR :
-${project?.consignes || ""}
-
-NIVEAU ACADÉMIQUE :
-${project?.niveau || ""}
-
-TYPE DE DOCUMENT :
-${project?.typeDoc || ""}
-
-FORMULE :
-${project?.formula || ""}
-
-VOLUME :
-${Number(project?.pages || 0)} page(s), à raison de 320 mots par page.
-`;
-}
-
-const SYSTEM_PROMPT = `
-Tu es le moteur de conception académique de Trimémo.
-
-${STYLE_RULES}
-
-RÈGLES DE FOND :
-
-1. Pars uniquement du sujet, du contexte, des consignes,
-du niveau, du type de document et des fichiers transmis.
-
-2. N'impose jamais un pays, une ville, une institution,
-un terrain, une réglementation ou une culture.
-
-3. Ne change jamais le sens du sujet.
-
-4. Ne transforme pas artificiellement le sujet en « impact »,
-« adoption », « performance » ou « innovation ».
-
-5. N'invente aucune donnée, population, organisation,
-terrain, résultat ou référence.
-
-6. N'utilise aucun contenu préécrit ou de secours.
-
-7. Les problématiques doivent ouvrir des axes réellement différents.
-
-8. Les formulations doivent rester compatibles avec le document demandé.
-
-9. Si une information manque, ne la remplace pas par une supposition.
-
-10. Chaque phrase doit respecter la limite de 20 mots.
-`;
-
-const SCHEMA = {
-  type: "object",
-  additionalProperties: false,
-  properties: {
-    problematiques: {
-      type: "array",
-      items: {
-        type: "object",
-        additionalProperties: false,
-        properties: {
-          id: { type: "string" },
-          title: { type: "string" },
-          question: { type: "string" },
-          rationale: { type: "string" },
-          angle: { type: "string" }
-        },
-        required: [
-          "id",
-          "title",
-          "question",
-          "rationale",
-          "angle"
-        ]
-      }
-    }
-  },
-  required: ["problematiques"]
-};
 
 async function callOpenAI({
   project,
   apiKey,
   fileIds,
-  count
+  count,
 }) {
   const requestedCount =
     count === 1 ? 1 : 3;
 
-  const fileInputs =
-    fileIds.map((fileId) => ({
+  const fileInputs = fileIds.map(
+    (fileId) => ({
       type: "input_file",
-      file_id: fileId
-    }));
+      file_id: fileId,
+    })
+  );
 
-  const response =
-    await fetch(
-      OPENAI_URL,
-      {
-        method: "POST",
+  const citationMode =
+    detectCitationMode(project);
 
-        headers: {
-          "Content-Type":
-            "application/json",
+  const response = await fetch(
+    OPENAI_URL,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type":
+          "application/json",
+        Authorization:
+          `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model:
+          process.env.OPENAI_MODEL ||
+          "gpt-5.6-luna",
 
-          Authorization:
-            `Bearer ${apiKey}`
+        tools: [
+          {
+            type: "web_search",
+          },
+        ],
+
+        text: {
+          format: {
+            type: "json_schema",
+            name:
+              "trimemo_problematiques",
+            strict: true,
+            schema: SCHEMA,
+          },
         },
 
-        body: JSON.stringify({
-          model:
-            process.env.OPENAI_MODEL ||
-            "gpt-5.6-luna",
-
-          tools: [
-            {
-              type: "web_search"
-            }
-          ],
-
-          text: {
-            format: {
-              type: "json_schema",
-              name:
-                "trimemo_problematiques",
-              strict: true,
-              schema: SCHEMA
-            }
+        input: [
+          {
+            role: "system",
+            content: [
+              {
+                type: "input_text",
+                text: SYSTEM_PROMPT,
+              },
+            ],
           },
 
-          input: [
-            {
-              role: "system",
-              content: [
-                {
-                  type: "input_text",
-                  text: SYSTEM_PROMPT
-                }
-              ]
-            },
+          {
+            role: "user",
+            content: [
+              {
+                type: "input_text",
+                text: `
+${buildProjectContext(
+  project,
+  citationMode
+)}
 
-            {
-              role: "user",
-              content: [
-                {
-                  type: "input_text",
+Génère exactement ${requestedCount} problématique(s).
 
-                  text: `
-${buildProjectContext(project)}
+Chaque problématique doit contenir:
+- un titre précis;
+- une question de recherche;
+- une justification de sa pertinence;
+- un angle distinct.
 
-Génère exactement ${requestedCount}
-problématique(s).
-
-Chaque problématique doit contenir :
-
-- id
-- title
-- question
-- rationale
-- angle
-
-Les trois axes doivent être distincts.
-
-Chaque phrase doit contenir au maximum 20 mots.
+Privilégie des phrases de 28 mots maximum.
+Une légère variation ne doit jamais bloquer la génération.
 
 Ne force aucun exemple de terrain.
-
-Ne crée aucune référence.
+Ne cite aucune référence inventée.
 
 Retourne uniquement le JSON.
-`
-                },
+`,
+              },
 
-                ...fileInputs
-              ]
-            }
-          ]
-        })
-      }
-    );
+              ...fileInputs,
+            ],
+          },
+        ],
+      }),
+    }
+  );
 
   if (!response.ok) {
-    const detail =
-      await response.text();
+    const detail = await response.text();
 
     throw fail(
       `OpenAI a refusé la génération des problématiques. ${detail}`,
@@ -569,11 +563,7 @@ function validateProblematiques(
     );
   }
 
-  if (
-    !Array.isArray(
-      parsed?.problematiques
-    )
-  ) {
+  if (!Array.isArray(parsed?.problematiques)) {
     throw fail(
       "OpenAI n'a pas retourné de liste de problématiques.",
       502
@@ -597,53 +587,69 @@ function validateProblematiques(
     .slice(0, expectedCount)
     .map((item, index) => {
       const result = {
-        id:
-          String(
-            item?.id ||
-              `problematic-${index + 1}`
-          ).trim(),
+        id: String(
+          item?.id ||
+            `problematic-${index + 1}`
+        ).trim(),
 
-        title:
-          String(
-            item?.title || ""
-          ).trim(),
+        title: String(
+          item?.title || ""
+        ).trim(),
 
-        question:
-          String(
-            item?.question || ""
-          ).trim(),
+        question: String(
+          item?.question || ""
+        ).trim(),
 
-        rationale:
-          String(
-            item?.rationale || ""
-          ).trim(),
+        rationale: String(
+          item?.rationale || ""
+        ).trim(),
 
-        angle:
-          String(
-            item?.angle || ""
-          ).trim()
+        angle: String(
+          item?.angle || ""
+        ).trim(),
       };
 
-      for (
-        const [key, value]
-        of Object.entries(result)
-      ) {
+      for (const [
+        key,
+        value,
+      ] of Object.entries(result)) {
         if (!value) {
           throw fail(
             `La problématique ${
               index + 1
-            } est incomplète : ${key}.`,
+            } est incomplète: ${key}.`,
             502
           );
         }
-
-        assertStyle(
-          value,
-          `Champ ${key} de la problématique ${
-            index + 1
-          }`
-        );
       }
+
+      assertStyle(
+        result.title,
+        `Titre de la problématique ${
+          index + 1
+        }`
+      );
+
+      assertStyle(
+        result.question,
+        `Question de la problématique ${
+          index + 1
+        }`
+      );
+
+      assertStyle(
+        result.rationale,
+        `Justification de la problématique ${
+          index + 1
+        }`
+      );
+
+      assertStyle(
+        result.angle,
+        `Angle de la problématique ${
+          index + 1
+        }`
+      );
 
       return result;
     });
@@ -655,20 +661,14 @@ export default async function handler(
 ) {
   cors(res);
 
-  if (
-    req.method === "OPTIONS"
-  ) {
-    return res
-      .status(204)
-      .end();
+  if (req.method === "OPTIONS") {
+    return res.status(204).end();
   }
 
-  if (
-    req.method !== "POST"
-  ) {
+  if (req.method !== "POST") {
     return res.status(405).json({
       error:
-        "Méthode non autorisée."
+        "Méthode non autorisée.",
     });
   }
 
@@ -678,13 +678,12 @@ export default async function handler(
   if (!apiKey) {
     return res.status(500).json({
       error:
-        "OPENAI_API_KEY est absente du serveur."
+        "OPENAI_API_KEY est absente du serveur.",
     });
   }
 
   try {
-    const body =
-      req.body || {};
+    const body = req.body || {};
 
     const project =
       body.project || body;
@@ -701,7 +700,7 @@ export default async function handler(
     ) {
       return res.status(400).json({
         error:
-          "Le sujet est obligatoire."
+          "Le sujet est obligatoire.",
       });
     }
 
@@ -711,22 +710,22 @@ export default async function handler(
         apiKey
       );
 
-    const output =
+    const data =
       await callOpenAI({
         project,
         apiKey,
         fileIds,
-        count
+        count,
       });
 
     const problematiques =
       validateProblematiques(
-        output,
+        data,
         count
       );
 
     return res.status(200).json({
-      problematiques
+      problematiques,
     });
   } catch (error) {
     const status =
@@ -735,7 +734,7 @@ export default async function handler(
     return res.status(status).json({
       error:
         error?.message ||
-        "Erreur lors de la génération des problématiques."
+        "Erreur lors de la génération des problématiques.",
     });
   }
-}
+         }
