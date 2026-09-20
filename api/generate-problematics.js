@@ -8,8 +8,8 @@ STYLE ACADÉMIQUE OBLIGATOIRE
 - Aucun remplissage.
 
 2. LONGUEUR DES PHRASES
-- Maximum absolu : 20 mots par phrase.
-- Toute phrase dépassant 20 mots est interdite.
+- Maximum absolu : 25 mots par phrase.
+- Toute phrase dépassant 30 mots est interdite.
 - Privilégier les phrases courtes et autonomes.
 - Éviter les enchâssements et les formulations hermétiques.
 
