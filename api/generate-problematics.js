@@ -738,4 +738,4 @@ export default async function handler(
         "Erreur lors de la génération des problématiques."
     });
   }
-      }
+}
