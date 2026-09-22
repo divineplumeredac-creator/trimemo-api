@@ -1,6 +1,6 @@
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "POST,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Accept");
 
   if (req.method === "OPTIONS") {
@@ -9,325 +9,272 @@ export default async function handler(req, res) {
 
   if (req.method !== "POST") {
     return res.status(405).json({
-      error: "Méthode non autorisée."
+      error: "Méthode non autorisée. Utilisez POST."
     });
   }
 
-  const apiKey = process.env.OPENAI_API_KEY;
+  const key = process.env.OPENAI_API_KEY;
 
-  if (!apiKey) {
+  if (!key) {
     return res.status(500).json({
-      error: "La clé API OpenAI est absente."
+      error: "OPENAI_API_KEY n'est pas configurée."
     });
   }
+
+  const b = req.body || {};
+
+  const blockTitle =
+    b.blockTitle ||
+    b.block ||
+    b.title ||
+    "Introduction générale";
+
+  const sujet =
+    b.project?.sujet ||
+    b.sujet ||
+    "";
+
+  const problematique =
+    b.problematique?.titre ||
+    b.problematique ||
+    sujet;
+
+  const words = Number(b.targetWords || 800);
+
+  const niveau =
+    b.project?.niveau ||
+    b.niveau ||
+    "Master";
+
+  const domaine =
+    b.project?.domaine ||
+    b.domaine ||
+    "Sciences humaines et sociales";
+
+  const contexte =
+    b.project?.contexte ||
+    b.contexte ||
+    "";
+
+  const plan =
+    b.plan ||
+    b.selectedPlan ||
+    "";
+
+  if (!sujet.trim()) {
+    return res.status(400).json({
+      error: "Le sujet est obligatoire."
+    });
+  }
+
+  if (!problematique || !String(problematique).trim()) {
+    return res.status(400).json({
+      error: "La problématique est obligatoire."
+    });
+  }
+
+  const styleGuide = `
+Tu es un rédacteur académique francophone spécialisé
+dans la rédaction universitaire rigoureuse.
+
+CONTEXTE DU TRAVAIL
+
+Sujet exact : "${sujet}"
+Problématique : "${problematique}"
+Titre du bloc : "${blockTitle}"
+Domaine : "${domaine}"
+Niveau d'études : "${niveau}"
+Contexte complémentaire : "${contexte}"
+Plan retenu : "${plan}"
+
+1. FIDÉLITÉ AU SUJET
+
+- Respecter strictement le sujet exact.
+- Ne jamais déformer le sens du sujet.
+- Adapter la rédaction au domaine scientifique indiqué.
+- Respecter la problématique et le niveau d'études.
+- Ne pas introduire de concepts étrangers au sujet.
+- Ne pas produire de contenu générique.
+
+2. STYLE ACADÉMIQUE
+
+- Adopter un style rigoureux, clair et dynamique.
+- Utiliser un vocabulaire précis et adapté au domaine.
+- Construire une progression logique entre les paragraphes.
+- Présenter une idée principale par paragraphe.
+- Relier chaque argument à la problématique.
+- Éviter les répétitions et les formulations mécaniques.
+- Éviter les clichés associés aux textes générés automatiquement.
+- Éviter les structures artificiellement symétriques.
+- Ne pas produire un simple inventaire d'idées.
+
+3. LONGUEUR DES PHRASES
+
+- Privilégier des phrases de 20 mots maximum.
+- Lorsqu'une phrase dépasse cette limite, la reformuler ou la diviser.
+- Préserver le sens scientifique pendant la reformulation.
+- Ne pas interrompre la génération lorsqu'une phrase dépasse 20 mots.
+- Ne pas sacrifier la précision académique pour respecter mécaniquement cette limite.
+- Utiliser des phrases claires, naturelles et correctement articulées.
+
+4. RÈGLES LINGUISTIQUES
+
+- Éviter les adverbes en "-ment" utilisés de manière excessive.
+- Éviter les connecteurs répétitifs et artificiels.
+- Éviter les généralités inutiles.
+- Éviter les pronoms "ceci" et "cela" lorsque leur référence est imprécise.
+- Définir chaque sigle lors de sa première occurrence.
+- Utiliser des transitions pertinentes.
+- Éviter les phrases excessivement longues et confuses.
+- Ne pas utiliser de tiret long dans le corps du texte.
+- Ne pas commenter le fonctionnement de l'intelligence artificielle.
+- Ne pas utiliser de formulations stéréotypées ou mécaniques.
+
+5. ANCRAGE BÉNINOIS
+
+- Intégrer un ancrage béninois lorsque le sujet,
+  le terrain ou la problématique le justifie.
+- Ne pas imposer artificiellement le contexte béninois.
+- Lorsque le sujet concerne le Bénin, mobiliser les réalités
+  et les références pertinentes pour ce contexte.
+- Ne jamais inventer de données, de statistiques,
+  d'entretiens ou de résultats de terrain.
+- Ne pas énumérer systématiquement plusieurs pays.
+- Utiliser les comparaisons internationales uniquement
+  lorsqu'elles servent réellement l'analyse.
+- Adapter l'ancrage géographique au sujet étudié.
+
+6. ADAPTATION AU DOMAINE
+
+- Adapter les concepts, les exemples et le vocabulaire au domaine.
+- En littérature, privilégier les représentations,
+  les récits, les imaginaires, la mémoire,
+  la transmission et les corpus.
+- En histoire, privilégier les sources,
+  les périodes, les acteurs et les processus historiques.
+- En philosophie, privilégier les concepts,
+  les thèses, les arguments et les débats théoriques.
+- En sociologie, privilégier les acteurs,
+  les pratiques, les rapports sociaux et les dynamiques collectives.
+- Ne pas utiliser automatiquement des termes commerciaux,
+  managériaux ou technologiques.
+- Employer chaque concept uniquement lorsqu'il correspond au sujet.
+
+7. QUALITÉ ACADÉMIQUE
+
+- Ne pas inventer de références bibliographiques.
+- Ne pas inventer de citations ou de résultats de recherche.
+- Distinguer les faits, les interprétations et les hypothèses.
+- Éviter les affirmations absolues non justifiées.
+- Maintenir une progression logique.
+- Produire un contenu directement lié au bloc demandé.
+- Respecter le plan lorsqu'il est fourni.
+
+8. CONSIGNE DE RÉDACTION
+
+Rédige environ ${words} mots.
+
+Le texte doit être académique, cohérent et adapté
+au sujet, à la problématique, au domaine et au niveau d'études.
+
+Chaque paragraphe doit contribuer à la démonstration.
+
+Ne fabrique aucune donnée, aucune source
+et aucun résultat de terrain.
+`;
 
   try {
-    const body = req.body || {};
-    const project = body.project || body;
-
-    const sujet = String(
-      project.sujet ||
-      project.subject ||
-      body.sujet ||
-      ""
-    ).trim();
-
-    const domaine = String(
-      project.domaine ||
-      body.domaine ||
-      ""
-    ).trim();
-
-    const niveau = String(
-      project.niveau ||
-      body.niveau ||
-      ""
-    ).trim();
-
-    const typeDoc = String(
-      project.typeDoc ||
-      project.typeDocument ||
-      body.typeDoc ||
-      "Mémoire"
-    ).trim();
-
-    const contexte = String(
-      project.contexte ||
-      project.context ||
-      ""
-    ).trim();
-
-    const consignes = String(
-      project.consignes ||
-      project.instructions ||
-      ""
-    ).trim();
-
-    const blockTitle = String(
-      body.blockTitle ||
-      body.block ||
-      body.title ||
-      "Introduction générale"
-    ).trim();
-
-    const problematic = body.problematique || "";
-    const plan = body.plan || "";
-
-    const targetWords = Number(
-      body.targetWords ||
-      body.words ||
-      900
-    );
-
-    if (!sujet) {
-      return res.status(400).json({
-        error: "Le sujet du projet est obligatoire."
-      });
-    }
-
-    const safeWordTarget =
-      Number.isFinite(targetWords) && targetWords > 0
-        ? Math.min(Math.max(targetWords, 300), 1500)
-        : 900;
-
-    const systemPrompt = `
-Tu es un rédacteur académique spécialisé dans la rédaction de blocs
-destinés aux mémoires, rapports, thèses et travaux universitaires.
-
-Ta mission consiste uniquement à rédiger le bloc demandé.
-
-INSTRUCTIONS SPÉCIFIQUES DU BLOC :
-
-1. Rédige exclusivement sur le sujet transmis.
-2. Respecte la problématique et le plan sélectionnés.
-3. Respecte le titre et la fonction du bloc.
-4. Utilise uniquement les informations fournies ou vérifiables.
-5. Ne crée aucun terrain, pays, institution ou résultat non fourni.
-6. Ne présente aucune donnée inventée comme un fait.
-7. Utilise des références académiques vérifiables lorsque nécessaire.
-8. Ne fabrique jamais d'auteur, de date, de DOI ou de citation.
-9. Si une information manque, formule une analyse prudente.
-10. Ne répète pas les idées déjà développées dans le bloc.
-11. Assure une progression logique entre les paragraphes.
-12. Chaque paragraphe doit développer une idée principale.
-13. Utilise un style rigoureux, fluide et naturel.
-14. Évite les clichés rédactionnels et les formulations artificielles.
-15. Évite les répétitions de connecteurs.
-16. Évite les phrases trop longues et les constructions complexes.
-17. La limite recommandée est de 28 mots par phrase.
-18. Une phrase légèrement plus longue ne doit pas bloquer la génération.
-19. N'utilise pas systématiquement « en effet », « de plus » ou « cependant ».
-20. Évite l'utilisation excessive des adverbes en « -ment ».
-21. Évite les pronoms « ceci » et « cela » lorsqu'ils sont inutiles.
-22. Définis les sigles lors de leur première apparition.
-23. Adapte le vocabulaire à la discipline réelle.
-24. Ne transforme pas le sujet en un autre domaine.
-25. Ne conclus pas tout le mémoire dans un seul bloc.
-26. Ne produis aucun commentaire sur ton fonctionnement.
-27. Retourne uniquement le contenu demandé dans le format JSON.
-
-Le bloc doit être original, cohérent et directement exploitable
-dans un travail académique.
-`;
-
-    const userPrompt = `
-DONNÉES DU PROJET
-
-Sujet :
-${sujet}
-
-Domaine :
-${domaine || "Non précisé"}
-
-Niveau :
-${niveau || "Non précisé"}
-
-Type de document :
-${typeDoc}
-
-Contexte fourni :
-${contexte || "Aucun contexte complémentaire"}
-
-Consignes :
-${consignes || "Aucune consigne complémentaire"}
-
-PROBLÉMATIQUE :
-${typeof problematic === "string"
-  ? problematic
-  : JSON.stringify(problematic)}
-
-PLAN :
-${typeof plan === "string"
-  ? plan
-  : JSON.stringify(plan)}
-
-BLOC À RÉDIGER :
-${blockTitle}
-
-OBJECTIF DE LONGUEUR :
-Environ ${safeWordTarget} mots.
-
-TÂCHE
-
-Rédige ce bloc avec une progression académique claire.
-Respecte le sujet et le plan.
-Ne force aucun contexte géographique ou institutionnel.
-Ne crée aucune donnée empirique.
-Utilise des références vérifiables si elles sont nécessaires.
-`;
-
     const response = await fetch(
-      "https://api.openai.com/v1/responses",
+      "https://api.openai.com/v1/chat/completions",
       {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${apiKey}`
+          Authorization: `Bearer ${key}`
         },
         body: JSON.stringify({
           model: process.env.OPENAI_MODEL || "gpt-5.6-luna",
-          tools: [
-            {
-              type: "web_search"
-            }
-          ],
-          input: [
+          temperature: 0.7,
+          top_p: 0.9,
+          presence_penalty: 0.4,
+          frequency_penalty: 0.4,
+          messages: [
             {
               role: "system",
-              content: [
-                {
-                  type: "input_text",
-                  text: systemPrompt
-                }
-              ]
+              content: styleGuide
             },
             {
               role: "user",
-              content: [
-                {
-                  type: "input_text",
-                  text: userPrompt
-                }
-              ]
+              content: `
+Sujet exact :
+"${sujet}"
+
+Problématique :
+"${problematique}"
+
+Titre du bloc :
+"${blockTitle}"
+
+Domaine :
+"${domaine}"
+
+Niveau :
+"${niveau}"
+
+Contexte complémentaire :
+"${contexte}"
+
+Plan retenu :
+"${plan}"
+
+Rédige environ ${words} mots.
+Respecte toutes les instructions stylistiques et méthodologiques.
+Adapte précisément le contenu au domaine.
+Intègre le contexte béninois uniquement lorsque le sujet le justifie.
+Ne produis aucune information inventée.
+              `
             }
-          ],
-          text: {
-            format: {
-              type: "json_schema",
-              name: "block_response",
-              strict: true,
-              schema: {
-                type: "object",
-                additionalProperties: false,
-                properties: {
-                  id: {
-                    type: "string"
-                  },
-                  title: {
-                    type: "string"
-                  },
-                  content: {
-                    type: "string"
-                  },
-                  wordCount: {
-                    type: "integer"
-                  },
-                  sources: {
-                    type: "array",
-                    items: {
-                      type: "object",
-                      additionalProperties: false,
-                      properties: {
-                        author: {
-                          type: "string"
-                        },
-                        year: {
-                          type: "string"
-                        },
-                        title: {
-                          type: "string"
-                        },
-                        doi: {
-                          type: "string"
-                        }
-                      },
-                      required: [
-                        "author",
-                        "year",
-                        "title",
-                        "doi"
-                      ]
-                    }
-                  }
-                },
-                required: [
-                  "id",
-                  "title",
-                  "content",
-                  "wordCount",
-                  "sources"
-                ]
-              }
-            }
-          }
+          ]
         })
       }
     );
 
-    const rawText = await response.text();
+    const data = await response.json();
 
     if (!response.ok) {
+      console.error("Erreur OpenAI :", data);
+
       return res.status(response.status).json({
-        error: "Erreur OpenAI lors de la rédaction du bloc.",
-        details: rawText.slice(0, 1000)
+        error:
+          data?.error?.message ||
+          "La génération OpenAI a échoué.",
+        provider: "OpenAI"
       });
     }
 
-    let result;
-
-    try {
-      const data = JSON.parse(rawText);
-
-      const outputText =
-        data.output_text ||
-        data.output
-          ?.flatMap((item) => item.content || [])
-          ?.map((item) => item.text || "")
-          ?.join("") ||
-        "";
-
-      result = JSON.parse(outputText);
-    } catch {
-      return res.status(502).json({
-        error: "La réponse OpenAI n'a pas pu être interprétée."
-      });
-    }
-
-    const content = String(result.content || "").trim();
+    const content =
+      data.choices?.[0]?.message?.content?.trim() || "";
 
     if (!content) {
       return res.status(502).json({
-        error: "Le bloc généré est vide."
+        error: "OpenAI a retourné une réponse vide.",
+        provider: "OpenAI"
       });
     }
 
-    const wordCount = content
-      .split(/\s+/)
-      .filter(Boolean)
-      .length;
-
     return res.status(200).json({
-      id: result.id || `block-${Date.now()}`,
-      title: result.title || blockTitle,
+      id: `block-${Date.now()}`,
+      title: blockTitle,
       content,
-      wordCount,
-      sources: Array.isArray(result.sources)
-        ? result.sources
-        : []
+      wordCount: content.split(/\s+/).length,
+      sources: []
     });
   } catch (error) {
+    console.error("Erreur serveur generate-block :", error);
+
     return res.status(500).json({
-      error: error.message || "Erreur interne du serveur."
+      error: "Erreur lors de la communication avec OpenAI.",
+      details: error.message
     });
   }
-          }
+}
