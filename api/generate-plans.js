@@ -49,15 +49,15 @@ function extractText(data) {
 }
 
 function extractDataUrl(dataUrl) {
-  const match = /^data:([^;]+);base64,(.+)$/s.exec(dataUrl || "");
+  const match = /^data:([^;]+);base64,(.+)$/s.exec(
+    dataUrl || ""
+  );
 
-  if (!match) {
-    return null;
-  }
+  if (!match) return null;
 
   return {
     mime: match[1],
-    buffer: Buffer.from(match[2], "base64"),
+    buffer: Buffer.from(match[2], "base64")
   };
 }
 
@@ -67,9 +67,7 @@ async function uploadFiles(files, apiKey) {
   for (const file of Array.isArray(files) ? files : []) {
     const decoded = extractDataUrl(file?.content);
 
-    if (!decoded) {
-      continue;
-    }
+    if (!decoded) continue;
 
     const form = new FormData();
 
@@ -77,15 +75,12 @@ async function uploadFiles(files, apiKey) {
 
     form.append(
       "file",
-      new Blob(
-        [decoded.buffer],
-        {
-          type:
-            decoded.mime ||
-            file.type ||
-            "application/octet-stream",
-        }
-      ),
+      new Blob([decoded.buffer], {
+        type:
+          decoded.mime ||
+          file.type ||
+          "application/octet-stream"
+      }),
       file.name || "document"
     );
 
@@ -94,9 +89,9 @@ async function uploadFiles(files, apiKey) {
       {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${apiKey}`,
+          Authorization: `Bearer ${apiKey}`
         },
-        body: form,
+        body: form
       }
     );
 
@@ -111,9 +106,7 @@ async function uploadFiles(files, apiKey) {
 
     const data = await response.json();
 
-    if (data.id) {
-      ids.push(data.id);
-    }
+    if (data.id) ids.push(data.id);
   }
 
   return ids;
@@ -127,26 +120,18 @@ const subsectionSchema = {
     type: "object",
     additionalProperties: false,
     properties: {
-      id: {
-        type: "string",
-      },
-      number: {
-        type: "integer",
-      },
-      title: {
-        type: "string",
-      },
-      description: {
-        type: "string",
-      },
+      id: { type: "string" },
+      number: { type: "integer" },
+      title: { type: "string" },
+      description: { type: "string" }
     },
     required: [
       "id",
       "number",
       "title",
-      "description",
-    ],
-  },
+      "description"
+    ]
+  }
 };
 
 const sectionSchema = {
@@ -157,28 +142,20 @@ const sectionSchema = {
     type: "object",
     additionalProperties: false,
     properties: {
-      id: {
-        type: "string",
-      },
-      number: {
-        type: "integer",
-      },
-      title: {
-        type: "string",
-      },
-      description: {
-        type: "string",
-      },
-      subsections: subsectionSchema,
+      id: { type: "string" },
+      number: { type: "integer" },
+      title: { type: "string" },
+      description: { type: "string" },
+      subsections: subsectionSchema
     },
     required: [
       "id",
       "number",
       "title",
       "description",
-      "subsections",
-    ],
-  },
+      "subsections"
+    ]
+  }
 };
 
 const chapterSchema = {
@@ -188,22 +165,12 @@ const chapterSchema = {
     type: "object",
     additionalProperties: false,
     properties: {
-      id: {
-        type: "string",
-      },
-      number: {
-        type: "integer",
-      },
-      title: {
-        type: "string",
-      },
-      description: {
-        type: "string",
-      },
-      wordCount: {
-        type: "integer",
-      },
-      sections: sectionSchema,
+      id: { type: "string" },
+      number: { type: "integer" },
+      title: { type: "string" },
+      description: { type: "string" },
+      wordCount: { type: "integer" },
+      sections: sectionSchema
     },
     required: [
       "id",
@@ -211,9 +178,9 @@ const chapterSchema = {
       "title",
       "description",
       "wordCount",
-      "sections",
-    ],
-  },
+      "sections"
+    ]
+  }
 };
 
 const partSchema = {
@@ -224,49 +191,60 @@ const partSchema = {
     type: "object",
     additionalProperties: false,
     properties: {
-      id: {
-        type: "string",
-      },
-      number: {
-        type: "integer",
-      },
-      title: {
-        type: "string",
-      },
-      description: {
-        type: "string",
-      },
-      chapters: chapterSchema,
+      id: { type: "string" },
+      number: { type: "integer" },
+      title: { type: "string" },
+      description: { type: "string" },
+      chapters: chapterSchema
     },
     required: [
       "id",
       "number",
       "title",
       "description",
-      "chapters",
-    ],
-  },
+      "chapters"
+    ]
+  }
 };
 
-const introConclusionSchema = {
+const introductionConclusionSchema = {
   type: "object",
   additionalProperties: false,
   properties: {
-    title: {
-      type: "string",
-    },
-    description: {
-      type: "string",
-    },
-    wordCount: {
-      type: "integer",
-    },
+    title: { type: "string" },
+    description: { type: "string" },
+    wordCount: { type: "integer" }
   },
   required: [
     "title",
     "description",
-    "wordCount",
-  ],
+    "wordCount"
+  ]
+};
+
+const planSchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    id: { type: "string" },
+    title: { type: "string" },
+    description: { type: "string" },
+    approach: { type: "string" },
+    totalWords: { type: "integer" },
+    introductionGeneral: introductionConclusionSchema,
+    parts: partSchema,
+    conclusionGeneral: introductionConclusionSchema
+  },
+  required: [
+    "id",
+    "title",
+    "description",
+    "approach",
+    "totalWords",
+    "introductionGeneral",
+    "parts",
+    "conclusionGeneral"
+  ]
 };
 
 const SCHEMA = {
@@ -277,43 +255,10 @@ const SCHEMA = {
       type: "array",
       minItems: 1,
       maxItems: 3,
-      items: {
-        type: "object",
-        additionalProperties: false,
-        properties: {
-          id: {
-            type: "string",
-          },
-          title: {
-            type: "string",
-          },
-          description: {
-            type: "string",
-          },
-          approach: {
-            type: "string",
-          },
-          totalWords: {
-            type: "integer",
-          },
-          introductionGeneral: introConclusionSchema,
-          parts: partSchema,
-          conclusionGeneral: introConclusionSchema,
-        },
-        required: [
-          "id",
-          "title",
-          "description",
-          "approach",
-          "totalWords",
-          "introductionGeneral",
-          "parts",
-          "conclusionGeneral",
-        ],
-      },
-    },
+      items: planSchema
+    }
   },
-  required: ["plans"],
+  required: ["plans"]
 };
 
 function validatePlan(plan, expectedWords, index) {
@@ -337,9 +282,9 @@ function validatePlan(plan, expectedWords, index) {
       part.chapters.length === 0
     ) {
       throw fail(
-        `La partie ${
-          part.number || ""
-        } du plan ${index + 1} ne contient aucun chapitre.`,
+        `La partie ${part.number || ""} du plan ${
+          index + 1
+        } ne contient aucun chapitre.`,
         502
       );
     }
@@ -351,9 +296,7 @@ function validatePlan(plan, expectedWords, index) {
         chapter.sections.length > 3
       ) {
         throw fail(
-          `Le chapitre ${
-            chapter.title || ""
-          } doit contenir 2 ou 3 sections.`,
+          `Le chapitre ${chapter.title || ""} doit contenir 2 ou 3 sections.`,
           502
         );
       }
@@ -363,9 +306,7 @@ function validatePlan(plan, expectedWords, index) {
         chapter.wordCount <= 0
       ) {
         throw fail(
-          `Le volume du chapitre ${
-            chapter.title || ""
-          } est invalide.`,
+          `Le volume du chapitre ${chapter.title || ""} est invalide.`,
           502
         );
       }
@@ -379,9 +320,7 @@ function validatePlan(plan, expectedWords, index) {
           section.subsections.length > 3
         ) {
           throw fail(
-            `La section ${
-              section.title || ""
-            } doit contenir 2 ou 3 sous-sections.`,
+            `La section ${section.title || ""} doit contenir 2 ou 3 sous-sections.`,
             502
           );
         }
@@ -389,23 +328,16 @@ function validatePlan(plan, expectedWords, index) {
     }
   }
 
-  if (
-    expectedWords > 0 &&
-    chapterWords !== expectedWords
-  ) {
+  if (chapterWords !== expectedWords) {
     throw fail(
-      `Le plan ${
-        index + 1
-      } totalise ${chapterWords} mots au lieu de ${expectedWords}.`,
+      `Le plan ${index + 1} totalise ${chapterWords} mots au lieu de ${expectedWords}.`,
       502
     );
   }
 
   return {
     ...plan,
-    totalWords:
-      expectedWords ||
-      Number(plan.totalWords || chapterWords),
+    totalWords: expectedWords
   };
 }
 
@@ -445,82 +377,86 @@ function buildSystemPrompt() {
 Tu es le moteur de conception des plans académiques de Trimémo.
 
 OBJECTIF :
-Produire des plans universitaires précis, cohérents, variés
-et directement liés au sujet soumis par l'utilisateur.
 
-RÈGLES ABSOLUES :
+Produire des plans universitaires précis, cohérents,
+variés et directement liés au sujet soumis.
 
-1. Utilise uniquement les informations présentes dans :
-   - Le sujet.
-   - Le domaine.
-   - Le niveau d'études.
-   - Le contexte.
-   - Les consignes.
-   - Les fichiers transmis.
-   - La problématique retenue.
+INSTRUCTIONS OBLIGATOIRES :
 
-2. N'ajoute pas :
-   - De pays non mentionné.
-   - D'institution non mentionnée.
-   - De terrain non mentionné.
-   - De population non mentionnée.
-   - De période non mentionnée.
-   - De réglementation non mentionnée.
-   - De résultat d'enquête inventé.
-   - De source ou de référence inventée.
+1. Respecte le sujet exact, la problématique,
+le domaine, le niveau et le contexte fournis.
 
-3. Respecte strictement le sujet exact.
-   Ne remplace pas le sujet par un sujet plus général.
+2. Ne remplace jamais le sujet par un sujet plus général.
 
-4. Respecte la problématique retenue.
-   Chaque partie du plan doit contribuer à son traitement.
+3. N'invente aucune donnée, institution,
+population, période, réglementation ou référence.
 
-5. Génère exactement le nombre de plans demandé.
+4. N'ajoute pas de pays ou de contexte géographique
+non mentionné dans les informations fournies.
 
-6. Les plans doivent varier par leur angle d'analyse :
-   - Approche théorique et conceptuelle.
-   - Approche analytique et explicative.
-   - Approche stratégique, empirique ou opérationnelle,
-     uniquement lorsque le sujet le permet.
+5. L'ancrage béninois est autorisé uniquement
+lorsque le sujet ou le contexte le justifie.
 
-7. Ne modifie pas artificiellement le sujet pour créer
-   des différences entre les plans.
+6. Génère exactement le nombre de plans demandé.
 
-8. Chaque plan doit comporter :
-   - Une introduction générale.
-   - Deux ou trois parties.
-   - Des chapitres cohérents dans chaque partie.
-   - Deux ou trois sections par chapitre.
-   - Deux ou trois sous-sections par section.
-   - Une conclusion générale.
+7. Les plans doivent être réellement différents,
+y compris dans leur architecture interne.
 
-9. Une troisième partie est autorisée uniquement si
-   la complexité du sujet la justifie.
+8. Le premier plan peut privilégier une approche
+théorique et conceptuelle.
 
-10. Chaque titre doit être spécifique au sujet.
-    Évite les titres génériques et interchangeables.
+9. Le deuxième plan peut privilégier une approche
+analytique, explicative ou comparative.
 
-11. Chaque description doit expliquer la fonction
-    analytique du niveau concerné.
+10. Le troisième plan peut privilégier une approche
+stratégique, empirique ou opérationnelle,
+uniquement si le sujet le permet.
 
-12. Attribue un volume de mots positif à chaque chapitre.
+11. Ne modifie pas seulement quelques mots
+pour différencier les plans.
 
-13. La somme des volumes des chapitres doit correspondre
-    exactement au volume demandé.
+12. Modifie les axes d'analyse, l'ordre des parties,
+la fonction des chapitres et les subdivisions.
 
-14. Le volume de l'introduction et de la conclusion
-    ne doit pas être ajouté au total des chapitres,
-    sauf si cela est explicitement demandé.
+13. Chaque plan doit contenir :
+- Une introduction générale.
+- Deux ou trois parties.
+- Des chapitres cohérents.
+- Deux ou trois sections par chapitre.
+- Deux ou trois sous-sections par section.
+- Une conclusion générale.
 
-15. Rédige des intitulés académiques clairs et précis.
+14. Chaque titre doit être précis,
+naturel et adapté au sujet.
 
-16. Utilise une formulation naturelle et professionnelle.
-    Évite les répétitions et les formulations mécaniques.
+15. Chaque description doit présenter
+la fonction analytique du niveau concerné.
 
-17. Ne rédige pas le mémoire.
-    Génère uniquement sa structure détaillée.
+16. Chaque chapitre doit posséder
+un volume de mots positif.
 
-18. Retourne uniquement le JSON conforme au schéma fourni.
+17. La somme des volumes des chapitres
+doit correspondre exactement au volume demandé.
+
+18. L'introduction et la conclusion générales
+ne sont pas comprises dans le total des chapitres.
+
+19. Utilise une formulation académique claire.
+
+20. Évite les répétitions, les titres génériques,
+les formulations mécaniques et les structures artificielles.
+
+21. Respecte les instructions stylistiques :
+- Phrases claires et précises.
+- Vocabulaire adapté à la discipline.
+- Pas de clichés liés à l'intelligence artificielle.
+- Pas de données inventées.
+- Pas de références fabriquées.
+
+22. Génère uniquement la structure du plan.
+Ne rédige pas le mémoire.
+
+23. Retourne uniquement le JSON demandé.
 `;
 }
 
@@ -533,29 +469,22 @@ export default async function handler(req, res) {
 
   if (req.method !== "POST") {
     return res.status(405).json({
-      error: "Méthode non autorisée.",
+      error: "Méthode non autorisée."
     });
   }
 
   const apiKey = process.env.OPENAI_API_KEY;
-  const model = process.env.OPENAI_MODEL;
+  const model =
+    process.env.OPENAI_MODEL || "gpt-5.6-luna";
 
   if (!apiKey) {
     return res.status(500).json({
-      error: "OPENAI_API_KEY est absente du serveur.",
-    });
-  }
-
-  if (!model) {
-    return res.status(500).json({
-      error:
-        "OPENAI_MODEL est absente du serveur. Ajoutez le modèle OpenAI dans les variables d'environnement.",
+      error: "OPENAI_API_KEY est absente du serveur."
     });
   }
 
   try {
     const body = req.body || {};
-
     const project = body.project || body;
 
     const problematic =
@@ -567,18 +496,17 @@ export default async function handler(req, res) {
       Number(body.count) === 1 ? 1 : 3;
 
     const pages = Number(project.pages || 0);
-
     const sujet = String(project.sujet || "").trim();
 
     if (!sujet) {
       return res.status(400).json({
-        error: "Le sujet est obligatoire.",
+        error: "Le sujet est obligatoire."
       });
     }
 
     if (!Number.isInteger(pages) || pages <= 0) {
       return res.status(400).json({
-        error: "Le nombre de pages est invalide.",
+        error: "Le nombre de pages est invalide."
       });
     }
 
@@ -591,55 +519,10 @@ export default async function handler(req, res) {
 
     const fileInputs = fileIds.map((id) => ({
       type: "input_file",
-      file_id: id,
+      file_id: id
     }));
 
-    const response = await fetch(OPENAI_URL, {
-      method: "POST",
-
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-
-      body: JSON.stringify({
-        model,
-
-        tools: [
-          {
-            type: "web_search",
-          },
-        ],
-
-        text: {
-          format: {
-            type: "json_schema",
-            name: "trimemo_plans_structure",
-            strict: true,
-            schema: SCHEMA,
-          },
-        },
-
-        input: [
-          {
-            role: "system",
-
-            content: [
-              {
-                type: "input_text",
-                text: buildSystemPrompt(),
-              },
-            ],
-          },
-
-          {
-            role: "user",
-
-            content: [
-              {
-                type: "input_text",
-
-                text: `
+    const userPrompt = `
 ${buildContext(project, problematic)}
 
 INSTRUCTIONS DE PRODUCTION :
@@ -658,20 +541,73 @@ Chaque chapitre doit comporter
 Chaque section doit comporter
 2 ou 3 sous-sections.
 
-Les plans doivent être distincts
-par leur angle d'analyse.
+Les plans doivent être distincts,
+y compris dans leur structure interne.
 
-Ne change pas le sujet fourni.
+Ne réutilise pas les mêmes titres,
+axes d'analyse ou subdivisions entre les plans.
+
+Ne fais pas seulement varier quelques mots.
+
+Chaque plan doit rester cohérent avec
+la problématique et le niveau d'études.
+
+Respecte les instructions stylistiques
+et l'ancrage béninois conditionnel.
 
 Retourne uniquement le JSON demandé.
-`,
+`;
+
+    const response = await fetch(OPENAI_URL, {
+      method: "POST",
+
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`
+      },
+
+      body: JSON.stringify({
+        model,
+
+        tools: [
+          {
+            type: "web_search"
+          }
+        ],
+
+        text: {
+          format: {
+            type: "json_schema",
+            name: "trimemo_plans_structure",
+            strict: true,
+            schema: SCHEMA
+          }
+        },
+
+        input: [
+          {
+            role: "system",
+            content: [
+              {
+                type: "input_text",
+                text: buildSystemPrompt()
+              }
+            ]
+          },
+
+          {
+            role: "user",
+            content: [
+              {
+                type: "input_text",
+                text: userPrompt
               },
 
-              ...fileInputs,
-            ],
-          },
-        ],
-      }),
+              ...fileInputs
+            ]
+          }
+        ]
+      })
     });
 
     if (!response.ok) {
@@ -708,8 +644,9 @@ Retourne uniquement le JSON demandé.
       );
 
     return res.status(200).json({
-      plans,
+      plans
     });
+
   } catch (error) {
     console.error(
       "generate-plans error",
@@ -719,7 +656,8 @@ Retourne uniquement le JSON demandé.
     return res.status(error.status || 500).json({
       error:
         error.message ||
-        "Erreur interne lors de la génération des plans.",
+        "Erreur interne lors de la génération des plans."
     });
   }
-}
+  }
+  
