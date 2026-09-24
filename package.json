@@ -1,0 +1,14 @@
+{
+  "name": "trimemo-api",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "API universelle Trimemo - tous domaines - memoire, these, dissertation",
+  "main": "api/index.js",
+  "dependencies": {
+    "openai": "^4.28.0",
+    "docx": "^8.5.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
