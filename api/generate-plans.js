@@ -1,4 +1,3 @@
-
 const OPENAI_URL = "https://api.openai.com/v1/responses";
 const WORDS_PER_PAGE = 320;
 
@@ -8,265 +7,111 @@ function cors(res) {
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Accept");
 }
 
-function fail(message, status = 400) {
+function fail(message, status) {
   const error = new Error(message);
-  error.status = status;
+  error.status = status || 400;
   return error;
 }
 
+function text(value) {
+  return String(value == null ? "" : value).trim();
+}
+
 function extractText(data) {
-  if (
-    typeof data?.output_text === "string" &&
-    data.output_text.trim()
-  ) {
-    return data.output_text.trim();
-  }
-
-  const text = Array.isArray(data?.output)
-    ? data.output
-        .filter((item) => item?.type === "message")
-        .flatMap((item) =>
-          Array.isArray(item.content) ? item.content : []
-        )
-        .filter(
-          (part) =>
-            part?.type === "output_text" &&
-            typeof part.text === "string"
-        )
-        .map((part) => part.text)
-        .join("")
-        .trim()
-    : "";
-
-  if (!text) {
-    throw fail(
-      "La réponse OpenAI ne contient aucun texte exploitable.",
-      502
-    );
-  }
-
-  return text;
+  if (typeof data?.output_text === "string" && data.output_text.trim()) return data.output_text.trim();
+  const parts = Array.isArray(data?.output) ? data.output.flatMap(function(item) {
+    return Array.isArray(item?.content) ? item.content : [];
+  }) : [];
+  const value = parts.filter(function(part) {
+    return part?.type === "output_text" && typeof part.text === "string";
+  }).map(function(part) {
+    return part.text;
+  }).join("").trim();
+  if (!value) throw fail("OpenAI n’a retourné aucun plan exploitable.", 502);
+  return value;
 }
 
-function extractDataUrl(dataUrl) {
-  const match = /^data:([^;]+);base64,(.+)$/s.exec(dataUrl || "");
-
-  if (!match) {
-    return null;
+function parseJson(value) {
+  try {
+    return JSON.parse(value);
+  } catch (error) {
+    const start = value.indexOf("{");
+    const end = value.lastIndexOf("}");
+    if (start >= 0 && end > start) {
+      try { return JSON.parse(value.slice(start, end + 1)); } catch (ignored) {}
+    }
+    throw fail("La réponse OpenAI n’est pas un JSON valide.", 502);
   }
-
-  return {
-    mime: match[1],
-    buffer: Buffer.from(match[2], "base64"),
-  };
 }
 
-async function uploadFiles(files, apiKey) {
-  const ids = [];
-
-  for (const file of Array.isArray(files) ? files : []) {
-    const decoded = extractDataUrl(file?.content);
-
-    if (!decoded) {
-      continue;
-    }
-
-    const form = new FormData();
-
-    form.append("purpose", "user_data");
-
-    form.append(
-      "file",
-      new Blob(
-        [decoded.buffer],
-        {
-          type:
-            decoded.mime ||
-            file.type ||
-            "application/octet-stream",
-        }
-      ),
-      file.name || "document"
-    );
-
-    const response = await fetch(
-      "https://api.openai.com/v1/files",
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-        },
-        body: form,
-      }
-    );
-
-    if (!response.ok) {
-      throw fail(
-        `Impossible de transmettre ${
-          file.name || "le fichier"
-        } à OpenAI. ${await response.text()}`,
-        502
-      );
-    }
-
-    const data = await response.json();
-
-    if (data.id) {
-      ids.push(data.id);
-    }
-  }
-
-  return ids;
+function buildContext(project, problematic, providedPlan) {
+  return [
+    "SUJET EXACT : " + text(project.sujet || project.subject),
+    "DOMAINE : " + (text(project.domaine || project.domain) || "Non précisé"),
+    "NIVEAU : " + (text(project.niveau || project.level) || "Non précisé"),
+    "TYPE : " + (text(project.typeDoc || project.typeDocument || project.type) || "Non précisé"),
+    "CONTEXTE : " + (text(project.contexte || project.context) || "Aucun contexte complémentaire"),
+    "CONSIGNES : " + (text(project.consignes || project.instructions) || "Aucune consigne complémentaire"),
+    "PROBLÉMATIQUE : " + JSON.stringify(problematic || {}),
+    "PLAN FOURNI PAR LE CLIENT : " + (providedPlan || "Aucun plan fourni")
+  ].join("\n\n");
 }
 
 const subsectionSchema = {
   type: "array",
-  minItems: 1,
+  minItems: 2,
   maxItems: 3,
   items: {
     type: "object",
     additionalProperties: false,
-    properties: {
-      id: {
-        type: "string",
-      },
-      number: {
-        type: "integer",
-      },
-      title: {
-        type: "string",
-      },
-      description: {
-        type: "string",
-      },
-    },
-    required: [
-      "id",
-      "number",
-      "title",
-      "description",
-    ],
-  },
+    properties: { title: { type: "string" } },
+    required: ["title"]
+  }
 };
 
 const sectionSchema = {
   type: "array",
-  minItems: 1,
+  minItems: 2,
   maxItems: 3,
   items: {
     type: "object",
     additionalProperties: false,
     properties: {
-      id: {
-        type: "string",
-      },
-      number: {
-        type: "integer",
-      },
-      title: {
-        type: "string",
-      },
-      description: {
-        type: "string",
-      },
-      subsections: subsectionSchema,
+      title: { type: "string" },
+      subsections: subsectionSchema
     },
-    required: [
-      "id",
-      "number",
-      "title",
-      "description",
-      "subsections",
-    ],
-  },
+    required: ["title", "subsections"]
+  }
 };
 
 const chapterSchema = {
   type: "array",
-  minItems: 1,
-  items: {
-    type: "object",
-    additionalProperties: false,
-    properties: {
-      id: {
-        type: "string",
-      },
-      number: {
-        type: "integer",
-      },
-      title: {
-        type: "string",
-      },
-      description: {
-        type: "string",
-      },
-      wordCount: {
-        type: "integer",
-      },
-      sections: sectionSchema,
-    },
-    required: [
-      "id",
-      "number",
-      "title",
-      "description",
-      "wordCount",
-      "sections",
-    ],
-  },
-};
-
-const partSchema = {
-  type: "array",
-  minItems: 1,
+  minItems: 2,
   maxItems: 3,
   items: {
     type: "object",
     additionalProperties: false,
     properties: {
-      id: {
-        type: "string",
-      },
-      number: {
-        type: "integer",
-      },
-      title: {
-        type: "string",
-      },
-      description: {
-        type: "string",
-      },
-      chapters: chapterSchema,
+      title: { type: "string" },
+      sections: sectionSchema
     },
-    required: [
-      "id",
-      "number",
-      "title",
-      "description",
-      "chapters",
-    ],
-  },
+    required: ["title", "sections"]
+  }
 };
 
-const introConclusionSchema = {
-  type: "object",
-  additionalProperties: false,
-  properties: {
-    title: {
-      type: "string",
+const partSchema = {
+  type: "array",
+  minItems: 2,
+  maxItems: 3,
+  items: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      title: { type: "string" },
+      chapters: chapterSchema
     },
-    description: {
-      type: "string",
-    },
-    wordCount: {
-      type: "integer",
-    },
-  },
-  required: [
-    "title",
-    "description",
-    "wordCount",
-  ],
+    required: ["title", "chapters"]
+  }
 };
 
 const SCHEMA = {
@@ -281,457 +126,197 @@ const SCHEMA = {
         type: "object",
         additionalProperties: false,
         properties: {
-          id: {
-            type: "string",
-          },
-          title: {
-            type: "string",
-          },
-          description: {
-            type: "string",
-          },
-          approach: {
-            type: "string",
-          },
-          totalWords: {
-            type: "integer",
-          },
-          introductionGeneral: introConclusionSchema,
-          parts: partSchema,
-          conclusionGeneral: introConclusionSchema,
+          title: { type: "string" },
+          approach: { type: "string" },
+          parts: partSchema
         },
-        required: [
-          "id",
-          "title",
-          "description",
-          "approach",
-          "totalWords",
-          "introductionGeneral",
-          "parts",
-          "conclusionGeneral",
-        ],
-      },
-    },
+        required: ["title", "approach", "parts"]
+      }
+    }
   },
-  required: ["plans"],
+  required: ["plans"]
 };
 
-function validatePlan(plan, expectedWords, index) {
-  if (
-    !plan ||
-    !Array.isArray(plan.parts) ||
-    plan.parts.length < 1 ||
-    plan.parts.length > 3
-  ) {
-    throw fail(
-      `Le plan ${index + 1} doit contenir entre 1 et 3 parties.`,
-      502
-    );
+function distributeWords(totalWords, chapters) {
+  const safeTotal = Math.max(chapters.length, Number(totalWords) || 0);
+  const base = Math.floor(safeTotal / chapters.length);
+  let remainder = safeTotal - base * chapters.length;
+  return chapters.map(function() {
+    const value = base + (remainder > 0 ? 1 : 0);
+    remainder -= 1;
+    return value;
+  });
+}
+
+function normalizeGeneratedPlan(raw, index, expectedWords) {
+  const rawParts = Array.isArray(raw?.parts) ? raw.parts : [];
+  if (rawParts.length < 2) throw fail("Le plan " + (index + 1) + " ne contient pas au moins deux parties.", 502);
+
+  const parts = rawParts.map(function(part, partIndex) {
+    const partNumber = partIndex + 1;
+    const chapters = Array.isArray(part?.chapters) ? part.chapters : [];
+    if (chapters.length < 2) throw fail("La partie " + partNumber + " du plan " + (index + 1) + " doit contenir au moins deux chapitres.", 502);
+
+    return {
+      id: "plan-" + (index + 1) + "-part-" + partNumber,
+      number: partNumber,
+      title: text(part.title) || "Partie " + partNumber,
+      description: "",
+      chapters: chapters.map(function(chapter, chapterIndex) {
+        const chapterNumber = chapterIndex + 1;
+        const sections = Array.isArray(chapter?.sections) ? chapter.sections : [];
+        if (sections.length < 2) throw fail("Le chapitre " + partNumber + "." + chapterNumber + " du plan " + (index + 1) + " doit contenir au moins deux sections.", 502);
+
+        return {
+          id: "plan-" + (index + 1) + "-part-" + partNumber + "-chapter-" + chapterNumber,
+          number: chapterNumber,
+          title: text(chapter.title) || "Chapitre " + chapterNumber,
+          description: "",
+          wordCount: 0,
+          sections: sections.map(function(section, sectionIndex) {
+            const sectionNumber = sectionIndex + 1;
+            const subsections = Array.isArray(section?.subsections) ? section.subsections : [];
+            if (subsections.length < 2) throw fail("La section " + partNumber + "." + chapterNumber + "." + sectionNumber + " du plan " + (index + 1) + " doit contenir au moins deux sous-sections.", 502);
+
+            return {
+              id: "plan-" + (index + 1) + "-part-" + partNumber + "-chapter-" + chapterNumber + "-section-" + sectionNumber,
+              number: sectionNumber,
+              title: text(section.title) || "Section " + sectionNumber,
+              description: "",
+              subsections: subsections.map(function(subsection, subsectionIndex) {
+                return {
+                  id: "plan-" + (index + 1) + "-part-" + partNumber + "-chapter-" + chapterNumber + "-section-" + sectionNumber + "-sub-" + (subsectionIndex + 1),
+                  number: subsectionIndex + 1,
+                  title: text(subsection?.title) || "Sous-section " + (subsectionIndex + 1),
+                  description: ""
+                };
+              })
+            };
+          })
+        };
+      })
+    };
+  });
+
+  const chapters = parts.flatMap(function(part) { return part.chapters; });
+  const wordCounts = distributeWords(expectedWords, chapters);
+  let cursor = 0;
+  for (const part of parts) {
+    for (const chapter of part.chapters) chapter.wordCount = wordCounts[cursor++] || 0;
   }
 
-  let chapterWords = 0;
-
-  for (const part of plan.parts) {
-    if (
-      !Array.isArray(part.chapters) ||
-      part.chapters.length === 0
-    ) {
-      throw fail(
-        `La partie ${
-          part.number || ""
-        } du plan ${index + 1} ne contient aucun chapitre.`,
-        502
-      );
-    }
-
-    for (const chapter of part.chapters) {
-      if (
-        !Array.isArray(chapter.sections) ||
-        chapter.sections.length < 1 ||
-        chapter.sections.length > 3
-      ) {
-        throw fail(
-          `Le chapitre ${
-            chapter.title || ""
-          } doit contenir entre 1 et 3 sections.`,
-          502
-        );
-      }
-
-      if (
-        !Number.isInteger(chapter.wordCount) ||
-        chapter.wordCount <= 0
-      ) {
-        throw fail(
-          `Le volume du chapitre ${
-            chapter.title || ""
-          } est invalide.`,
-          502
-        );
-      }
-
-      chapterWords += chapter.wordCount;
-
-      for (const section of chapter.sections) {
-        if (
-          !Array.isArray(section.subsections) ||
-          section.subsections.length < 1 ||
-          section.subsections.length > 3
-        ) {
-          throw fail(
-            `La section ${
-              section.title || ""
-            } doit contenir entre 1 et 3 sous-sections.`,
-            502
-          );
-        }
-      }
-    }
-  }
-
-  if (
-    expectedWords > 0 &&
-    chapterWords !== expectedWords
-  ) {
-    throw fail(
-      `Le plan ${
-        index + 1
-      } totalise ${chapterWords} mots au lieu de ${expectedWords}.`,
-      502
-    );
-  }
+  const introductionWords = Math.min(900, Math.max(300, Math.round(expectedWords * 0.08)));
+  const conclusionWords = Math.min(700, Math.max(250, Math.round(expectedWords * 0.06)));
 
   return {
-    ...plan,
-    totalWords:
-      expectedWords ||
-      Number(plan.totalWords || chapterWords),
+    id: "plan-" + (index + 1),
+    title: text(raw.title) || "Plan " + (index + 1),
+    description: "",
+    approach: text(raw.approach) || "Structure académique",
+    totalWords: expectedWords,
+    introductionGeneral: { title: "Introduction générale", description: "", wordCount: introductionWords },
+    parts: parts,
+    conclusionGeneral: { title: "Conclusion générale", description: "", wordCount: conclusionWords },
+    introduction: { title: "Introduction générale", description: "", wordCount: introductionWords },
+    conclusion: { title: "Conclusion générale", description: "", wordCount: conclusionWords }
   };
 }
 
-function buildContext(project, problematic, providedPlan = "") {
-  return `
-SUJET EXACT :
-${project.sujet || ""}
-
-DOMAINE :
-${project.domaine || ""}
-
-NIVEAU D'ÉTUDES :
-${project.niveau || ""}
-
-TYPE DE DOCUMENT :
-${project.typeDoc || project.typeDocument || ""}
-
-CONTEXTE FOURNI :
-${project.contexte || project.context || ""}
-
-CONSIGNES FOURNIES :
-${project.consignes || project.instructions || ""}
-
-PROBLÉMATIQUE RETENUE :
-${JSON.stringify(problematic || {}, null, 2)}
-
-PLAN FOURNI PAR LE CLIENT (FACULTATIF) :
-${providedPlan || "Aucun plan fourni"}
-
-VOLUME DEMANDÉ :
-${Number(project.pages || 0) * WORDS_PER_PAGE} mots.
-
-BASE DE CALCUL :
-320 mots par page.
-`;
-}
-
-function buildSystemPrompt() {
-  return `
-Tu es le moteur de conception des plans académiques de Trimémo.
-
-OBJECTIF :
-Produire des plans universitaires précis, cohérents, variés
-et directement liés au sujet soumis par l'utilisateur.
-
-RÈGLES ABSOLUES :
-
-1. Utilise uniquement les informations présentes dans :
-   - Le sujet.
-   - Le domaine.
-   - Le niveau d'études.
-   - Le contexte.
-   - Les consignes.
-   - Les fichiers transmis.
-   - La problématique retenue.
-
-2. N'ajoute pas :
-   - De pays non mentionné.
-   - D'institution non mentionnée.
-   - De terrain non mentionné.
-   - De population non mentionnée.
-   - De période non mentionnée.
-   - De réglementation non mentionnée.
-   - De résultat d'enquête inventé.
-   - De source ou de référence inventée.
-
-3. Respecte strictement le sujet exact.
-   Ne remplace pas le sujet par un sujet plus général.
-
-4. Respecte la problématique retenue.
-   Chaque partie du plan doit contribuer à son traitement.
-
-5. Génère exactement le nombre de plans demandé.
-
-6. Les plans doivent varier par leur angle d'analyse :
-   - Approche théorique et conceptuelle.
-   - Approche analytique et explicative.
-   - Approche stratégique, empirique ou opérationnelle,
-     uniquement lorsque le sujet le permet.
-
-7. Ne modifie pas artificiellement le sujet pour créer
-   des différences entre les plans.
-
-8. Chaque plan doit comporter :
-   - Une introduction générale.
-   - Deux ou trois parties.
-   - Des chapitres cohérents dans chaque partie.
-   - Une à trois sections par chapitre.
-   - Une à trois sous-sections par section.
-   - Une conclusion générale.
-
-9. Une troisième partie est autorisée uniquement si
-   la complexité du sujet la justifie.
-
-10. Chaque titre doit être spécifique au sujet.
-    Évite les titres génériques et interchangeables.
-
-11. Chaque description doit expliquer la fonction
-    analytique du niveau concerné.
-
-12. Attribue un volume de mots positif à chaque chapitre.
-
-13. La somme des volumes des chapitres doit correspondre
-    exactement au volume demandé.
-
-14. Le volume de l'introduction et de la conclusion
-    ne doit pas être ajouté au total des chapitres,
-    sauf si cela est explicitement demandé.
-
-15. Rédige des intitulés académiques clairs et précis.
-
-16. Utilise une formulation naturelle et professionnelle.
-    Évite les répétitions et les formulations mécaniques.
-
-17. Ne rédige pas le mémoire.
-    Génère uniquement sa structure détaillée.
-
-18. Retourne uniquement le JSON conforme au schéma fourni.
-`;
+function systemPrompt() {
+  return [
+    "Tu conçois des plans universitaires destinés à des mémoires, rapports et thèses.",
+    "",
+    "Le résultat doit ressembler à une TABLE DES MATIÈRES académique.",
+    "Il ne doit pas ressembler à une liste de commentaires ou à un résumé.",
+    "",
+    "RÈGLES ABSOLUES :",
+    "1. Respecte exactement le sujet, la problématique et les consignes fournies.",
+    "2. N’invente aucun pays, terrain, institution, population, période ou résultat.",
+    "3. Ne rédige aucun commentaire méthodologique dans les titres.",
+    "4. Les titres doivent être courts, précis, académiques et directement liés au sujet.",
+    "5. Ne mets aucune explication dans les titres.",
+    "6. Chaque plan commence par Introduction générale et se termine par Conclusion générale.",
+    "7. Chaque plan comporte 2 ou 3 PARTIES.",
+    "8. Chaque partie comporte 2 ou 3 CHAPITRES.",
+    "9. Chaque chapitre comporte 2 ou 3 SECTIONS.",
+    "10. Chaque section comporte 2 ou 3 SOUS-SECTIONS.",
+    "11. La hiérarchie doit être complète : Partie -> Chapitre -> Section -> Sous-section.",
+    "12. Les trois plans doivent proposer des angles scientifiques réellement différents lorsque trois plans sont demandés.",
+    "13. Si le client fournit un plan ou des consignes structurelles, respecte leur logique.",
+    "14. Ne mets pas de description, justification, commentaire ou paragraphe dans la structure.",
+    "15. Retourne uniquement le JSON demandé."
+  ].join("\n");
 }
 
 export default async function handler(req, res) {
   cors(res);
-
-  if (req.method === "OPTIONS") {
-    return res.status(204).end();
-  }
-
-  if (req.method !== "POST") {
-    return res.status(405).json({
-      error: "Méthode non autorisée.",
-    });
-  }
+  if (req.method === "OPTIONS") return res.status(204).end();
+  if (req.method !== "POST") return res.status(405).json({ error: "Méthode non autorisée." });
 
   const apiKey = process.env.OPENAI_API_KEY;
-  const model = process.env.OPENAI_MODEL;
-
-  if (!apiKey) {
-    return res.status(500).json({
-      error: "OPENAI_API_KEY est absente du serveur.",
-    });
-  }
-
-  if (!model) {
-    return res.status(500).json({
-      error:
-        "OPENAI_MODEL est absente du serveur. Ajoutez le modèle OpenAI dans les variables d'environnement.",
-    });
-  }
+  if (!apiKey) return res.status(500).json({ error: "OPENAI_API_KEY est absente du serveur." });
 
   try {
     const body = req.body || {};
+    const project = body.project || body.projet || body;
+    const sujet = text(project.sujet || project.subject);
+    const problematic = body.problematic || body.problematique || project.problematiquePersonnelle || {};
+    const providedPlan = text(body.providedPlan || project.planPersonnel);
+    const count = Number(body.count) === 1 ? 1 : 3;
+    const pages = Number(project.pages) || 30;
+    const expectedWords = Math.max(640, pages * WORDS_PER_PAGE);
 
-    const project = body.project || body;
+    if (!sujet) return res.status(400).json({ error: "Le sujet est obligatoire." });
 
-    const problematic =
-      body.problematic ||
-      body.problematique ||
-      project.problematiquePersonnelle ||
-      {};
-    const providedPlan = String(
-      body.providedPlan ||
-      project.planPersonnel ||
-      ""
-    ).trim();
-
-    const count =
-      Number(body.count) === 1 ? 1 : 3;
-
-    const pages = Number(project.pages || 0);
-
-    const sujet = String(project.sujet || "").trim();
-
-    if (!sujet) {
-      return res.status(400).json({
-        error: "Le sujet est obligatoire.",
-      });
-    }
-
-    if (!Number.isInteger(pages) || pages <= 0) {
-      return res.status(400).json({
-        error: "Le nombre de pages est invalide.",
-      });
-    }
-
-    const expectedWords = pages * WORDS_PER_PAGE;
-
-    const fileIds = await uploadFiles(
-      project.files,
-      apiKey
-    );
-
-    const fileInputs = fileIds.map((id) => ({
-      type: "input_file",
-      file_id: id,
-    }));
+    const model = process.env.OPENAI_MODEL || "gpt-5.6-luna";
 
     const response = await fetch(OPENAI_URL, {
       method: "POST",
-
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + apiKey },
       body: JSON.stringify({
-        model,
-
-        tools: [
-          {
-            type: "web_search",
-          },
+        model: model,
+        input: [
+          { role: "system", content: [{ type: "input_text", text: systemPrompt() }] },
+          { role: "user", content: [{ type: "input_text", text:
+            buildContext(project, problematic, providedPlan) +
+            "\n\nGénère exactement " + count + " plan(s)." +
+            "\n\nStructure attendue : Introduction générale -> Partie -> Chapitre -> Section -> Sous-section -> Conclusion générale." +
+            "\n\nLe volume demandé est de " + expectedWords + " mots pour le développement. Il sert uniquement à répartir le travail entre les chapitres." +
+            "\n\n" + (providedPlan ? "Le plan fourni par le client est prioritaire. Conserve sa logique et ses intitulés pertinents, puis complète uniquement les niveaux hiérarchiques manquants." : "") +
+            "\n\nNe fournis aucun commentaire, aucune description, aucune justification. Retourne uniquement le JSON."
+          }] }
         ],
-
         text: {
           format: {
             type: "json_schema",
-            name: "trimemo_plans_structure",
+            name: "trimemo_academic_toc",
             strict: true,
-            schema: SCHEMA,
-          },
-        },
-
-        input: [
-          {
-            role: "system",
-
-            content: [
-              {
-                type: "input_text",
-                text: buildSystemPrompt(),
-              },
-            ],
-          },
-
-          {
-            role: "user",
-
-            content: [
-              {
-                type: "input_text",
-
-                text: `
-${buildContext(project, problematic, providedPlan)}
-
-INSTRUCTIONS DE PRODUCTION :
-
-Génère exactement ${count} plan(s).
-
-${providedPlan ? `Un plan a été fourni par le client. Reprends-en fidèlement la logique et les intitulés utiles. Ne crée pas un autre plan à sa place. Structure-le uniquement pour le rendre exploitable par la rédaction.` : `Les trois plans doivent avoir des structures internes réellement variées, sans modèle fixe 2 x 2 x 2.`}
-
-La somme des volumes des chapitres
-doit être exactement de ${expectedWords} mots.
-
-Le nombre de parties doit être compris
-entre 1 et 3.
-
-Chaque chapitre peut comporter de 1 à 3 sections.
-Chaque section peut comporter de 1 à 3 sous-sections.
-Ne force jamais le même nombre de chapitres, de sections
-et de sous-sections dans les trois plans.
-La structure doit varier lorsque la logique scientifique
-du sujet le justifie. La variation doit être argumentée
-par l'approche du plan, jamais aléatoire.
-Si un plan est fourni par le client, conserve sa logique
-et transforme uniquement sa structure en JSON exploitable.
-
-Ne change pas le sujet fourni.
-
-Retourne uniquement le JSON demandé.
-`,
-              },
-
-              ...fileInputs,
-            ],
-          },
-        ],
-      }),
+            schema: SCHEMA
+          }
+        }
+      })
     });
 
+    const raw = await response.text();
     if (!response.ok) {
-      throw fail(
-        `OpenAI a refusé la génération des plans. ${await response.text()}`,
-        502
-      );
+      let detail = raw;
+      try { detail = JSON.stringify(JSON.parse(raw)); } catch {}
+      return res.status(502).json({ error: "Erreur OpenAI pendant la génération du plan.", details: detail.slice(0, 2000) });
     }
 
-    const responseData = await response.json();
+    const parsed = parseJson(extractText(JSON.parse(raw)));
+    if (!Array.isArray(parsed?.plans) || parsed.plans.length < count) throw fail("OpenAI n’a pas retourné le nombre de plans demandé.", 502);
 
-    const parsed = JSON.parse(
-      extractText(responseData)
-    );
-
-    if (
-      !Array.isArray(parsed.plans) ||
-      parsed.plans.length < count
-    ) {
-      throw fail(
-        `OpenAI devait retourner ${count} plan(s).`,
-        502
-      );
-    }
-
-    const plans = parsed.plans
-      .slice(0, count)
-      .map((plan, index) =>
-        validatePlan(
-          plan,
-          expectedWords,
-          index
-        )
-      );
-
-    return res.status(200).json({
-      plans,
+    const plans = parsed.plans.slice(0, count).map(function(plan, index) {
+      return normalizeGeneratedPlan(plan, index, expectedWords);
     });
-  } catch (error) {
-    console.error(
-      "generate-plans error",
-      error
-    );
 
+    return res.status(200).json({ plans: plans });
+  } catch (error) {
+    console.error("generate-plans error", error);
     return res.status(error.status || 500).json({
-      error:
-        error.message ||
-        "Erreur interne lors de la génération des plans.",
+      error: error.message || "Erreur interne lors de la génération des plans.",
+      details: error.details
     });
   }
 }
