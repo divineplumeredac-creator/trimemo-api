@@ -1,3 +1,4 @@
+import { requireOwner } from "../lib/owner-auth.js";
 const OPENAI_URL = "https://api.openai.com/v1/responses";
 const WORDS_PER_PAGE = 320;
 
@@ -258,6 +259,7 @@ export default async function handler(req, res) {
 
   try {
     const body = req.body || {};
+    if (body.ownerMode === true) requireOwner(req);
     const project = body.project || body.projet || body;
     const sujet = text(project.sujet || project.subject);
     const problematic = body.problematic || body.problematique || project.problematiquePersonnelle || {};
