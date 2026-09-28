@@ -59,10 +59,17 @@ function normalizeChapter(item, partNumber, index) {
   };
 }
 
-function normalizePart(item, index) {
+function normalizePart(item, index, chapterState) {
   const number = Number(item?.number) || index + 1;
   const chapters = list(item?.chapters || item?.chapitres).map(
-    (chapter, i) => normalizeChapter(chapter, number, i)
+    (chapter, i) => {
+      chapterState.value += 1;
+      return normalizeChapter(
+        { ...chapter, number: chapterState.value },
+        number,
+        i
+      );
+    }
   );
 
   return {
@@ -77,7 +84,10 @@ function normalizePart(item, index) {
 }
 
 export function normalizePlan(plan = {}) {
-  const parts = list(plan.parts || plan.parties).map(normalizePart);
+  const chapterState = { value: 0 };
+  const parts = list(plan.parts || plan.parties).map((part, index) =>
+    normalizePart(part, index, chapterState)
+  );
 
   return {
     ...plan,
