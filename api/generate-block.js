@@ -83,6 +83,9 @@ export default async function handler(req, res) {
       : Array.isArray(body.block?.structure)
         ? body.block.structure.filter(Boolean)
         : [];
+    const preceding = Array.isArray(body.preceding)
+      ? body.preceding.slice(-2)
+      : [];
 
     const targetWords = Number(
       body.targetWords ||
@@ -177,6 +180,9 @@ ${blockTitle}
 
 STRUCTURE DU BLOC :
 ${structure.length ? structure.join(" > ") : "Structure fournie dans le plan"}
+
+CONTENU DES BLOCS PRÉCÉDENTS :
+${preceding.length ? JSON.stringify(preceding) : "Aucun bloc précédent transmis."}
 
 OBJECTIF DE LONGUEUR :
 Environ ${safeWordTarget} mots.
