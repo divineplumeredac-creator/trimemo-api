@@ -68,15 +68,61 @@ function addPlan(children, plan, formatting) {
     }
   }
 }
-function addBlock(children, block, formatting) {
+function structureLevel(label) {
+  const value = text(label).toLowerCase();
+  if (value.startsWith("partie ")) return 1;
+  if (value.startsWith("chapitre ")) return 2;
+  if (value.startsWith("section ")) return 3;
+  if (value.startsWith("sous-section ") || value.startsWith("§ ")) return 4;
+  if (value.startsWith("introduction générale") || value.startsWith("conclusion générale")) return 1;
+  return 3;
+}
+
+function addBlock(children, block, formatting, previousStructure = []) {
   const structure = Array.isArray(block.structure) ? block.structure : [];
-  if (!structure.length && block.title) children.push(heading(block.title, 3, formatting));
+  let common = 0;
+  while (common < Math.min(previousStructure.length, structure.length) &&
+         previousStructure[common] === structure[common]) {
+    common += 1;
+  }
+
+  for (let index = common; index < structure.length; index += 1) {
+    const label = text(structure[index]);
+    if (!label) continue;
+    const level = structureLevel(label);
+    if (level <= 3) {
+      children.push(heading(label, level, formatting));
+    } else {
+      children.push(paragraph(label, formatting, {
+        bold: true,
+        alignment: AlignmentType.LEFT,
+        before: 120,
+      }));
+    }
+  }
+
+  if (!structure.length && block.title) {
+    children.push(heading(block.title, 3, formatting));
+  }
+
   addContent(children, block.content, formatting);
-  if (block.footnotes.length) {
-    children.push(paragraph('Notes', formatting, { bold: true, alignment: AlignmentType.LEFT }));
-    block.footnotes.forEach((note, index) => children.push(paragraph(String(index + 1) + '. ' + note, formatting, { alignment: AlignmentType.LEFT })));
+
+  const footnotes = Array.isArray(block.footnotes) ? block.footnotes : [];
+  if (footnotes.length) {
+    children.push(paragraph('Notes de bas de page', formatting, {
+      bold: true,
+      alignment: AlignmentType.LEFT,
+    }));
+    footnotes.forEach((note, index) =>
+      children.push(
+        paragraph(String(index + 1) + '. ' + note, formatting, {
+          alignment: AlignmentType.LEFT,
+        })
+      )
+    );
   }
 }
+
 function buildChildren(compiled, formatting) {
   const children = [];
   const subject = compiled.project?.sujet || compiled.project?.subject || 'Document académique';
@@ -103,7 +149,11 @@ function buildChildren(compiled, formatting) {
   children.push(new Paragraph({ children: [new PageBreak()] }));
 
   children.push(heading('Développement', 1, formatting));
-  for (const block of compiled.blocks) addBlock(children, block, formatting);
+  let previousStructure = [];
+  for (const block of compiled.blocks) {
+    addBlock(children, block, formatting, previousStructure);
+    previousStructure = Array.isArray(block.structure) ? block.structure : [];
+  }
 
   children.push(new Paragraph({ children: [new PageBreak()] }));
   children.push(heading('Bibliographie', 1, formatting));
