@@ -246,6 +246,10 @@ Utilise des références vérifiables si elles sont nécessaires.
                   wordCount: {
                     type: "integer"
                   },
+                  footnotes: {
+                    type: "array",
+                    items: { type: "string" }
+                  },
                   sources: {
                     type: "array",
                     items: {
@@ -337,6 +341,9 @@ Utilise des références vérifiables si elles sont nécessaires.
       wordCount,
       sources: Array.isArray(result.sources)
         ? result.sources
+        : [],
+      footnotes: Array.isArray(result.footnotes)
+        ? result.footnotes
         : []
     });
   } catch (error) {
