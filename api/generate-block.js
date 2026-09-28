@@ -70,8 +70,17 @@ export default async function handler(req, res) {
       "Introduction générale"
     ).trim();
 
-    const problematic = body.problematique || "";
-    const plan = body.plan || "";
+    const problematic =
+      body.problematic ||
+      body.problematique ||
+      project.problematiquePersonnelle ||
+      "";
+    const plan = body.plan || project.plan || "";
+    const structure = Array.isArray(body.structure)
+      ? body.structure.filter(Boolean)
+      : Array.isArray(body.block?.structure)
+        ? body.block.structure.filter(Boolean)
+        : [];
 
     const targetWords = Number(
       body.targetWords ||
@@ -163,6 +172,9 @@ ${typeof plan === "string"
 
 BLOC À RÉDIGER :
 ${blockTitle}
+
+STRUCTURE DU BLOC :
+${structure.length ? structure.join(" > ") : "Structure fournie dans le plan"}
 
 OBJECTIF DE LONGUEUR :
 Environ ${safeWordTarget} mots.
