@@ -1,3 +1,4 @@
+import { requireOwner } from "../lib/owner-auth.js";
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
@@ -23,6 +24,7 @@ export default async function handler(req, res) {
 
   try {
     const body = req.body || {};
+    if (body.ownerMode === true) requireOwner(req);
     const project = body.project || body;
 
     const sujet = String(
