@@ -1,3 +1,4 @@
+import { requireOwner } from "../lib/owner-auth.js";
 const OPENAI_URL = "https://api.openai.com/v1/responses";
 
 function cors(res) {
@@ -534,6 +535,7 @@ export default async function handler(req, res) {
 
   try {
     const body = req.body || {};
+    if (body.ownerMode === true) requireOwner(req);
     const project = body.project || body;
 
     const count = Number(body.count) === 1
