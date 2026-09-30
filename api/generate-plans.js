@@ -18,6 +18,18 @@ function text(value) {
   return String(value == null ? "" : value).trim();
 }
 
+function cleanStructuralTitle(value, kind, fallback) {
+  const raw = text(value);
+  if (!raw) return fallback;
+  const patterns = {
+    part: /^part(?:ie)?\s+(?:[IVXLCDM]+|\d+)\s*[.\-–—:]?\s*/i,
+    chapter: /^chap(?:itre|ter)?\s+\d+(?:\.\d+)?\s*[.\-–—:]?\s*/i,
+    section: /^section\s+\d+(?:\.\d+)?\s*[.\-–—:]?\s*/i,
+    subsection: /^sous[- ]section\s+\d+(?:\.\d+)*\s*[.\-–—:]?\s*/i
+  };
+  return raw.replace(patterns[kind], "").trim() || fallback;
+}
+
 function extractText(data) {
   if (typeof data?.output_text === "string" && data.output_text.trim()) return data.output_text.trim();
   const parts = Array.isArray(data?.output) ? data.output.flatMap(function(item) {
@@ -161,7 +173,7 @@ function normalizeGeneratedPlan(raw, index, expectedWords) {
     return {
       id: "plan-" + (index + 1) + "-part-" + partNumber,
       number: partNumber,
-      title: text(part.title) || "Partie " + partNumber,
+      title: cleanStructuralTitle(part.title, "part", "Partie " + partNumber),
       description: "",
       chapters: chapters.map(function(chapter, chapterIndex) {
         const chapterNumber = chapterIndex + 1;
@@ -171,7 +183,7 @@ function normalizeGeneratedPlan(raw, index, expectedWords) {
         return {
           id: "plan-" + (index + 1) + "-part-" + partNumber + "-chapter-" + chapterNumber,
           number: chapterNumber,
-          title: text(chapter.title) || "Chapitre " + chapterNumber,
+          title: cleanStructuralTitle(chapter.title, "chapter", "Chapitre " + chapterNumber),
           description: "",
           wordCount: 0,
           sections: sections.map(function(section, sectionIndex) {
@@ -182,13 +194,13 @@ function normalizeGeneratedPlan(raw, index, expectedWords) {
             return {
               id: "plan-" + (index + 1) + "-part-" + partNumber + "-chapter-" + chapterNumber + "-section-" + sectionNumber,
               number: sectionNumber,
-              title: text(section.title) || "Section " + sectionNumber,
+              title: cleanStructuralTitle(section.title, "section", "Section " + sectionNumber),
               description: "",
               subsections: subsections.map(function(subsection, subsectionIndex) {
                 return {
                   id: "plan-" + (index + 1) + "-part-" + partNumber + "-chapter-" + chapterNumber + "-section-" + sectionNumber + "-sub-" + (subsectionIndex + 1),
                   number: subsectionIndex + 1,
-                  title: text(subsection?.title) || "Sous-section " + (subsectionIndex + 1),
+                  title: cleanStructuralTitle(subsection?.title, "subsection", "Sous-section " + (subsectionIndex + 1)),
                   description: ""
                 };
               })
@@ -245,7 +257,8 @@ function systemPrompt() {
     "12. Les trois plans doivent proposer des angles scientifiques réellement différents lorsque trois plans sont demandés.",
     "13. Si le client fournit un plan ou des consignes structurelles, respecte leur logique.",
     "14. Ne mets pas de description, justification, commentaire ou paragraphe dans la structure.",
-    "15. Retourne uniquement le JSON demandé."
+    "15. Retourne uniquement le JSON demandé.",
+    "16. Ne préfixe jamais les titres par Partie, Chapitre, Section ou Sous-section ni par leur numéro. La numérotation est ajoutée séparément par l'application."
   ].join("\n");
 }
 
