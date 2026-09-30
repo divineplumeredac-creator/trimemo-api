@@ -2,13 +2,12 @@
 import crypto from "node:crypto";
 
 const TTL_SECONDS = 12 * 60 * 60;
-const FRONTEND_URL = "https://trimemo-frontend.vercel.app";
 
 function setCors(res: any) {
-  res.setHeader("Access-Control-Allow-Origin", FRONTEND_URL);
+  res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-  res.setHeader("Vary", "Origin");
+  res.setHeader("Cache-Control", "no-store");
 }
 
 function json(res: any, status: number, payload: unknown) {
