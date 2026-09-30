@@ -398,12 +398,6 @@ Retourne uniquement le JSON.
           process.env.OPENAI_MODEL ||
           "gpt-5.6-luna",
 
-        tools: [
-          {
-            type: "web_search",
-          },
-        ],
-
         text: {
           format: {
             type: "json_schema",
