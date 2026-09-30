@@ -72,7 +72,7 @@ function buildContext(project, problematic, providedPlan) {
 
 const subsectionSchema = {
   type: "array",
-  minItems: 2,
+  minItems: 1,
   maxItems: 3,
   items: {
     type: "object",
@@ -84,7 +84,7 @@ const subsectionSchema = {
 
 const sectionSchema = {
   type: "array",
-  minItems: 2,
+  minItems: 1,
   maxItems: 3,
   items: {
     type: "object",
@@ -99,7 +99,7 @@ const sectionSchema = {
 
 const chapterSchema = {
   type: "array",
-  minItems: 2,
+  minItems: 1,
   maxItems: 3,
   items: {
     type: "object",
@@ -168,7 +168,7 @@ function normalizeGeneratedPlan(raw, index, expectedWords) {
   const parts = rawParts.map(function(part, partIndex) {
     const partNumber = partIndex + 1;
     const chapters = Array.isArray(part?.chapters) ? part.chapters : [];
-    if (chapters.length < 2) throw fail("La partie " + partNumber + " du plan " + (index + 1) + " doit contenir au moins deux chapitres.", 502);
+    if (chapters.length < 1) throw fail("La partie " + partNumber + " du plan " + (index + 1) + " doit contenir au moins deux chapitres.", 502);
 
     return {
       id: "plan-" + (index + 1) + "-part-" + partNumber,
@@ -178,7 +178,7 @@ function normalizeGeneratedPlan(raw, index, expectedWords) {
       chapters: chapters.map(function(chapter, chapterIndex) {
         const chapterNumber = chapterIndex + 1;
         const sections = Array.isArray(chapter?.sections) ? chapter.sections : [];
-        if (sections.length < 2) throw fail("Le chapitre " + partNumber + "." + chapterNumber + " du plan " + (index + 1) + " doit contenir au moins deux sections.", 502);
+        if (sections.length < 1) throw fail("Le chapitre " + partNumber + "." + chapterNumber + " du plan " + (index + 1) + " doit contenir au moins deux sections.", 502);
 
         return {
           id: "plan-" + (index + 1) + "-part-" + partNumber + "-chapter-" + chapterNumber,
@@ -189,7 +189,7 @@ function normalizeGeneratedPlan(raw, index, expectedWords) {
           sections: sections.map(function(section, sectionIndex) {
             const sectionNumber = sectionIndex + 1;
             const subsections = Array.isArray(section?.subsections) ? section.subsections : [];
-            if (subsections.length < 2) throw fail("La section " + partNumber + "." + chapterNumber + "." + sectionNumber + " du plan " + (index + 1) + " doit contenir au moins deux sous-sections.", 502);
+            if (subsections.length < 1) throw fail("La section " + partNumber + "." + chapterNumber + "." + sectionNumber + " du plan " + (index + 1) + " doit contenir au moins deux sous-sections.", 502);
 
             return {
               id: "plan-" + (index + 1) + "-part-" + partNumber + "-chapter-" + chapterNumber + "-section-" + sectionNumber,
@@ -218,7 +218,7 @@ function normalizeGeneratedPlan(raw, index, expectedWords) {
     for (const chapter of part.chapters) chapter.wordCount = wordCounts[cursor++] || 0;
   }
 
-  const introductionWords = Math.min(900, Math.max(300, Math.round(expectedWords * 0.08)));
+  const introductionWords = Math.max(300, Math.round(expectedWords * 0.10));
   const conclusionWords = Math.min(700, Math.max(250, Math.round(expectedWords * 0.06)));
 
   return {
@@ -249,16 +249,21 @@ function systemPrompt() {
     "4. Les titres doivent être courts, précis, académiques et directement liés au sujet.",
     "5. Ne mets aucune explication dans les titres.",
     "6. Chaque plan commence par Introduction générale et se termine par Conclusion générale.",
-    "7. Chaque plan comporte 2 ou 3 PARTIES.",
-    "8. Chaque partie comporte 2 ou 3 CHAPITRES.",
-    "9. Chaque chapitre comporte 2 ou 3 SECTIONS.",
-    "10. Chaque section comporte 2 ou 3 SOUS-SECTIONS.",
-    "11. La hiérarchie doit être complète : Partie -> Chapitre -> Section -> Sous-section.",
-    "12. Les trois plans doivent proposer des angles scientifiques réellement différents lorsque trois plans sont demandés.",
-    "13. Si le client fournit un plan ou des consignes structurelles, respecte leur logique.",
-    "14. Ne mets pas de description, justification, commentaire ou paragraphe dans la structure.",
-    "15. Retourne uniquement le JSON demandé.",
-    "16. Ne préfixe jamais les titres par Partie, Chapitre, Section ou Sous-section ni par leur numéro. La numérotation est ajoutée séparément par l'application."
+    "7. Chaque plan comporte 2 ou 3 PARTIES selon le niveau et le volume.",
+    "8. Adapte la profondeur au nombre de pages : petit volume = structure courte ; grand volume = structure plus détaillée.",
+    "9. Pour 1 à 20 pages : privilégie 2 parties, 1 à 2 chapitres par partie, 1 à 2 sections par chapitre et seulement les sous-sections utiles.",
+    "10. Pour 21 à 50 pages : privilégie 2 parties, 2 chapitres par partie et 2 sections par chapitre.",
+    "11. Au-delà de 50 pages : une structure en 2 ou 3 parties peut être utilisée avec davantage de niveaux si le sujet le justifie.",
+    "12. N'ajoute jamais un niveau hiérarchique uniquement pour remplir un modèle. Supprime-le lorsqu'il provoque une répétition.",
+    "13. Chaque titre doit être directement lié au sujet, à la problématique et au domaine. Évite les titres génériques répétitifs.",
+    "14. Deux titres au même niveau ne doivent pas exprimer la même idée avec des synonymes.",
+    "15. Le niveau d'études doit influencer la profondeur et la précision.",
+    "16. Le nombre de pages doit déterminer la densité du plan. Ne produis pas un plan tiroir identique pour tous les projets.",
+    "17. Les trois plans doivent proposer des angles scientifiques réellement différents lorsque trois plans sont demandés.",
+    "18. Si le client fournit un plan ou des consignes structurelles, respecte leur logique.",
+    "19. Ne mets pas de description, justification, commentaire ou paragraphe dans la structure.",
+    "20. Retourne uniquement le JSON demandé.",
+    "21. Ne préfixe jamais les titres par Partie, Chapitre, Section ou Sous-section ni par leur numéro. La numérotation est ajoutée séparément par l'application."
   ].join("\n");
 }
 
