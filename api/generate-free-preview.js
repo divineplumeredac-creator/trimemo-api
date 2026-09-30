@@ -41,9 +41,9 @@ const schema = {
           type:"array",minItems:2,maxItems:3,
           items:{type:"object",additionalProperties:false,properties:{
             title:{type:"string"},description:{type:"string"},
-            chapters:{type:"array",minItems:2,maxItems:3,items:{type:"object",additionalProperties:false,properties:{
+            chapters:{type:"array",minItems:1,maxItems:3,items:{type:"object",additionalProperties:false,properties:{
               title:{type:"string"},description:{type:"string"},wordCount:{type:"integer"},
-              sections:{type:"array",minItems:2,maxItems:3,items:{type:"object",additionalProperties:false,properties:{
+              sections:{type:"array",minItems:1,maxItems:3,items:{type:"object",additionalProperties:false,properties:{
                 title:{type:"string"},description:{type:"string"},
                 subsections:{type:"array",minItems:1,maxItems:3,items:{type:"object",additionalProperties:false,properties:{title:{type:"string"},description:{type:"string"}},required:["title","description"]}}
               },required:["title","description","subsections"]}}
