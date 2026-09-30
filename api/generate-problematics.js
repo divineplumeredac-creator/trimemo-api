@@ -4,7 +4,7 @@ const OPENAI_URL = "https://api.openai.com/v1/responses";
 function cors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Accept");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Accept, Authorization");
 }
 
 function fail(message, status = 400) {
