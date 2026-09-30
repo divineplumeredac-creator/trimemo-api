@@ -9,6 +9,7 @@ function cors(res) {
 }
 function fail(message, status = 400) { const e = new Error(message); e.status = status; return e; }
 function text(v) { return String(v ?? "").trim(); }
+function calculateAcademicIntroductionWords(pages) { return Math.max(300, Math.round(Number(pages || 1) * WORDS_PER_PAGE * 0.10)); }
 function extractOutputText(data) {
   if (typeof data?.output_text === "string" && data.output_text.trim()) return data.output_text.trim();
   const parts = Array.isArray(data?.output) ? data.output.flatMap(x => Array.isArray(x?.content) ? x.content : []) : [];
@@ -73,6 +74,7 @@ export default async function handler(req, res) {
     if (!sujet) return res.status(400).json({error:"Le sujet est obligatoire."});
     const pages = Math.max(1, Number(project.pages || 30));
     const targetWords = pages * WORDS_PER_PAGE;
+    const introductionWords = calculateAcademicIntroductionWords(pages);
     const context = [
       "SUJET : " + sujet,
       "DOMAINE : " + (text(project.domaine || project.domain) || "Non précisé"),
@@ -80,7 +82,7 @@ export default async function handler(req, res) {
       "TYPE : " + (text(project.typeDoc || project.typeDocument || project.type) || "Mémoire"),
       "CONTEXTE : " + (text(project.contexte || project.context) || "Aucun"),
       "CONSIGNES : " + (text(project.consignes || project.instructions) || "Aucune"),
-      "VOLUME : " + pages + " pages, environ " + targetWords + " mots."
+      "VOLUME : " + pages + " pages, environ " + targetWords + " mots.\nINTRODUCTION GÉNÉRALE : environ " + introductionWords + " mots, soit 10 % du volume total."
     ].join("\n");
 
     const response = await fetch(OPENAI_URL, {
@@ -90,7 +92,7 @@ export default async function handler(req, res) {
         model: process.env.OPENAI_MODEL || "gpt-5.6-luna",
         input:[
           {role:"system",content:[{type:"input_text",text:
-            "Tu es le moteur d'aperçu gratuit de Trimémo. Génère en un seul appel une problématique, un plan détaillé et un aperçu incomplet d'introduction. Respecte strictement le sujet et les consignes fournies. N'invente aucun terrain, pays, organisation, donnée ou source. Le plan doit être cohérent avec le volume demandé. L'introduction doit contenir environ 300 mots. Retourne uniquement le JSON demandé."
+            "Tu es le moteur d'aperçu gratuit de Trimémo. Génère en un seul appel une problématique, un plan détaillé et un aperçu incomplet d'introduction. Respecte strictement le sujet et les consignes fournies. N'invente aucun terrain, pays, organisation, donnée ou source. Le plan doit être cohérent avec le volume demandé. L'introduction générale complète représente environ 10 % du volume total. Pour l'aperçu gratuit, ne rédige qu'un extrait d'environ 300 mots de cette introduction. Retourne uniquement le JSON demandé."
           }]},
           {role:"user",content:[{type:"input_text",text:context+"\n\nGénère une problématique précise, un plan structuré et une introduction d'aperçu d'environ 300 mots."}]}
         ],
@@ -105,7 +107,7 @@ export default async function handler(req, res) {
       success:true,
       problematic:result.problematic,
       plan:result.plan,
-      introduction:{...result.introduction,incomplete:true}
+      introduction:{...result.introduction,incomplete:true,previewWords:300,targetWords:introductionWords}
     });
   } catch(error) {
     console.error("FREE_PREVIEW_ERROR",error);
