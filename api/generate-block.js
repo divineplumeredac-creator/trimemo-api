@@ -206,11 +206,7 @@ Utilise des références vérifiables si elles sont nécessaires.
         },
         body: JSON.stringify({
           model: process.env.OPENAI_MODEL || "gpt-5.6-luna",
-          tools: [
-            {
-              type: "web_search"
-            }
-          ],
+          
           input: [
             {
               role: "system",
