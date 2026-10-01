@@ -1,3 +1,4 @@
+import { TRIMEMO_MASTER_ACADEMIC_RULES } from "../lib/trimemo-academic-rules.js";
 import { requireOwner } from "../lib/owner-auth.js";
 const OPENAI_URL = "https://api.openai.com/v1/responses";
 const WORDS_PER_PAGE = 320;
