@@ -99,7 +99,7 @@ const sectionSchema = {
 
 const chapterSchema = {
   type: "array",
-  minItems: 1,
+  minItems: 2,
   maxItems: 3,
   items: {
     type: "object",
