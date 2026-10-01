@@ -1,3 +1,4 @@
+import { TRIMEMO_MASTER_ACADEMIC_RULES } from "../lib/trimemo-academic-rules.js";
 import { requireOwner } from "../lib/owner-auth.js";
 const OPENAI_URL = "https://api.openai.com/v1/responses";
 
@@ -230,7 +231,7 @@ ${citationMode}
 `;
 }
 
-const SYSTEM_PROMPT = `
+const SYSTEM_PROMPT = `\n\${TRIMEMO_MASTER_ACADEMIC_RULES}\n
 Tu es le moteur de conception des problématiques académiques de Trimémo.
 
 Ta mission consiste à formuler des problématiques précises, pertinentes,
