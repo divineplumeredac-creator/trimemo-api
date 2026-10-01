@@ -285,6 +285,7 @@ Utilise des références vérifiables si elles sont nécessaires.
                   "title",
                   "content",
                   "wordCount",
+                  "footnotes",
                   "sources"
                 ]
               }
