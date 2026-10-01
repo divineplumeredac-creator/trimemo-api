@@ -1,3 +1,4 @@
+import { TRIMEMO_MASTER_ACADEMIC_RULES } from "../lib/trimemo-academic-rules.js";
 function setCors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
@@ -326,7 +327,7 @@ CONSIGNES FINALES :
               content: [
                 {
                   type: "input_text",
-                  text: systemPrompt
+                  text: systemPrompt + "\n\n" + TRIMEMO_MASTER_ACADEMIC_RULES
                 }
               ]
             },
