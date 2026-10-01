@@ -295,6 +295,7 @@ export default async function handler(req, res) {
   try {
     const body = req.body || {};
     if (body.ownerMode === true) requireOwner(req);
+
     const project = body.project || body.projet || body;
     const sujet = text(project.sujet || project.subject);
     const problematic = body.problematic || body.problematique || project.problematiquePersonnelle || {};
@@ -307,49 +308,120 @@ export default async function handler(req, res) {
 
     const model = process.env.OPENAI_MODEL || "gpt-5.6-luna";
 
-    const response = await fetch(OPENAI_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: "Bearer " + apiKey },
-      body: JSON.stringify({
-        model: model,
-        input: [
-          { role: "system", content: [{ type: "input_text", text: systemPrompt() }] },
-          { role: "user", content: [{ type: "input_text", text:
-            buildContext(project, problematic, providedPlan) +
-            "\n\nGénère exactement " + count + " plan(s)." +
-            "\n\nStructure attendue : Introduction générale -> Partie -> Chapitre -> Section -> Sous-section facultative -> Conclusion générale." +
-            "\n\nCONSIGNE CRITIQUE DE DIVERSITÉ : 2 ou 3 parties selon le sujet. Chaque partie peut avoir 2 ou 3 chapitres. Chaque chapitre a au moins 2 sections. Les nombres doivent varier naturellement à l'intérieur du plan et entre les trois plans. Ne reproduis jamais la même architecture. La structure doit suivre le sujet, la problématique, le niveau, le volume et les consignes." +
-            "\n\nLe volume demandé est de " + expectedWords + " mots pour le développement. Il sert uniquement à répartir le travail entre les chapitres." +
-            "\n\n" + (providedPlan ? "Le plan fourni par le client est prioritaire. Conserve sa logique et ses intitulés pertinents, puis complète uniquement les niveaux hiérarchiques manquants." : "") +
-            "\n\nNe fournis aucun commentaire, aucune description, aucune justification. Retourne uniquement le JSON."
-          }] }
-        ],
-        text: {
-          format: {
-            type: "json_schema",
-            name: "trimemo_academic_toc",
-            strict: true,
-            schema: SCHEMA
-          }
-        }
-      })
-    });
-
-    const raw = await response.text();
-    if (!response.ok) {
-      let detail = raw;
-      try { detail = JSON.stringify(JSON.parse(raw)); } catch {}
-      return res.status(502).json({ error: "Erreur OpenAI pendant la génération du plan.", details: detail.slice(0, 2000) });
+    function architectureSignature(plan) {
+      return (plan.parts || []).map((part) =>
+        (part.chapters || []).map((chapter) =>
+          (chapter.sections || []).map((section) => (section.subsections || []).length).join(".")
+        ).join("|")
+      ).join("/");
     }
 
-    const parsed = parseJson(extractText(JSON.parse(raw)));
-    if (!Array.isArray(parsed?.plans) || parsed.plans.length < count) throw fail("OpenAI n’a pas retourné le nombre de plans demandé.", 502);
+    function hasInternalVariation(plan) {
+      const partChapterCounts = (plan.parts || []).map((part) => (part.chapters || []).length);
+      const sectionCounts = (plan.parts || []).flatMap((part) =>
+        (part.chapters || []).map((chapter) => (chapter.sections || []).length)
+      );
+      const subsectionCounts = (plan.parts || []).flatMap((part) =>
+        (part.chapters || []).flatMap((chapter) =>
+          (chapter.sections || []).map((section) => (section.subsections || []).length)
+        )
+      );
 
-    const plans = parsed.plans.slice(0, count).map(function(plan, index) {
-      return normalizeGeneratedPlan(plan, index, expectedWords);
-    });
+      return new Set(partChapterCounts).size > 1 ||
+        new Set(sectionCounts).size > 1 ||
+        new Set(subsectionCounts).size > 1;
+    }
 
-    return res.status(200).json({ plans: plans });
+    function validateArchitecture(plans) {
+      if (count !== 3) return true;
+      if (plans.length !== 3) return false;
+
+      const signatures = plans.map(architectureSignature);
+      const uniqueSignatures = new Set(signatures).size;
+      const internalVariation = plans.every(hasInternalVariation);
+
+      return uniqueSignatures === 3 && internalVariation;
+    }
+
+    async function requestPlans(extraInstruction) {
+      const response = await fetch(OPENAI_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer " + apiKey
+        },
+        body: JSON.stringify({
+          model,
+          input: [
+            {
+              role: "system",
+              content: [{ type: "input_text", text: systemPrompt() }]
+            },
+            {
+              role: "user",
+              content: [{
+                type: "input_text",
+                text:
+                  buildContext(project, problematic, providedPlan) +
+                  "\n\nGénère exactement " + count + " plan(s)." +
+                  "\n\nStructure : Introduction générale -> Partie -> Chapitre -> Section -> Sous-section facultative -> Conclusion générale." +
+                  "\n\nCONTRAINTE STRUCTURELLE : 2 ou 3 parties selon le sujet. Chaque partie peut avoir 2 ou 3 chapitres. Chaque chapitre a au moins 2 sections. Les sous-sections sont facultatives." +
+                  "\n\nLa variation doit être naturelle à l'intérieur de chaque plan et entre les trois plans. Elle doit découler du sujet, de la problématique, du domaine, du niveau, du volume et des consignes. Ne cherche jamais une symétrie visuelle." +
+                  "\n\n" + extraInstruction +
+                  "\n\nLe volume demandé est de " + expectedWords + " mots pour le développement. Il sert uniquement à répartir le travail entre les chapitres." +
+                  "\n\n" + (providedPlan ? "Le plan fourni par le client est prioritaire. Conserve sa logique et ses intitulés pertinents, puis complète uniquement les niveaux hiérarchiques nécessaires." : "") +
+                  "\n\nNe fournis aucun commentaire, aucune description, aucune justification. Retourne uniquement le JSON."
+              }]
+            }
+          ],
+          text: {
+            format: {
+              type: "json_schema",
+              name: "trimemo_academic_toc",
+              strict: true,
+              schema: SCHEMA
+            }
+          }
+        })
+      });
+
+      const raw = await response.text();
+      if (!response.ok) {
+        let detail = raw;
+        try { detail = JSON.stringify(JSON.parse(raw)); } catch {}
+        throw fail("Erreur OpenAI pendant la génération du plan.", 502);
+      }
+
+      const parsed = parseJson(extractText(JSON.parse(raw)));
+      if (!Array.isArray(parsed?.plans) || parsed.plans.length < count) {
+        throw fail("OpenAI n’a pas retourné le nombre de plans demandé.", 502);
+      }
+
+      return parsed.plans.slice(0, count).map((plan, index) =>
+        normalizeGeneratedPlan(plan, index, expectedWords)
+      );
+    }
+
+    let plans = await requestPlans(
+      count === 3
+        ? "Les trois architectures doivent être distinctes. Le plan 1, le plan 2 et le plan 3 doivent chacun être construits selon la logique propre de leur angle. Évite toute répétition de la même distribution numérique."
+        : "Construis une architecture adaptée au contenu réel, sans symétrie artificielle."
+    );
+
+    if (!validateArchitecture(plans)) {
+      plans = await requestPlans(
+        "ATTENTION : la première proposition était trop mécanique. Recommence entièrement. Pour chaque plan, change réellement la distribution des chapitres et/ou des sections lorsque le contenu le justifie. À l'intérieur de chaque plan, évite que toutes les parties et tous les chapitres aient exactement la même profondeur. Les différences doivent rester scientifiquement justifiées, jamais décoratives."
+      );
+    }
+
+    if (!validateArchitecture(plans)) {
+      throw fail(
+        "Les plans générés restent trop symétriques. Une nouvelle génération est nécessaire pour obtenir des architectures réellement distinctes.",
+        502
+      );
+    }
+
+    return res.status(200).json({ plans });
   } catch (error) {
     console.error("generate-plans error", error);
     return res.status(error.status || 500).json({
