@@ -371,3 +371,4 @@ Utilise des références vérifiables si elles sont nécessaires.
       error: error.message || "Erreur interne du serveur."
     });
   }
+}
