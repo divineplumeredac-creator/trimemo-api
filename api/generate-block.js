@@ -206,7 +206,7 @@ Utilise des références vérifiables si elles sont nécessaires.
         },
         body: JSON.stringify({
           model: process.env.OPENAI_MODEL || "gpt-5.6-luna",
-          
+          max_output_tokens: 5000,
           input: [
             {
               role: "system",
@@ -297,9 +297,15 @@ Utilise des références vérifiables si elles sont nécessaires.
     const rawText = await response.text();
 
     if (!response.ok) {
-      return res.status(response.status).json({
+      let details = rawText.slice(0, 2000);
+      try {
+        const parsedError = JSON.parse(rawText);
+        details = parsedError?.error?.message || parsedError?.message || details;
+      } catch {}
+      console.error("[Trimémo] OpenAI block error", response.status, details);
+      return res.status(response.status >= 500 ? 502 : response.status).json({
         error: "Erreur OpenAI lors de la rédaction du bloc.",
-        details: rawText.slice(0, 1000)
+        details
       });
     }
 
@@ -309,6 +315,7 @@ Utilise des références vérifiables si elles sont nécessaires.
       const data = JSON.parse(rawText);
 
       if (data?.status === "incomplete") {
+        console.error("[Trimémo] OpenAI incomplete block response", data?.incomplete_details);
         return res.status(502).json({
           error: "La rédaction a été interrompue avant la fin.",
           details: data?.incomplete_details?.reason || "Réponse OpenAI incomplète."
