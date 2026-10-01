@@ -1,3 +1,4 @@
+import { TRIMEMO_MASTER_ACADEMIC_RULES } from "../lib/trimemo-academic-rules.js";
 import { requireOwner } from "../lib/owner-auth.js";
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -144,6 +145,8 @@ Le bloc doit être original, cohérent et directement exploitable
 dans un travail académique.
 `;
 
+    const fullSystemPrompt = systemPrompt + "\n\n" + TRIMEMO_MASTER_ACADEMIC_RULES;
+
     const userPrompt = `
 DONNÉES DU PROJET
 
@@ -213,7 +216,7 @@ Utilise des références vérifiables si elles sont nécessaires.
               content: [
                 {
                   type: "input_text",
-                  text: systemPrompt
+                  text: fullSystemPrompt
                 }
               ]
             },
