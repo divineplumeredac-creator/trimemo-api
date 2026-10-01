@@ -231,7 +231,7 @@ ${citationMode}
 `;
 }
 
-const SYSTEM_PROMPT = `\n\${TRIMEMO_MASTER_ACADEMIC_RULES}\n
+const SYSTEM_PROMPT = `${TRIMEMO_MASTER_ACADEMIC_RULES}\n
 Tu es le moteur de conception des problématiques académiques de Trimémo.
 
 Ta mission consiste à formuler des problématiques précises, pertinentes,
