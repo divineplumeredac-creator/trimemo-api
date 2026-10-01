@@ -41,7 +41,12 @@ function paragraph(value, formatting, options = {}) {
   });
 }
 function heading(value, level, formatting) {
-  const size = level === 1 ? formatting.partSize : level === 2 ? formatting.chapterSize : formatting.sectionSize;
+  const size =
+    level === 1 ? formatting.partSize :
+    level === 2 ? formatting.chapterSize :
+    level === 3 ? formatting.sectionSize :
+    level === 4 ? Math.max(11, formatting.sectionSize - 1) :
+    Math.max(10, formatting.sectionSize - 2);
   return new Paragraph({
     heading: level === 1 ? HeadingLevel.HEADING_1 : level === 2 ? HeadingLevel.HEADING_2 : HeadingLevel.HEADING_3,
     keepNext: true,
@@ -62,7 +67,14 @@ function addPlan(children, plan, formatting) {
       for (const section of chapter.sections || []) {
         children.push(heading(titleWithNumber(section.number, section.title), 3, formatting));
         for (const subsection of section.subsections || []) {
-          children.push(paragraph(titleWithNumber(subsection.number, subsection.title), formatting, { bold: true, alignment: AlignmentType.LEFT }));
+          children.push(heading(titleWithNumber(subsection.number, subsection.title), 4, formatting));
+          for (const internal of subsection.internalTitles || []) {
+            children.push(heading(
+              titleWithNumber(internal.number, internal.title),
+              5,
+              formatting
+            ));
+          }
         }
       }
     }
@@ -74,6 +86,7 @@ function structureLevel(label) {
   if (value.startsWith("chapitre ")) return 2;
   if (value.startsWith("section ")) return 3;
   if (value.startsWith("sous-section ") || value.startsWith("§ ")) return 4;
+  if (value.startsWith("titre interne ")) return 5;
   if (value.startsWith("introduction générale") || value.startsWith("conclusion générale")) return 1;
   return 3;
 }
@@ -90,7 +103,7 @@ function addBlock(children, block, formatting, previousStructure = []) {
     const label = text(structure[index]);
     if (!label) continue;
     const level = structureLevel(label);
-    if (level <= 3) {
+    if (level <= 5) {
       children.push(heading(label, level, formatting));
     } else {
       children.push(paragraph(label, formatting, {
