@@ -41,11 +41,11 @@ const schema = {
           type:"array",minItems:2,maxItems:3,
           items:{type:"object",additionalProperties:false,properties:{
             title:{type:"string"},description:{type:"string"},
-            chapters:{type:"array",minItems:1,maxItems:3,items:{type:"object",additionalProperties:false,properties:{
+            chapters:{type:"array",minItems:2,maxItems:3,items:{type:"object",additionalProperties:false,properties:{
               title:{type:"string"},description:{type:"string"},wordCount:{type:"integer"},
-              sections:{type:"array",minItems:1,maxItems:3,items:{type:"object",additionalProperties:false,properties:{
+              sections:{type:"array",minItems:2,maxItems:3,items:{type:"object",additionalProperties:false,properties:{
                 title:{type:"string"},description:{type:"string"},
-                subsections:{type:"array",minItems:1,maxItems:3,items:{type:"object",additionalProperties:false,properties:{title:{type:"string"},description:{type:"string"}},required:["title","description"]}}
+                subsections:{type:"array",minItems:0,maxItems:3,items:{type:"object",additionalProperties:false,properties:{title:{type:"string"},description:{type:"string"}},required:["title","description"]}}
               },required:["title","description","subsections"]}}
             },required:["title","description","wordCount","sections"]}}
           },required:["title","description","chapters"]}
@@ -92,7 +92,14 @@ export default async function handler(req, res) {
         model: process.env.OPENAI_MODEL || "gpt-5.6-luna",
         input:[
           {role:"system",content:[{type:"input_text",text:
-            "Tu es le moteur d'aperçu gratuit de Trimémo. Génère en un seul appel une problématique, un plan détaillé et un aperçu incomplet d'introduction. Respecte strictement le sujet et les consignes fournies. N'invente aucun terrain, pays, organisation, donnée ou source. Le plan doit être cohérent avec le volume demandé. L'introduction générale complète représente environ 10 % du volume total. Pour l'aperçu gratuit, ne rédige qu'un extrait d'environ 300 mots de cette introduction. Retourne uniquement le JSON demandé."
+            "Tu es le moteur d'aperçu gratuit de Trimémo. Génère en un seul appel une problématique, un plan détaillé et un aperçu incomplet d'introduction. Respecte strictement le sujet et les consignes fournies. N'invente aucun terrain, pays, organisation, donnée ou source. Le plan doit être cohérent avec le volume demandé. L'introduction générale complète représente environ 10 % du volume total.
+Le plan doit comporter 2 ou 3 parties selon le sujet.
+Chaque partie comporte 2 ou 3 chapitres, sans obligation d'en avoir 3.
+Chaque chapitre comporte au moins 2 sections.
+Les sous-sections sont facultatives.
+La structure doit varier naturellement à l'intérieur du plan : ne donne pas le même nombre de chapitres à toutes les parties ni le même nombre de sections à tous les chapitres lorsque le contenu ne le justifie pas.
+La variation doit découler du sujet, de la problématique, du niveau, du volume et des consignes.
+N'ajoute aucun niveau uniquement pour créer une symétrie visuelle. Pour l'aperçu gratuit, ne rédige qu'un extrait d'environ 300 mots de cette introduction. Retourne uniquement le JSON demandé."
           }]},
           {role:"user",content:[{type:"input_text",text:context+"\n\nGénère une problématique précise, un plan structuré et une introduction d'aperçu d'environ 300 mots."}]}
         ],
