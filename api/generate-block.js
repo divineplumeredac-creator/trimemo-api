@@ -128,7 +128,7 @@ INSTRUCTIONS SPÉCIFIQUES DU BLOC :
 14. Évite les clichés rédactionnels et les formulations artificielles.
 15. Évite les répétitions de connecteurs.
 16. Évite les phrases trop longues et les constructions complexes.
-17. La limite recommandée est de 28 mots par phrase.
+17. La limite recommandée est de 20 mots par phrase.
 18. Une phrase légèrement plus longue ne doit pas bloquer la génération.
 19. N'utilise pas systématiquement « en effet », « de plus » ou « cependant ».
 20. Évite l'utilisation excessive des adverbes en « -ment ».
@@ -308,18 +308,36 @@ Utilise des références vérifiables si elles sont nécessaires.
     try {
       const data = JSON.parse(rawText);
 
+      if (data?.status === "incomplete") {
+        return res.status(502).json({
+          error: "La rédaction a été interrompue avant la fin.",
+          details: data?.incomplete_details?.reason || "Réponse OpenAI incomplète."
+        });
+      }
+
       const outputText =
-        data.output_text ||
-        data.output
-          ?.flatMap((item) => item.content || [])
-          ?.map((item) => item.text || "")
-          ?.join("") ||
-        "";
+        typeof data?.output_text === "string"
+          ? data.output_text.trim()
+          : Array.isArray(data?.output)
+            ? data.output
+                .flatMap((item) => Array.isArray(item?.content) ? item.content : [])
+                .filter((item) => item?.type === "output_text" && typeof item?.text === "string")
+                .map((item) => item.text)
+                .join("")
+                .trim()
+            : "";
+
+      if (!outputText) {
+        return res.status(502).json({
+          error: "OpenAI n'a retourné aucun contenu exploitable pour ce bloc."
+        });
+      }
 
       result = JSON.parse(outputText);
-    } catch {
+    } catch (error) {
       return res.status(502).json({
-        error: "La réponse OpenAI n'a pas pu être interprétée."
+        error: "La réponse OpenAI n'a pas pu être interprétée.",
+        details: error instanceof Error ? error.message : "JSON invalide."
       });
     }
 
