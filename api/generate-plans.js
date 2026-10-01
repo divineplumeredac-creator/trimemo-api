@@ -84,7 +84,7 @@ const subsectionSchema = {
 
 const sectionSchema = {
   type: "array",
-  minItems: 1,
+  minItems: 2,
   maxItems: 3,
   items: {
     type: "object",
@@ -260,6 +260,15 @@ function systemPrompt() {
     "15. Le niveau d'études doit influencer la profondeur et la précision.",
     "16. Le nombre de pages doit déterminer la densité du plan. Ne produis pas un plan tiroir identique pour tous les projets.",
     "17. Les trois plans doivent proposer des angles scientifiques réellement différents lorsque trois plans sont demandés.",
+    "18. Dans un même plan, varie naturellement la densité de la structure : les parties, chapitres et sections ne doivent pas tous avoir le même nombre d'éléments.",
+    "19. Une partie peut avoir 2 ou 3 chapitres. Il n'est jamais obligatoire d'en avoir 3.",
+    "20. Un chapitre doit avoir au moins 2 sections, mais peut en avoir 3 ou davantage si le sujet le justifie.",
+    "21. Les sous-sections sont facultatives et ne doivent apparaître que lorsqu'elles apportent une vraie distinction scientifique.",
+    "22. Les trois plans doivent aussi varier entre eux. Leur architecture doit être différente, pas seulement leurs titres.",
+    "23. Ne reproduis jamais mécaniquement la même matrice numérique dans les trois plans.",
+    "24. La variation doit découler du sujet choisi, de la problématique, du domaine, du niveau, du volume et des consignes.",
+    "25. N'ajoute jamais un chapitre, une section ou une sous-section uniquement pour obtenir une symétrie visuelle.",
+    "26. Si deux structures sont également cohérentes, privilégie celle qui évite la répétition et la symétrie artificielle.",
     "18. Les trois plans ne doivent surtout pas avoir la même architecture numérique.",
     "19. L'asymétrie est normale : une partie peut avoir 1 chapitre et une autre 2 ou 3.",
     "20. Une section peut avoir des sous-sections tandis qu'une autre section n'en a pas.",
@@ -309,7 +318,7 @@ export default async function handler(req, res) {
             buildContext(project, problematic, providedPlan) +
             "\n\nGénère exactement " + count + " plan(s)." +
             "\n\nStructure attendue : Introduction générale -> Partie -> Chapitre -> Section -> Sous-section facultative -> Conclusion générale." +
-            "\n\nCONSIGNE CRITIQUE DE DIVERSITÉ : Les trois plans doivent être réellement différents dans leur architecture. Ne reproduis pas trois fois la même matrice numérique. Pour chaque plan, décide séparément du nombre de chapitres par partie, du nombre de sections par chapitre et de la nécessité des sous-sections. La structure doit suivre les idées et la problématique, jamais une symétrie visuelle." +
+            "\n\nCONSIGNE CRITIQUE DE DIVERSITÉ : 2 ou 3 parties selon le sujet. Chaque partie peut avoir 2 ou 3 chapitres. Chaque chapitre a au moins 2 sections. Les nombres doivent varier naturellement à l'intérieur du plan et entre les trois plans. Ne reproduis jamais la même architecture. La structure doit suivre le sujet, la problématique, le niveau, le volume et les consignes." +
             "\n\nLe volume demandé est de " + expectedWords + " mots pour le développement. Il sert uniquement à répartir le travail entre les chapitres." +
             "\n\n" + (providedPlan ? "Le plan fourni par le client est prioritaire. Conserve sa logique et ses intitulés pertinents, puis complète uniquement les niveaux hiérarchiques manquants." : "") +
             "\n\nNe fournis aucun commentaire, aucune description, aucune justification. Retourne uniquement le JSON."
