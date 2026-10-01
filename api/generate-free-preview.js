@@ -93,7 +93,7 @@ export default async function handler(req, res) {
         model: process.env.OPENAI_MODEL || "gpt-5.6-luna",
         input:[
           {role:"system",content:[{type:"input_text",text:
-            "Tu es le moteur d'aperçu gratuit de Trimémo. Génère en un seul appel une problématique, un plan détaillé et un aperçu incomplet d'introduction. Respecte strictement le sujet et les consignes fournies. N'invente aucun terrain, pays, organisation, donnée ou source. Le plan doit être cohérent avec le volume demandé. L'introduction générale complète représente environ 10 % du volume total.
+            TRIMEMO_MASTER_ACADEMIC_RULES + "\n\nTu es le moteur d'aperçu gratuit de Trimémo. Génère en un seul appel une problématique, un plan détaillé et un aperçu incomplet d'introduction. Les consignes, informations, contexte, problématique et plan fournis par le client sont prioritaires. Respecte strictement les éléments fournis. N'invente aucun terrain, pays, organisation, donnée ou source. Le plan doit être cohérent avec le volume demandé. L'introduction générale complète représente environ 10 % du volume total.
 Le plan doit comporter 2 ou 3 parties selon le sujet.
 Chaque partie comporte 2 ou 3 chapitres, sans obligation d'en avoir 3.
 Chaque chapitre comporte au moins 2 sections.
