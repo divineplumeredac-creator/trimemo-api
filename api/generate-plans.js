@@ -72,7 +72,7 @@ function buildContext(project, problematic, providedPlan) {
 
 const subsectionSchema = {
   type: "array",
-  minItems: 1,
+  minItems: 0,
   maxItems: 3,
   items: {
     type: "object",
@@ -189,7 +189,7 @@ function normalizeGeneratedPlan(raw, index, expectedWords) {
           sections: sections.map(function(section, sectionIndex) {
             const sectionNumber = sectionIndex + 1;
             const subsections = Array.isArray(section?.subsections) ? section.subsections : [];
-            if (subsections.length < 1) throw fail("La section " + partNumber + "." + chapterNumber + "." + sectionNumber + " du plan " + (index + 1) + " doit contenir au moins deux sous-sections.", 502);
+            if (!Array.isArray(subsections)) throw fail("Structure de section invalide dans le plan " + (index + 1) + ".", 502);
 
             return {
               id: "plan-" + (index + 1) + "-part-" + partNumber + "-chapter-" + chapterNumber + "-section-" + sectionNumber,
@@ -260,6 +260,14 @@ function systemPrompt() {
     "15. Le niveau d'études doit influencer la profondeur et la précision.",
     "16. Le nombre de pages doit déterminer la densité du plan. Ne produis pas un plan tiroir identique pour tous les projets.",
     "17. Les trois plans doivent proposer des angles scientifiques réellement différents lorsque trois plans sont demandés.",
+    "18. Les trois plans ne doivent surtout pas avoir la même architecture numérique.",
+    "19. L'asymétrie est normale : une partie peut avoir 1 chapitre et une autre 2 ou 3.",
+    "20. Une section peut avoir des sous-sections tandis qu'une autre section n'en a pas.",
+    "21. Le nombre de chapitres, sections et sous-sections doit être déterminé par le contenu scientifique, pas par une grille fixe.",
+    "22. Évite absolument la matrice mécanique 2 parties × 2 chapitres × 2 sections × 2 sous-sections répétée dans les trois plans.",
+    "23. Pour trois plans, varie réellement la logique de construction lorsque le sujet le permet.",
+    "24. Une différence de titre ne suffit pas : les niveaux et leur densité doivent aussi varier naturellement.",
+    "25. Ne crée jamais une sous-section uniquement pour équilibrer visuellement une autre section.",
     "18. Si le client fournit un plan ou des consignes structurelles, respecte leur logique.",
     "19. Ne mets pas de description, justification, commentaire ou paragraphe dans la structure.",
     "20. Retourne uniquement le JSON demandé.",
@@ -300,7 +308,8 @@ export default async function handler(req, res) {
           { role: "user", content: [{ type: "input_text", text:
             buildContext(project, problematic, providedPlan) +
             "\n\nGénère exactement " + count + " plan(s)." +
-            "\n\nStructure attendue : Introduction générale -> Partie -> Chapitre -> Section -> Sous-section -> Conclusion générale." +
+            "\n\nStructure attendue : Introduction générale -> Partie -> Chapitre -> Section -> Sous-section facultative -> Conclusion générale." +
+            "\n\nCONSIGNE CRITIQUE DE DIVERSITÉ : Les trois plans doivent être réellement différents dans leur architecture. Ne reproduis pas trois fois la même matrice numérique. Pour chaque plan, décide séparément du nombre de chapitres par partie, du nombre de sections par chapitre et de la nécessité des sous-sections. La structure doit suivre les idées et la problématique, jamais une symétrie visuelle." +
             "\n\nLe volume demandé est de " + expectedWords + " mots pour le développement. Il sert uniquement à répartir le travail entre les chapitres." +
             "\n\n" + (providedPlan ? "Le plan fourni par le client est prioritaire. Conserve sa logique et ses intitulés pertinents, puis complète uniquement les niveaux hiérarchiques manquants." : "") +
             "\n\nNe fournis aucun commentaire, aucune description, aucune justification. Retourne uniquement le JSON."
