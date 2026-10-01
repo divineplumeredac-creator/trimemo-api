@@ -71,6 +71,18 @@ function buildContext(project, problematic, providedPlan) {
   ].join("\n\n");
 }
 
+const internalTitleSchema = {
+  type: "array",
+  minItems: 0,
+  maxItems: 4,
+  items: {
+    type: "object",
+    additionalProperties: false,
+    properties: { title: { type: "string" } },
+    required: ["title"]
+  }
+};
+
 const subsectionSchema = {
   type: "array",
   minItems: 0,
@@ -78,8 +90,11 @@ const subsectionSchema = {
   items: {
     type: "object",
     additionalProperties: false,
-    properties: { title: { type: "string" } },
-    required: ["title"]
+    properties: {
+      title: { type: "string" },
+      internalTitles: internalTitleSchema
+    },
+    required: ["title", "internalTitles"]
   }
 };
 
@@ -202,7 +217,14 @@ function normalizeGeneratedPlan(raw, index, expectedWords) {
                   id: "plan-" + (index + 1) + "-part-" + partNumber + "-chapter-" + chapterNumber + "-section-" + sectionNumber + "-sub-" + (subsectionIndex + 1),
                   number: subsectionIndex + 1,
                   title: cleanStructuralTitle(subsection?.title, "subsection", "Sous-section " + (subsectionIndex + 1)),
-                  description: ""
+                  description: "",
+                  internalTitles: (Array.isArray(subsection?.internalTitles) ? subsection.internalTitles : []).map(function(item, internalIndex) {
+                    return {
+                      id: "plan-" + (index + 1) + "-part-" + partNumber + "-chapter-" + chapterNumber + "-section-" + sectionNumber + "-sub-" + (subsectionIndex + 1) + "-internal-" + (internalIndex + 1),
+                      number: internalIndex + 1,
+                      title: text(item?.title) || "Titre interne " + (internalIndex + 1)
+                    };
+                  })
                 };
               })
             };
