@@ -168,7 +168,7 @@ function normalizeGeneratedPlan(raw, index, expectedWords) {
   const parts = rawParts.map(function(part, partIndex) {
     const partNumber = partIndex + 1;
     const chapters = Array.isArray(part?.chapters) ? part.chapters : [];
-    if (chapters.length < 1) throw fail("La partie " + partNumber + " du plan " + (index + 1) + " doit contenir au moins deux chapitres.", 502);
+    if (chapters.length < 2) throw fail("La partie " + partNumber + " du plan " + (index + 1) + " doit contenir au moins deux chapitres.", 502);
 
     return {
       id: "plan-" + (index + 1) + "-part-" + partNumber,
@@ -178,7 +178,7 @@ function normalizeGeneratedPlan(raw, index, expectedWords) {
       chapters: chapters.map(function(chapter, chapterIndex) {
         const chapterNumber = chapterIndex + 1;
         const sections = Array.isArray(chapter?.sections) ? chapter.sections : [];
-        if (sections.length < 1) throw fail("Le chapitre " + partNumber + "." + chapterNumber + " du plan " + (index + 1) + " doit contenir au moins deux sections.", 502);
+        if (sections.length < 2) throw fail("Le chapitre " + partNumber + "." + chapterNumber + " du plan " + (index + 1) + " doit contenir au moins deux sections.", 502);
 
         return {
           id: "plan-" + (index + 1) + "-part-" + partNumber + "-chapter-" + chapterNumber,
