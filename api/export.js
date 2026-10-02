@@ -6,6 +6,7 @@ import {
   HeadingLevel,
   AlignmentType,
   PageBreak,
+  TableOfContents,
   Footer,
   PageNumber,
 } from 'docx';
@@ -48,12 +49,75 @@ function heading(value, level, formatting) {
     level === 3 ? formatting.sectionSize :
     level === 4 ? Math.max(11, formatting.sectionSize - 1) :
     Math.max(10, formatting.sectionSize - 2);
+
+  const headingLevels = {
+    1: HeadingLevel.HEADING_1,
+    2: HeadingLevel.HEADING_2,
+    3: HeadingLevel.HEADING_3,
+    4: HeadingLevel.HEADING_4,
+    5: HeadingLevel.HEADING_5,
+  };
+
   return new Paragraph({
-    heading: level === 1 ? HeadingLevel.HEADING_1 : level === 2 ? HeadingLevel.HEADING_2 : HeadingLevel.HEADING_3,
+    heading: headingLevels[level] || HeadingLevel.HEADING_3,
     keepNext: true,
     spacing: { before: 240, after: 120, line: Math.round(formatting.lineSpacing * 240) },
     children: [run(value, formatting, { bold: true, size })],
   });
+}
+
+function roman(number) {
+  const values = [[10,"X"],[9,"IX"],[5,"V"],[4,"IV"],[1,"I"]];
+  let n = Number(number) || 1;
+  let out = "";
+  for (const [value, symbol] of values) {
+    while (n >= value) { out += symbol; n -= value; }
+  }
+  return out;
+}
+
+function partTitle(part) {
+  return "PARTIE " + roman(part.number) + " : " + text(part.title);
+}
+
+function chapterTitle(chapter) {
+  return "CHAPITRE " + chapter.number + " : " + text(chapter.title);
+}
+
+function sectionTitle(chapter, section) {
+  return "SECTION " + chapter.number + "." + section.number + " : " + text(section.title);
+}
+
+function subsectionTitle(chapter, section, subsection) {
+  return "Sous-section " + chapter.number + "." + section.number + "." + subsection.number + " : " + text(subsection.title);
+}
+
+function addTableOfContents(children, plan, formatting) {
+  children.push(heading("Table des matières", 1, formatting));
+  children.push(paragraph("Introduction générale", formatting, { alignment: AlignmentType.LEFT, bold: true, after: 100 }));
+
+  for (const part of plan.parts || []) {
+    children.push(paragraph(partTitle(part), formatting, { alignment: AlignmentType.LEFT, bold: true, before: 120, after: 80 }));
+    for (const chapter of part.chapters || []) {
+      children.push(paragraph(chapterTitle(chapter), formatting, { alignment: AlignmentType.LEFT, bold: true, before: 80, after: 60 }));
+      for (const section of chapter.sections || []) {
+        children.push(paragraph(sectionTitle(chapter, section), formatting, { alignment: AlignmentType.LEFT, before: 40, after: 40 }));
+        for (const subsection of section.subsections || []) {
+          children.push(paragraph(subsectionTitle(chapter, section, subsection), formatting, { alignment: AlignmentType.LEFT, before: 20, after: 30 }));
+          for (const internal of subsection.internalTitles || []) {
+            children.push(paragraph(
+              "Titre interne " + chapter.number + "." + section.number + "." + subsection.number + "." + internal.number + " : " + text(internal.title),
+              formatting,
+              { alignment: AlignmentType.LEFT, before: 10, after: 20 }
+            ));
+          }
+        }
+      }
+    }
+  }
+
+  children.push(paragraph("Conclusion générale", formatting, { alignment: AlignmentType.LEFT, bold: true, before: 120, after: 80 }));
+  children.push(paragraph("Bibliographie", formatting, { alignment: AlignmentType.LEFT, bold: true, after: 80 }));
 }
 function addContent(children, content, formatting, options = {}) {
   for (const line of text(content).split(/\r?\n/).map((v) => v.trim()).filter(Boolean)) {
@@ -62,16 +126,16 @@ function addContent(children, content, formatting, options = {}) {
 }
 function addPlan(children, plan, formatting) {
   for (const part of plan.parts || []) {
-    children.push(heading(titleWithNumber(part.number, part.title), 1, formatting));
+    children.push(heading(partTitle(part), 1, formatting));
     for (const chapter of part.chapters || []) {
-      children.push(heading(titleWithNumber(chapter.number, chapter.title), 2, formatting));
+      children.push(heading(chapterTitle(chapter), 2, formatting));
       for (const section of chapter.sections || []) {
-        children.push(heading(titleWithNumber(section.number, section.title), 3, formatting));
+        children.push(heading(sectionTitle(chapter, section), 3, formatting));
         for (const subsection of section.subsections || []) {
-          children.push(heading(titleWithNumber(subsection.number, subsection.title), 4, formatting));
+          children.push(heading(subsectionTitle(chapter, section, subsection), 4, formatting));
           for (const internal of subsection.internalTitles || []) {
             children.push(heading(
-              titleWithNumber(internal.number, internal.title),
+              "Titre interne " + chapter.number + "." + section.number + "." + subsection.number + "." + internal.number + " : " + text(internal.title),
               5,
               formatting
             ));
@@ -150,6 +214,8 @@ function buildChildren(compiled, formatting) {
     alignment: AlignmentType.CENTER,
     children: [run('Document académique généré avec Trimémo', formatting, { italics: true, size: 11 })],
   }));
+  children.push(new Paragraph({ children: [new PageBreak()] }));
+  addTableOfContents(children, compiled.plan, formatting);
   children.push(new Paragraph({ children: [new PageBreak()] }));
 
   children.push(heading('Problématique', 1, formatting));
