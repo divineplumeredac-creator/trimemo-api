@@ -2,7 +2,7 @@ import { TRIMEMO_MASTER_ACADEMIC_RULES } from "../lib/trimemo-academic-rules.js"
 function setCors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Accept, Authorization");
 }
 
 function normalizeText(value) {
@@ -198,7 +198,7 @@ export default async function handler(req, res) {
           : 300,
         200
       ),
-      500
+      300
     );
 
     const systemPrompt = `
