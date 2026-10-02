@@ -5,7 +5,7 @@ const WORDS_PER_PAGE = 320;
 function cors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Accept, Authorization");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Accept, Authorization, X-Trimemo-Premium-Token");
   res.setHeader("Access-Control-Max-Age", "86400");
   res.setHeader("Cache-Control", "no-store");
 }
@@ -27,38 +27,85 @@ function parseJson(value) {
   }
 }
 const schema = {
-  type: "object", additionalProperties: false,
+  type: "object",
+  additionalProperties: false,
   properties: {
     problematic: {
       type: "object", additionalProperties: false,
-      properties: { id:{type:"string"}, title:{type:"string"}, question:{type:"string"}, rationale:{type:"string"}, angle:{type:"string"} },
+      properties: {
+        id:{type:"string"}, title:{type:"string"}, question:{type:"string"},
+        rationale:{type:"string"}, angle:{type:"string"}
+      },
       required:["id","title","question","rationale","angle"]
     },
     plan: {
       type:"object", additionalProperties:false,
       properties:{
-        id:{type:"string"}, title:{type:"string"}, description:{type:"string"}, approach:{type:"string"}, totalWords:{type:"integer"},
-        introductionGeneral:{type:"object",additionalProperties:false,properties:{title:{type:"string"},description:{type:"string"},wordCount:{type:"integer"}},required:["title","description","wordCount"]},
-        parts:{
-          type:"array",minItems:2,maxItems:3,
-          items:{type:"object",additionalProperties:false,properties:{
-            title:{type:"string"},description:{type:"string"},
-            chapters:{type:"array",minItems:2,maxItems:3,items:{type:"object",additionalProperties:false,properties:{
-              title:{type:"string"},description:{type:"string"},wordCount:{type:"integer"},
-              sections:{type:"array",minItems:2,maxItems:3,items:{type:"object",additionalProperties:false,properties:{
-                title:{type:"string"},description:{type:"string"},
-                subsections:{type:"array",minItems:0,maxItems:3,items:{type:"object",additionalProperties:false,properties:{title:{type:"string"},description:{type:"string"},internalTitles:{type:"array",minItems:0,maxItems:4,items:{type:"object",additionalProperties:false,properties:{title:{type:"string"}},required:["title"]}}},required:["title","description","internalTitles"]}}
-              },required:["title","description","subsections"]}}
-            },required:["title","description","wordCount","sections"]}}
-          },required:["title","description","chapters"]}
+        id:{type:"string"}, title:{type:"string"}, description:{type:"string"},
+        approach:{type:"string"}, totalWords:{type:"integer"},
+        introductionGeneral:{
+          type:"object",additionalProperties:false,
+          properties:{title:{type:"string"},description:{type:"string"},wordCount:{type:"integer"}},
+          required:["title","description","wordCount"]
         },
-        conclusionGeneral:{type:"object",additionalProperties:false,properties:{title:{type:"string"},description:{type:"string"},wordCount:{type:"integer"}},required:["title","description","wordCount"]},
-        introduction:{type:"object",additionalProperties:false,properties:{title:{type:"string"},description:{type:"string"},wordCount:{type:"integer"}},required:["title","description","wordCount"]},
-        conclusion:{type:"object",additionalProperties:false,properties:{title:{type:"string"},description:{type:"string"},wordCount:{type:"integer"}},required:["title","description","wordCount"]}
+        parts:{
+          type:"array",
+          items:{type:"object",additionalProperties:false,
+            properties:{
+              title:{type:"string"},description:{type:"string"},
+              chapters:{
+                type:"array",
+                items:{type:"object",additionalProperties:false,
+                  properties:{
+                    title:{type:"string"},description:{type:"string"},wordCount:{type:"integer"},
+                    sections:{
+                      type:"array",
+                      items:{type:"object",additionalProperties:false,
+                        properties:{
+                          title:{type:"string"},description:{type:"string"},
+                          subsections:{
+                            type:"array",
+                            items:{type:"object",additionalProperties:false,
+                              properties:{
+                                title:{type:"string"},description:{type:"string"},
+                                internalTitles:{
+                                  type:"array",
+                                  items:{type:"object",additionalProperties:false,
+                                    properties:{title:{type:"string"}},
+                                    required:["title"]
+                                  }
+                                }
+                              },
+                              required:["title","description","internalTitles"]
+                            }
+                          }
+                        },
+                        required:["title","description","subsections"]
+                      }
+                    }
+                  },
+                  required:["title","description","wordCount","sections"]
+                }
+              }
+            },
+            required:["title","description","chapters"]
+          }
+        },
+        conclusionGeneral:{
+          type:"object",additionalProperties:false,
+          properties:{title:{type:"string"},description:{type:"string"},wordCount:{type:"integer"}},
+          required:["title","description","wordCount"]
+        }
       },
-      required:["id","title","description","approach","totalWords","introductionGeneral","parts","conclusionGeneral","introduction","conclusion"]
+      required:["id","title","description","approach","totalWords","introductionGeneral","parts","conclusionGeneral"]
     },
-    introduction:{type:"object",additionalProperties:false,properties:{title:{type:"string"},content:{type:"string"},wordCount:{type:"integer"},incomplete:{type:"boolean"}},required:["title","content","wordCount","incomplete"]}
+    introduction:{
+      type:"object",additionalProperties:false,
+      properties:{
+        title:{type:"string"},content:{type:"string"},wordCount:{type:"integer"},incomplete:{type:"boolean"}
+      },
+      required:["title","content","wordCount","incomplete"]
+    }
   },
   required:["problematic","plan","introduction"]
 };
