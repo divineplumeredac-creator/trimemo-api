@@ -170,6 +170,15 @@ export default async function handler(req, res) {
         });
       }
 
+      const expectedPrice = priceForProject(project).value;
+      const paidPrice = String(captured.purchase_units?.[0]?.payments?.captures?.[0]?.amount?.value || "");
+      if (!paidPrice || paidPrice !== expectedPrice) {
+        return res.status(402).json({
+          status: "AMOUNT_MISMATCH",
+          error: "Le montant payé ne correspond pas à la formule sélectionnée.",
+        });
+      }
+
       return res.status(200).json({
         status: "PAID",
         order_id: captured.id,
