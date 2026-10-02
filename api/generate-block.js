@@ -87,7 +87,7 @@ export default async function handler(req, res) {
         ? body.block.structure.filter(Boolean)
         : [];
     const preceding = Array.isArray(body.preceding)
-      ? body.preceding.slice(-2)
+      ? body.preceding.slice(-3)
       : [];
 
     const targetWords = Number(
@@ -125,11 +125,14 @@ INSTRUCTIONS SPÉCIFIQUES DU BLOC :
 8. Ne fabrique jamais d'auteur, de date, de DOI ou de citation.
 9. Si une information manque, formule une analyse prudente.
 10. Ne répète pas les idées déjà développées dans le bloc.
-11. Assure une progression logique entre les paragraphes.
-12. Chaque paragraphe doit développer une idée principale.
-13. Utilise un style rigoureux, fluide et naturel.
-14. Évite les clichés rédactionnels et les formulations artificielles.
-15. Évite les répétitions de connecteurs.
+11. Les blocs précédents sont une mémoire de continuité, pas une matière à recopier.
+12. N’introduis pas de nouvelle introduction, de nouvelle problématique ou de nouvelle annonce du plan si ces éléments ont déjà été traités.
+13. Développe exclusivement l’unité correspondant au titre et à la structure reçus.
+14. Assure une progression logique avec les blocs précédents.
+15. Chaque paragraphe doit développer une idée principale.
+16. Utilise un style rigoureux, fluide et naturel.
+17. Évite les clichés rédactionnels et les formulations artificielles.
+18. Évite les répétitions de connecteurs.
 16. Évite les phrases trop longues et les constructions complexes.
 17. La limite recommandée est de 20 mots par phrase.
 18. Une phrase légèrement plus longue ne doit pas bloquer la génération.
