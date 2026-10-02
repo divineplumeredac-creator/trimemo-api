@@ -6,13 +6,11 @@ import {
   HeadingLevel,
   AlignmentType,
   PageBreak,
-  TableOfContents,
   Footer,
   PageNumber,
 } from 'docx';
 import compileDocument from './compile-document.js';
 import { resolveFormatting } from '../lib/academic-format.js';
-import { titleWithNumber } from '../lib/numbering.js';
 import { requirePremiumOrOwner } from '../lib/premium-auth.js';
 
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
