@@ -319,8 +319,30 @@ export default async function handler(req, res) {
         new Set(subsectionCounts).size > 1;
     }
 
+    function hasDensityCompliance(plan) {
+      for (const part of plan.parts || []) {
+        for (const chapter of part.chapters || []) {
+          const sections = chapter.sections || [];
+          const sectionEstimate = chapter.wordCount / Math.max(1, sections.length);
+          for (const section of sections) {
+            const subsections = section.subsections || [];
+            if (sectionEstimate > 320 && subsections.length < 1) return false;
+            if (!subsections.length) continue;
+            const subsectionEstimate = sectionEstimate / subsections.length;
+            if (subsectionEstimate > 320) {
+              for (const subsection of subsections) {
+                if ((subsection.internalTitles || []).length < 2) return false;
+              }
+            }
+          }
+        }
+      }
+      return true;
+    }
+
     function validateArchitecture(plans) {
-      if (count !== 3) return true;
+      const densityCompliance = plans.every(hasDensityCompliance);
+      if (count !== 3) return densityCompliance;
       if (plans.length !== 3) return false;
 
       const signatures = plans.map(architectureSignature);
@@ -337,6 +359,7 @@ export default async function handler(req, res) {
 
       return uniqueSignatures === 3 &&
         internalVariation &&
+        densityCompliance &&
         (!allThreeParts || providedPlanForcesThreeParts);
     }
 
