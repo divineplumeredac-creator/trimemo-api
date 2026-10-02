@@ -12,6 +12,7 @@ import {
 import compileDocument from './compile-document.js';
 import { resolveFormatting } from '../lib/academic-format.js';
 import { titleWithNumber } from '../lib/numbering.js';
+import { requirePremiumOrOwner } from '../lib/premium-auth.js';
 
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
@@ -187,6 +188,7 @@ export default async function handler(req, res) {
 
   try {
     const body = req.body || {};
+    requirePremiumOrOwner(req, body);
     if (body.format && body.format !== 'docx') return res.status(400).json({ error: 'Format non pris en charge. Utilisez docx.' });
 
     const compiled = compileDocument(body);
