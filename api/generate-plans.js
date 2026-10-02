@@ -1,12 +1,13 @@
 import { TRIMEMO_MASTER_ACADEMIC_RULES } from "../lib/trimemo-academic-rules.js";
 import { requireOwner } from "../lib/owner-auth.js";
+import { requirePremiumOrOwner } from "../lib/premium-auth.js";
 const OPENAI_URL = "https://api.openai.com/v1/responses";
 const WORDS_PER_PAGE = 320;
 
 function cors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Accept, Authorization");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Accept, Authorization, X-Trimemo-Premium-Token");
 }
 
 function fail(message, status) {
@@ -282,6 +283,7 @@ export default async function handler(req, res) {
   try {
     const body = req.body || {};
     if (body.ownerMode === true) requireOwner(req);
+    else requirePremiumOrOwner(req, body);
 
     const project = body.project || body.projet || body;
     const sujet = text(project.sujet || project.subject);
