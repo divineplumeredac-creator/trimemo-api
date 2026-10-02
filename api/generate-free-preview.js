@@ -5,7 +5,8 @@ const WORDS_PER_PAGE = 320;
 function cors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Accept");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Accept, Authorization");
+  res.setHeader("Access-Control-Max-Age", "86400");
   res.setHeader("Cache-Control", "no-store");
 }
 function fail(message, status = 400) { const e = new Error(message); e.status = status; return e; }
@@ -111,7 +112,14 @@ N'ajoute aucun niveau uniquement pour créer une symétrie visuelle. Pour l'aper
       })
     });
     const raw = await response.text();
-    if (!response.ok) throw fail("OpenAI a refusé l'aperçu : " + raw.slice(0,700),502);
+    if (!response.ok) {
+      let detail = raw.slice(0, 1200);
+      try {
+        const errorData = JSON.parse(raw);
+        detail = errorData?.error?.message || detail;
+      } catch {}
+      throw fail("OpenAI a refusé l'aperçu : " + detail, 502);
+    }
     const result = parseJson(extractOutputText(JSON.parse(raw)));
     if (!result.problematic?.question || !result.plan?.parts?.length || !result.introduction?.content) throw fail("L'aperçu retourné est incomplet.",502);
     return res.status(200).json({
