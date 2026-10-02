@@ -135,6 +135,7 @@ async function capturePaypalOrder(orderId) {
 }
 
 import crypto from "node:crypto";
+import { createPremiumToken } from "../lib/premium-auth.js";
 
 export default async function handler(req, res) {
   cors(res);
@@ -172,6 +173,7 @@ export default async function handler(req, res) {
       return res.status(200).json({
         status: "PAID",
         order_id: captured.id,
+        premium_token: createPremiumToken(project, captured.id),
         capture_id:
           captured.purchase_units?.[0]?.payments?.captures?.[0]?.id || null,
       });
