@@ -46,7 +46,7 @@ const schema = {
               title:{type:"string"},description:{type:"string"},wordCount:{type:"integer"},
               sections:{type:"array",minItems:2,maxItems:3,items:{type:"object",additionalProperties:false,properties:{
                 title:{type:"string"},description:{type:"string"},
-                subsections:{type:"array",minItems:0,maxItems:3,items:{type:"object",additionalProperties:false,properties:{title:{type:"string"},description:{type:"string"}},required:["title","description"]}}
+                subsections:{type:"array",minItems:0,maxItems:3,items:{type:"object",additionalProperties:false,properties:{title:{type:"string"},description:{type:"string"},internalTitles:{type:"array",minItems:0,maxItems:4,items:{type:"object",additionalProperties:false,properties:{title:{type:"string"}},required:["title"]}}},required:["title","description","internalTitles"]}}
               },required:["title","description","subsections"]}}
             },required:["title","description","wordCount","sections"]}}
           },required:["title","description","chapters"]}
@@ -97,7 +97,10 @@ export default async function handler(req, res) {
 Le plan doit comporter 2 ou 3 parties selon le sujet.
 Chaque partie comporte 2 ou 3 chapitres, sans obligation d'en avoir 3.
 Chaque chapitre comporte au moins 2 sections.
-Les sous-sections sont facultatives.
+Les sous-sections sont facultatives lorsque le contenu reste inférieur au seuil de structuration.
+Toute section dont le contenu prévu dépasse 320 mots doit être subdivisée en sous-sections pertinentes.
+Toute sous-section dont le contenu prévu dépasse 320 mots doit être subdivisée par des titres internes pertinents.
+Les titres internes doivent correspondre à de véritables idées et ne doivent jamais être artificiels.
 La structure doit varier naturellement à l'intérieur du plan : ne donne pas le même nombre de chapitres à toutes les parties ni le même nombre de sections à tous les chapitres lorsque le contenu ne le justifie pas.
 La variation doit découler du sujet, de la problématique, du niveau, du volume et des consignes.
 N'ajoute aucun niveau uniquement pour créer une symétrie visuelle. Pour l'aperçu gratuit, ne rédige qu'un extrait d'environ 300 mots de cette introduction. Retourne uniquement le JSON demandé."
