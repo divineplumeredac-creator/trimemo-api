@@ -532,7 +532,9 @@ export default async function handler(req, res) {
   try {
     const body = req.body || {};
     if (body.ownerMode === true) requireOwner(req);
-    else requirePremiumOrOwner(req, body);
+    else if (body.freePreview === true && Number(body.count || 1) === 1) {
+      // Aperçu public limité : une seule proposition, sans accès aux fonctionnalités premium.
+    } else requirePremiumOrOwner(req, body);
     const project = body.project || body;
 
     const count = Number(body.count) === 1
