@@ -195,10 +195,10 @@ export default async function handler(req, res) {
       Math.max(
         Number.isFinite(requestedWords)
           ? requestedWords
-          : 300,
+          : 320,
         200
       ),
-      300
+      320
     );
 
     const systemPrompt = `
