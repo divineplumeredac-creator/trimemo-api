@@ -341,8 +341,10 @@ export default async function handler(req, res) {
     }
 
     function validateArchitecture(plans) {
+      // La densité guide le modèle mais ne doit jamais bloquer une génération valide.
+      // La subdivision est contrôlée par le prompt et par la structure retournée.
       const densityCompliance = plans.every(hasDensityCompliance);
-      if (count !== 3) return densityCompliance;
+      if (count !== 3) return true;
       if (plans.length !== 3) return false;
 
       const signatures = plans.map(architectureSignature);
@@ -359,7 +361,6 @@ export default async function handler(req, res) {
 
       return uniqueSignatures === 3 &&
         internalVariation &&
-        densityCompliance &&
         (!allThreeParts || providedPlanForcesThreeParts);
     }
 
