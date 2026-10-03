@@ -416,7 +416,7 @@ export default async function handler(req, res) {
 
     async function requestPlans(extraInstruction, fileIds = []) {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 90000);
+      const timeout = setTimeout(() => controller.abort(), 180000);
       let response;
       try {
         response = await fetch(OPENAI_URL, {
