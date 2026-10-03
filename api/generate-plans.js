@@ -46,6 +46,6 @@ export default async function handler(req,res){
   const r=await fetch(OPENAI_URL,{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+key},body:JSON.stringify({model:process.env.OPENAI_MODEL||"gpt-5.6-luna",input:[{role:"system",content:[{type:"input_text",text:system}]},{role:"user",content:[{type:"input_text",text:user},...ids.map(file_id=>({type:"input_file",file_id}))]}],text:{format:{type:"json_schema",name:"trimemo_academic_toc",strict:true,schema:SCHEMA}}})});
   const raw=await r.text();if(!r.ok)throw fail("Erreur OpenAI pendant la génération du plan.",502);
   const data=json(out(JSON.parse(raw)));if(!Array.isArray(data?.plans)||data.plans.length<count)throw fail("OpenAI n’a pas retourné le nombre de plans demandé.",502);
-  return res.status(200).json({plans:data.plans.slice(0,count).map(normalize).map((x,i)=>{x.id="plan-"+(i+1);return x;})});
+  return res.status(200).json({plans:data.plans.slice(0,count).map((x,i)=>normalize(x,i,words)).map((x,i)=>{x.id="plan-"+(i+1);return x;})});
  }catch(e){console.error("generate-plans error",e);return res.status(e.status||500).json({error:e.message||"Erreur interne lors de la génération des plans."});}
 }
