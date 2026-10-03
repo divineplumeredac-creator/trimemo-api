@@ -474,14 +474,14 @@ export default async function handler(req, res) {
                   type: "input_text",
                   text:
                     buildContext(project, problematic, providedPlan, methodologyText) +
-                    "\n\nDOCUMENTS FOURNIS PAR LE CLIENT : ils sont joints à cette requête. Analyse-les avant de construire le plan. Le plan doit refléter le contenu réel du document, son contexte, ses consignes et son sujet. Ne remplace jamais ces informations par un questionnaire générique." +
+                    "\n\nDOCUMENTS FOURNIS PAR LE CLIENT : le serveur a extrait leur texte et l'injecte dans le contexte. Tu dois réellement appliquer leurs règles. Le guide méthodologique de l'établissement est prioritaire sur les règles génériques de Trimémo lorsqu'il précise une structure, une méthode, une pagination, une norme de citation ou une organisation particulière. Ne remplace jamais le guide par une structure académique générique." +
                     "\n\nGénère exactement " + requestedCount + " plan(s)." +
                     "\n\nStructure : Introduction générale -> Partie -> Chapitre -> Section -> Sous-section facultative -> Conclusion générale." +
                     "\n\nCONTRAINTE STRUCTURELLE : 2 ou 3 parties selon le sujet. Chaque partie peut avoir 2 ou 3 chapitres. Chaque chapitre a au moins 2 sections. Les sous-sections sont facultatives." +
                     "\n\nLa variation doit être naturelle à l'intérieur de chaque plan et entre les trois plans. Elle doit découler du sujet, de la problématique, du domaine, du niveau, du volume et des consignes. Ne cherche jamais une symétrie visuelle." +
                     "\n\n" + extraInstruction +
                     (variationInstructions ? "\n\nINSTRUCTION DE VARIATION POUR CETTE PROPOSITION : " + variationInstructions : "") +
-                    "\n\nLe volume demandé est de " + expectedWords + " mots pour le développement. Il sert uniquement à répartir le travail entre les chapitres." +
+                    "\n\nLe volume demandé est de " + expectedWords + " mots pour le développement. Il sert uniquement à répartir le travail entre les chapitres. Il ne doit jamais remplacer les contraintes du guide méthodologique." +
                     "\n\n" + (providedPlan ? "Le plan fourni par le client est prioritaire. Conserve sa logique et ses intitulés pertinents, puis complète uniquement les niveaux hiérarchiques nécessaires." : "") +
                     "\n\nNe fournis aucun commentaire, aucune description, aucune justification. Retourne uniquement le JSON."
                   },
