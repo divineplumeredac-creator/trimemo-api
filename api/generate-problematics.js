@@ -348,15 +348,15 @@ async function callOpenAI({
   count,
 }) {
   const requestedCount = count === 1 ? 1 : 3;
-  const citationMode = detectCitationMode(project);\n  const documentContext = await buildProjectDocumentContext(project.files);
+  const citationMode = detectCitationMode(project);
+  const documentContext = await buildProjectDocumentContext(project.files);
 
   const fileInputs = fileIds.map((fileId) => ({
     type: "input_file",
     file_id: fileId,
   }));
 
-  const userPrompt = `
-${buildProjectContext(project, citationMode)}
+  const userPrompt = `${buildDocumentInstructions(documentContext)}\n\n${buildProjectContext(project, citationMode)}
 
 NOMBRE DE PROBLÉMATIQUES DEMANDÉ :
 ${requestedCount}
