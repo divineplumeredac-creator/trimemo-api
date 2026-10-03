@@ -1,6 +1,7 @@
 import { TRIMEMO_MASTER_ACADEMIC_RULES } from "../lib/trimemo-academic-rules.js";
 import { requireOwner } from "../lib/owner-auth.js";
 import { requirePremiumOrOwner } from "../lib/premium-auth.js";
+import { buildProjectDocumentContext, buildDocumentInstructions } from "../lib/project-documents.js";
 const OPENAI_URL = "https://api.openai.com/v1/responses";
 
 function cors(res) {
@@ -347,7 +348,7 @@ async function callOpenAI({
   count,
 }) {
   const requestedCount = count === 1 ? 1 : 3;
-  const citationMode = detectCitationMode(project);
+  const citationMode = detectCitationMode(project);\n  const documentContext = await buildProjectDocumentContext(project.files);
 
   const fileInputs = fileIds.map((fileId) => ({
     type: "input_file",
