@@ -597,7 +597,12 @@ export default async function handler(req, res) {
       });
     }
 
-    const methodologyText = await extractProjectDocuments(project.files);\n\n    const fileIds = await uploadProjectFiles(\n      project.files,\n      apiKey\n    );
+    const methodologyText = await extractProjectDocuments(project.files);
+
+    const fileIds = await uploadProjectFiles(
+      project.files,
+      apiKey
+    );
 
     const rawResponse = await callOpenAI({
       project,
