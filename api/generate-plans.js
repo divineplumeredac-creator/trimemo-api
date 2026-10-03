@@ -182,8 +182,8 @@ const subsectionSchema = {
 
 const sectionSchema = {
   type: "array",
-  minItems: 2,
-  maxItems: 3,
+  minItems: 1,
+  maxItems: 6,
   items: {
     type: "object",
     additionalProperties: false,
@@ -197,8 +197,8 @@ const sectionSchema = {
 
 const chapterSchema = {
   type: "array",
-  minItems: 2,
-  maxItems: 3,
+  minItems: 1,
+  maxItems: 6,
   items: {
     type: "object",
     additionalProperties: false,
@@ -212,8 +212,8 @@ const chapterSchema = {
 
 const partSchema = {
   type: "array",
-  minItems: 2,
-  maxItems: 3,
+  minItems: 1,
+  maxItems: 6,
   items: {
     type: "object",
     additionalProperties: false,
@@ -261,12 +261,12 @@ function distributeWords(totalWords, chapters) {
 
 function normalizeGeneratedPlan(raw, index, expectedWords) {
   const rawParts = Array.isArray(raw?.parts) ? raw.parts : [];
-  if (rawParts.length < 2) throw fail("Le plan " + (index + 1) + " ne contient pas au moins deux parties.", 502);
+  if (rawParts.length < 1) throw fail("Le plan " + (index + 1) + " ne contient aucune partie exploitable.", 502);
 
   const parts = rawParts.map(function(part, partIndex) {
     const partNumber = partIndex + 1;
     const chapters = Array.isArray(part?.chapters) ? part.chapters : [];
-    if (chapters.length < 2) throw fail("La partie " + partNumber + " du plan " + (index + 1) + " doit contenir au moins deux chapitres.", 502);
+    if (chapters.length < 1) throw fail("La partie " + partNumber + " du plan " + (index + 1) + " ne contient aucun chapitre exploitable.", 502);
 
     return {
       id: "plan-" + (index + 1) + "-part-" + partNumber,
@@ -276,7 +276,7 @@ function normalizeGeneratedPlan(raw, index, expectedWords) {
       chapters: chapters.map(function(chapter, chapterIndex) {
         const chapterNumber = chapterIndex + 1;
         const sections = Array.isArray(chapter?.sections) ? chapter.sections : [];
-        if (sections.length < 2) throw fail("Le chapitre " + partNumber + "." + chapterNumber + " du plan " + (index + 1) + " doit contenir au moins deux sections.", 502);
+        if (sections.length < 1) throw fail("Le chapitre " + partNumber + "." + chapterNumber + " du plan " + (index + 1) + " ne contient aucune section exploitable.", 502);
 
         return {
           id: "plan-" + (index + 1) + "-part-" + partNumber + "-chapter-" + chapterNumber,
@@ -347,6 +347,7 @@ function systemPrompt() {
     "Les niveaux PARTIE, CHAPITRE, SECTION et SOUS-SECTION doivent rester strictement distincts.",
     "Les titres ne doivent contenir ni numéro ni préfixe de niveau : la numérotation est ajoutée par l'application.",
     "Respecte exactement le sujet, la problématique, le domaine, le niveau, le volume et les consignes.",
+    "Avant de construire la structure, lis intégralement les documents fournis et identifie les exigences méthodologiques obligatoires. Les exigences explicites du guide client priment sur toute structure générique.",
     "Ne crée aucun contexte, pays, terrain, institution, population ou résultat non fourni.",
     "Retourne uniquement le JSON demandé.",
     TRIMEMO_MASTER_ACADEMIC_RULES
@@ -474,10 +475,10 @@ export default async function handler(req, res) {
                   type: "input_text",
                   text:
                     buildContext(project, problematic, providedPlan, methodologyText) +
-                    "\n\nDOCUMENTS FOURNIS PAR LE CLIENT : le serveur a extrait leur texte et l'injecte dans le contexte. Tu dois réellement appliquer leurs règles. Le guide méthodologique de l'établissement est prioritaire sur les règles génériques de Trimémo lorsqu'il précise une structure, une méthode, une pagination, une norme de citation ou une organisation particulière. Ne remplace jamais le guide par une structure académique générique." +
+                    "\n\nDOCUMENTS CLIENT À CONSULTER AVANT GÉNÉRATION : le texte intégral extrait des fichiers est inclus ci-dessus. Commence par identifier les exigences méthodologiques obligatoires, notamment la structure, le nombre de parties et chapitres, l'ordre des sections, la méthode, la pagination et les normes de présentation. Ces exigences constituent le CONTRAT MÉTHODOLOGIQUE et priment sur les règles génériques de Trimémo. Si le guide impose une structure différente, reproduis-la. N'utilise les règles génériques que pour les éléments que le guide ne précise pas. Ne substitue jamais une structure générique de 2 ou 3 parties à une structure explicitement imposée." +
                     "\n\nGénère exactement " + requestedCount + " plan(s)." +
                     "\n\nStructure : Introduction générale -> Partie -> Chapitre -> Section -> Sous-section facultative -> Conclusion générale." +
-                    "\n\nCONTRAINTE STRUCTURELLE : 2 ou 3 parties selon le sujet. Chaque partie peut avoir 2 ou 3 chapitres. Chaque chapitre a au moins 2 sections. Les sous-sections sont facultatives." +
+                    "\n\nCONTRAINTE STRUCTURELLE GÉNÉRIQUE DE SECOURS : si, et seulement si, les documents client ne fixent pas la structure, utilise 2 ou 3 parties selon le sujet, 2 ou 3 chapitres par partie et au moins 2 sections par chapitre. Cette règle ne doit jamais écraser une exigence explicite du guide." +
                     "\n\nLa variation doit être naturelle à l'intérieur de chaque plan et entre les trois plans. Elle doit découler du sujet, de la problématique, du domaine, du niveau, du volume et des consignes. Ne cherche jamais une symétrie visuelle." +
                     "\n\n" + extraInstruction +
                     (variationInstructions ? "\n\nINSTRUCTION DE VARIATION POUR CETTE PROPOSITION : " + variationInstructions : "") +
