@@ -495,21 +495,25 @@ export default async function handler(req, res) {
 
     const fileIds = await uploadProjectFiles(project.files, apiKey);
 
-    const plans = [];
     const instructions = [
       "Construis la première architecture selon la logique principale du sujet et de la problématique. Ne copie pas une matrice générique.",
       "Construis une deuxième architecture réellement distincte. Modifie la logique de progression et la distribution des chapitres ou sections lorsque le sujet le permet.",
       "Construis une troisième architecture distincte. Ne reprends pas mécaniquement la structure précédente. Privilégie une logique scientifique propre à la problématique."
     ];
 
-    for (let index = 0; index < count; index += 1) {
-      const generated = await requestPlans(instructions[index], fileIds, 1);
+    const generatedSets = await Promise.all(
+      instructions.slice(0, count).map((instruction) =>
+        requestPlans(instruction, fileIds, 1)
+      )
+    );
+
+    const plans = generatedSets.map((generated, index) => {
       if (!generated[0]) {
         throw fail("Le plan " + (index + 1) + " n'a pas pu être généré.", 502);
       }
       generated[0].id = "plan-" + (index + 1);
-      plans.push(generated[0]);
-    }
+      return generated[0];
+    });
 
     return res.status(200).json({ plans });
   } catch (error) {
