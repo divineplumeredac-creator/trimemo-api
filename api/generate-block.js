@@ -211,6 +211,11 @@ ${contexte || "Aucun contexte complémentaire"}
 Consignes :
 ${consignes || "Aucune consigne complémentaire"}
 
+DOCUMENTS MÉTHODOLOGIQUES FOURNIS PAR LE CLIENT :
+${methodologyText || "Aucun document exploitable."}
+
+AVANT DE RÉDIGER : identifie les exigences du document qui concernent la structure, la méthode, les normes, les citations, le volume ou le style. Applique-les avant les règles génériques Trimémo.
+
 PROBLÉMATIQUE :
 ${typeof problematic === "string"
   ? problematic
