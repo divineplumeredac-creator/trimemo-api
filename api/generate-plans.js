@@ -452,7 +452,7 @@ export default async function handler(req, res) {
 
     async function requestPlans(extraInstruction, fileIds = [], requestedCount = count, methodologyText = "") {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 180000);
+      const timeout = setTimeout(() => controller.abort(), 240000);
       let response;
       try {
         response = await fetch(OPENAI_URL, {
@@ -505,7 +505,7 @@ export default async function handler(req, res) {
         });
       } catch (error) {
         if (error?.name === "AbortError") {
-          throw fail("La génération du plan a dépassé 180 secondes. Réessayez.", 504);
+          throw fail("La génération du plan a dépassé 240 secondes. Réessayez.", 504);
         }
         throw error;
       } finally {
@@ -529,7 +529,8 @@ export default async function handler(req, res) {
       );
     }
 
-    const methodologyText = await extractDocumentText(project.files);\n    const fileIds = await uploadProjectFiles(project.files, apiKey);
+    const methodologyText = await extractDocumentText(project.files);
+    const fileIds = await uploadProjectFiles(project.files, apiKey);
 
     const instructions = [
       "Construis la première architecture selon la logique principale du sujet et de la problématique. Ne copie pas une matrice générique.",
@@ -549,6 +550,10 @@ export default async function handler(req, res) {
       count,
       methodologyText
     );
+
+    if (!validateArchitecture(generated)) {
+      throw fail("Les trois plans générés ne respectent pas suffisamment la variation structurelle demandée. Réessayez.", 502);
+    }
 
     const plans = generated.map((plan, index) => {
       plan.id = "plan-" + (index + 1);
