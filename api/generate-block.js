@@ -29,7 +29,9 @@ export default async function handler(req, res) {
     const body = req.body || {};
     if (body.ownerMode === true) requireOwner(req);
     else requirePremiumOrOwner(req, body);
-    const project = body.project || body;\n    const documentContext = await buildProjectDocumentContext(project.files);\n    const fileIds = await uploadProjectFiles(project.files, apiKey);
+    const project = body.project || body;
+    const documentContext = await buildProjectDocumentContext(project.files);
+    const fileIds = await uploadProjectFiles(project.files, apiKey);
 
     const sujet = String(
       project.sujet ||
