@@ -20,6 +20,51 @@ function text(value) {
   return String(value == null ? "" : value).trim();
 }
 
+
+function extractDataUrl(dataUrl) {
+  const match = /^data:([^;]+);base64,(.+)$/s.exec(dataUrl || "");
+  if (!match) return null;
+  return { mime: match[1], buffer: Buffer.from(match[2], "base64") };
+}
+
+async function uploadProjectFiles(files, apiKey) {
+  const uploadedIds = [];
+  for (const file of Array.isArray(files) ? files : []) {
+    if (!file?.content) continue;
+    const decoded = extractDataUrl(file.content);
+    if (!decoded) continue;
+    const form = new FormData();
+    form.append("purpose", "user_data");
+    form.append(
+      "file",
+      new Blob([decoded.buffer], {
+        type: decoded.mime || file.type || "application/octet-stream",
+      }),
+      file.name || "document"
+    );
+    const response = await fetch("https://api.openai.com/v1/files", {
+      method: "POST",
+      headers: { Authorization: "Bearer " + apiKey },
+      body: form,
+    });
+    const responseText = await response.text();
+    if (!response.ok) {
+      throw fail(
+        "Impossible de transmettre le fichier " + (file.name || "document") + " à OpenAI.",
+        502
+      );
+    }
+    let data;
+    try {
+      data = JSON.parse(responseText);
+    } catch {
+      throw fail("La réponse du service de fichiers OpenAI est invalide.", 502);
+    }
+    if (data?.id) uploadedIds.push(data.id);
+  }
+  return uploadedIds;
+}
+
 function cleanStructuralTitle(value, kind, fallback) {
   const raw = text(value);
   if (!raw) return fallback;
@@ -369,7 +414,7 @@ export default async function handler(req, res) {
         (!allThreeParts || providedPlanForcesThreeParts);
     }
 
-    async function requestPlans(extraInstruction) {
+    async function requestPlans(extraInstruction, fileIds = []) {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 90000);
       let response;
@@ -393,6 +438,7 @@ export default async function handler(req, res) {
                   type: "input_text",
                   text:
                     buildContext(project, problematic, providedPlan) +
+                    "\n\nDOCUMENTS FOURNIS PAR LE CLIENT : ils sont joints à cette requête. Analyse-les avant de construire le plan. Le plan doit refléter le contenu réel du document, son contexte, ses consignes et son sujet. Ne remplace jamais ces informations par un questionnaire générique." +
                     "\n\nGénère exactement " + count + " plan(s)." +
                     "\n\nStructure : Introduction générale -> Partie -> Chapitre -> Section -> Sous-section facultative -> Conclusion générale." +
                     "\n\nCONTRAINTE STRUCTURELLE : 2 ou 3 parties selon le sujet. Chaque partie peut avoir 2 ou 3 chapitres. Chaque chapitre a au moins 2 sections. Les sous-sections sont facultatives." +
@@ -402,7 +448,12 @@ export default async function handler(req, res) {
                     "\n\nLe volume demandé est de " + expectedWords + " mots pour le développement. Il sert uniquement à répartir le travail entre les chapitres." +
                     "\n\n" + (providedPlan ? "Le plan fourni par le client est prioritaire. Conserve sa logique et ses intitulés pertinents, puis complète uniquement les niveaux hiérarchiques nécessaires." : "") +
                     "\n\nNe fournis aucun commentaire, aucune description, aucune justification. Retourne uniquement le JSON."
-                }]
+                  },
+                  ...fileIds.map((fileId) => ({
+                    type: "input_file",
+                    file_id: fileId,
+                  })),
+                ]
               }
             ],
             text: {
@@ -442,10 +493,13 @@ export default async function handler(req, res) {
       );
     }
 
+    const fileIds = await uploadProjectFiles(project.files, apiKey);
+
     const plans = await requestPlans(
       count === 3
         ? "Les trois architectures doivent être distinctes. Le plan 1, le plan 2 et le plan 3 doivent chacun être construits selon la logique propre de leur angle. Évite toute répétition de la même distribution numérique. Ne génère pas systématiquement trois parties : lorsqu'aucune consigne client n'impose trois parties, construis au moins une proposition en deux parties si le sujet et la problématique le permettent."
-        : "Construis une architecture adaptée au contenu réel, sans symétrie artificielle."
+        : "Construis une architecture adaptée au contenu réel, sans symétrie artificielle.",
+      fileIds
     );
 
     if (!validateArchitecture(plans)) {
