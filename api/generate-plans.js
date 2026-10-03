@@ -27,6 +27,39 @@ function extractDataUrl(dataUrl) {
   return { mime: match[1], buffer: Buffer.from(match[2], "base64") };
 }
 
+async function extractDocumentText(files) {
+  const chunks = [];
+  for (const file of Array.isArray(files) ? files : []) {
+    if (!file?.content) continue;
+    const decoded = extractDataUrl(file.content);
+    if (!decoded) continue;
+    const name = String(file.name || "document").toLowerCase();
+    try {
+      if (name.endsWith(".txt") || name.endsWith(".md")) {
+        chunks.push("DOCUMENT : " + file.name + "\n" + decoded.buffer.toString("utf8"));
+      } else if (name.endsWith(".docx")) {
+        const mammoth = await import("mammoth");
+        const result = await mammoth.extractRawText({ buffer: decoded.buffer });
+        chunks.push("DOCUMENT : " + file.name + "\n" + result.value);
+      } else if (name.endsWith(".pdf")) {
+        const pdfParse = (await import("pdf-parse")).default;
+        const result = await pdfParse(decoded.buffer);
+        chunks.push("DOCUMENT : " + file.name + "\n" + result.text);
+      }
+    } catch (error) {
+      throw fail("Impossible de lire le document méthodologique " + file.name + ".", 422);
+    }
+  }
+  return chunks.join("\n\n");
+}
+
+function truncateDocumentText(value, maxChars = 90000) {
+  const textValue = String(value || "");
+  return textValue.length > maxChars
+    ? textValue.slice(0, maxChars) + "\n[Fin du document tronquée côté serveur]"
+    : textValue;
+}
+
 async function uploadProjectFiles(files, apiKey) {
   const uploadedIds = [];
   for (const file of Array.isArray(files) ? files : []) {
@@ -104,7 +137,7 @@ function parseJson(value) {
   }
 }
 
-function buildContext(project, problematic, providedPlan) {
+function buildContext(project, problematic, providedPlan, methodologyText = "") {
   return [
     "SUJET EXACT : " + text(project.sujet || project.subject),
     "DOMAINE : " + (text(project.domaine || project.domain) || "Non précisé"),
@@ -113,7 +146,10 @@ function buildContext(project, problematic, providedPlan) {
     "CONTEXTE : " + (text(project.contexte || project.context) || "Aucun contexte complémentaire"),
     "CONSIGNES : " + (text(project.consignes || project.instructions) || "Aucune consigne complémentaire"),
     "PROBLÉMATIQUE : " + JSON.stringify(problematic || {}),
-    "PLAN FOURNI PAR LE CLIENT : " + (providedPlan || "Aucun plan fourni")
+    "PLAN FOURNI PAR LE CLIENT : " + (providedPlan || "Aucun plan fourni"),
+    methodologyText
+      ? "GUIDE(S) ET DOCUMENT(S) DE RÉFÉRENCE LUS PAR LE SERVEUR :\n" + truncateDocumentText(methodologyText)
+      : "Aucun document de référence exploitable n'a été transmis."
   ].join("\n\n");
 }
 
@@ -414,7 +450,7 @@ export default async function handler(req, res) {
         (!allThreeParts || providedPlanForcesThreeParts);
     }
 
-    async function requestPlans(extraInstruction, fileIds = [], requestedCount = count) {
+    async function requestPlans(extraInstruction, fileIds = [], requestedCount = count, methodologyText = "") {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 180000);
       let response;
@@ -437,7 +473,7 @@ export default async function handler(req, res) {
                 content: [{
                   type: "input_text",
                   text:
-                    buildContext(project, problematic, providedPlan) +
+                    buildContext(project, problematic, providedPlan, methodologyText) +
                     "\n\nDOCUMENTS FOURNIS PAR LE CLIENT : ils sont joints à cette requête. Analyse-les avant de construire le plan. Le plan doit refléter le contenu réel du document, son contexte, ses consignes et son sujet. Ne remplace jamais ces informations par un questionnaire générique." +
                     "\n\nGénère exactement " + requestedCount + " plan(s)." +
                     "\n\nStructure : Introduction générale -> Partie -> Chapitre -> Section -> Sous-section facultative -> Conclusion générale." +
@@ -493,7 +529,7 @@ export default async function handler(req, res) {
       );
     }
 
-    const fileIds = await uploadProjectFiles(project.files, apiKey);
+    const methodologyText = await extractDocumentText(project.files);\n    const fileIds = await uploadProjectFiles(project.files, apiKey);
 
     const instructions = [
       "Construis la première architecture selon la logique principale du sujet et de la problématique. Ne copie pas une matrice générique.",
@@ -503,7 +539,7 @@ export default async function handler(req, res) {
 
     const generatedSets = await Promise.all(
       instructions.slice(0, count).map((instruction) =>
-        requestPlans(instruction, fileIds, 1)
+        requestPlans(instruction, fileIds, 1, methodologyText)
       )
     );
 
