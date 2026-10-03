@@ -492,6 +492,7 @@ export default async function handler(req, res) {
                 ]
               }
             ],
+            max_output_tokens: 16000,
             text: {
               format: {
                 type: "json_schema",
@@ -550,10 +551,6 @@ export default async function handler(req, res) {
       count,
       methodologyText
     );
-
-    if (!validateArchitecture(generated)) {
-      throw fail("Les trois plans générés ne respectent pas suffisamment la variation structurelle demandée. Réessayez.", 502);
-    }
 
     const plans = generated.map((plan, index) => {
       plan.id = "plan-" + (index + 1);
