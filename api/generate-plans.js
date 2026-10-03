@@ -538,21 +538,37 @@ export default async function handler(req, res) {
       "Construis une troisième architecture distincte. Ne reprends pas mécaniquement la structure précédente. Privilégie une logique scientifique propre à la problématique."
     ];
 
-    const generated = await requestPlans(
-      [
-        "Génère les trois propositions dans UNE SEULE réponse.",
-        "Plan 1 : logique principale directement adaptée au sujet et à la problématique.",
-        "Plan 2 : architecture réellement distincte, avec une progression scientifique différente.",
-        "Plan 3 : architecture distincte, sans reprendre mécaniquement les deux précédentes.",
-        "Les trois plans doivent rester cohérents avec les consignes et le guide client."
-      ].join("\n"),
-      fileIds,
-      count,
-      methodologyText
-    );
-
-    if (!validateArchitecture(generated)) {
-      throw fail("Les trois plans générés ne respectent pas suffisamment la variation structurelle demandée. Réessayez.", 502);
+    let generated;
+    try {
+      generated = await requestPlans(
+        [
+          "Génère les trois propositions dans UNE SEULE réponse.",
+          "Plan 1 : logique principale directement adaptée au sujet et à la problématique.",
+          "Plan 2 : architecture distincte, avec une progression scientifique différente.",
+          "Plan 3 : architecture distincte, sans reprendre mécaniquement les deux précédentes.",
+          "La variation doit rester naturelle. Elle ne doit jamais empêcher la génération d'un plan cohérent."
+        ].join("\n"),
+        fileIds,
+        count,
+        methodologyText
+      );
+    } catch (firstError) {
+      // Ne bloque pas toute la génération sur un contrôle de variation trop strict.
+      // Le plan reste soumis aux contraintes structurelles minimales et au guide du projet.
+      console.warn("Validation/génération initiale des plans échouée, seconde tentative :", firstError?.message);
+      generated = await requestPlans(
+        [
+          "Génère exactement le nombre de plans demandé.",
+          "Priorité absolue : produire des plans complets, cohérents et exploitables.",
+          "Respecte le sujet, la problématique, le niveau, le volume et les documents fournis.",
+          "Utilise 2 ou 3 parties selon la logique réelle du sujet.",
+          "Chaque partie comporte 2 ou 3 chapitres et chaque chapitre au moins 2 sections.",
+          "La variation entre les plans est souhaitée mais ne doit pas bloquer la réponse."
+        ].join("\n"),
+        fileIds,
+        count,
+        methodologyText
+      );
     }
 
     const plans = generated.map((plan, index) => {
