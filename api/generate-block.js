@@ -1,6 +1,7 @@
 import { TRIMEMO_MASTER_ACADEMIC_RULES } from "../lib/trimemo-academic-rules.js";
 import { requireOwner } from "../lib/owner-auth.js";
 import { requirePremiumOrOwner } from "../lib/premium-auth.js";
+import { buildProjectDocumentContext, buildDocumentInstructions, uploadProjectFiles } from "../lib/project-documents.js";
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
@@ -28,7 +29,7 @@ export default async function handler(req, res) {
     const body = req.body || {};
     if (body.ownerMode === true) requireOwner(req);
     else requirePremiumOrOwner(req, body);
-    const project = body.project || body;
+    const project = body.project || body;\n    const documentContext = await buildProjectDocumentContext(project.files);\n    const fileIds = await uploadProjectFiles(project.files, apiKey);
 
     const sujet = String(
       project.sujet ||
@@ -157,7 +158,7 @@ dans un travail académique.
 
     const fullSystemPrompt = systemPrompt + "\n\n" + TRIMEMO_MASTER_ACADEMIC_RULES;
 
-    const userPrompt = `
+    const userPrompt = `${buildDocumentInstructions(documentContext)}\n\n` + `
 DONNÉES DU PROJET
 
 Sujet :
