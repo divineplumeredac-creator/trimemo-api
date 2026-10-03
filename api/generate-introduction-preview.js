@@ -175,12 +175,9 @@ export default async function handler(req, res) {
       project.plan ||
       null;
 
-    const requestedWords = Number(
-      body.targetWords ||
-      body.nombreMots ||
-      project.targetWords ||
-      300
-    );
+    // L’aperçu public est volontairement plafonné à 320 mots.
+    // La valeur envoyée par le client ne peut pas augmenter cette limite.
+    const targetWords = 320;
 
     if (!subject) {
       return res.status(400).json({
@@ -190,16 +187,6 @@ export default async function handler(req, res) {
         code: "MISSING_SUBJECT"
       });
     }
-
-    const targetWords = Math.min(
-      Math.max(
-        Number.isFinite(requestedWords)
-          ? requestedWords
-          : 320,
-        200
-      ),
-      320
-    );
 
     const systemPrompt = `
 Tu es un rédacteur académique spécialisé dans
@@ -286,11 +273,7 @@ Problématique :
 ${problematic || "À construire progressivement à partir du sujet"}
 
 Plan :
-${
-  plan
-    ? JSON.stringify(plan, null, 2)
-    : "Aucun plan fourni"
-}
+${plan ? JSON.stringify(plan, null, 2) : "Aucun plan fourni"}
 
 LONGUEUR DEMANDÉE :
 Environ ${targetWords} mots.
@@ -354,30 +337,15 @@ CONSIGNES FINALES :
                     type: "object",
                     additionalProperties: false,
                     properties: {
-                      title: {
-                        type: "string"
-                      },
-                      content: {
-                        type: "string"
-                      },
-                      wordCount: {
-                        type: "integer"
-                      },
-                      incomplete: {
-                        type: "boolean"
-                      }
+                      title: { type: "string" },
+                      content: { type: "string" },
+                      wordCount: { type: "integer" },
+                      incomplete: { type: "boolean" }
                     },
-                    required: [
-                      "title",
-                      "content",
-                      "wordCount",
-                      "incomplete"
-                    ]
+                    required: ["title", "content", "wordCount", "incomplete"]
                   }
                 },
-                required: [
-                  "introduction"
-                ]
+                required: ["introduction"]
               }
             }
           }
@@ -481,8 +449,8 @@ CONSIGNES FINALES :
       });
     }
 
-    const content =
-      introduction.content.trim();
+    const rawContent = introduction.content.trim();
+    const content = rawContent.split(/\s+/).filter(Boolean).slice(0, 320).join(" ");
 
     const calculatedWordCount =
       content.split(/\s+/).filter(Boolean).length;
@@ -494,10 +462,7 @@ CONSIGNES FINALES :
           normalizeText(introduction.title) ||
           "Aperçu de l'introduction",
         content,
-        wordCount:
-          Number.isInteger(introduction.wordCount)
-            ? introduction.wordCount
-            : calculatedWordCount,
+        wordCount: calculatedWordCount,
         incomplete: true
       }
     });
@@ -515,4 +480,4 @@ CONSIGNES FINALES :
       details: error.message
     });
   }
-                    }
+}
