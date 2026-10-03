@@ -537,18 +537,22 @@ export default async function handler(req, res) {
       "Construis une troisième architecture distincte. Ne reprends pas mécaniquement la structure précédente. Privilégie une logique scientifique propre à la problématique."
     ];
 
-    const generatedSets = await Promise.all(
-      instructions.slice(0, count).map((instruction) =>
-        requestPlans(instruction, fileIds, 1, methodologyText)
-      )
+    const generated = await requestPlans(
+      [
+        "Génère les trois propositions dans UNE SEULE réponse.",
+        "Plan 1 : logique principale directement adaptée au sujet et à la problématique.",
+        "Plan 2 : architecture réellement distincte, avec une progression scientifique différente.",
+        "Plan 3 : architecture distincte, sans reprendre mécaniquement les deux précédentes.",
+        "Les trois plans doivent rester cohérents avec les consignes et le guide client."
+      ].join("\n"),
+      fileIds,
+      count,
+      methodologyText
     );
 
-    const plans = generatedSets.map((generated, index) => {
-      if (!generated[0]) {
-        throw fail("Le plan " + (index + 1) + " n'a pas pu être généré.", 502);
-      }
-      generated[0].id = "plan-" + (index + 1);
-      return generated[0];
+    const plans = generated.map((plan, index) => {
+      plan.id = "plan-" + (index + 1);
+      return plan;
     });
 
     return res.status(200).json({ plans });
