@@ -256,6 +256,24 @@ export default async function handler(req, res) {
     if (body.format && body.format !== 'docx') return res.status(400).json({ error: 'Format non pris en charge. Utilisez docx.' });
 
     const compiled = compileDocument(body);
+    const uniqueSources = Array.isArray(compiled.bibliography?.sources)
+      ? compiled.bibliography.sources
+      : [];
+    if (uniqueSources.length < 10) {
+      return res.status(400).json({
+        error: "Le document doit contenir au moins 10 sources bibliographiques distinctes et vérifiables avant l’export.",
+        code: "INSUFFICIENT_BIBLIOGRAPHY",
+        sourceCount: uniqueSources.length,
+      });
+    }
+    const inaccessibleSources = uniqueSources.filter((source) => !source.doi && !source.url);
+    if (inaccessibleSources.length) {
+      return res.status(400).json({
+        error: "Certaines références ne disposent ni de DOI ni d’URL accessible.",
+        code: "INACCESSIBLE_SOURCES",
+        sourceCount: uniqueSources.length,
+      });
+    }
     const formatting = resolveFormatting(body.formatting || {});
     const doc = new Document({
       styles: {
