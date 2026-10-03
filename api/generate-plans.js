@@ -291,6 +291,7 @@ export default async function handler(req, res) {
     const sujet = text(project.sujet || project.subject);
     const problematic = body.problematic || body.problematique || project.problematiquePersonnelle || {};
     const providedPlan = text(body.providedPlan || project.planPersonnel);
+    const variationInstructions = text(body.variationInstructions);
     const count = Number(body.count) === 1 ? 1 : 3;
     const pages = Number(project.pages) || 30;
     const expectedWords = Math.max(640, pages * WORDS_PER_PAGE);
@@ -397,6 +398,7 @@ export default async function handler(req, res) {
                     "\n\nCONTRAINTE STRUCTURELLE : 2 ou 3 parties selon le sujet. Chaque partie peut avoir 2 ou 3 chapitres. Chaque chapitre a au moins 2 sections. Les sous-sections sont facultatives." +
                     "\n\nLa variation doit être naturelle à l'intérieur de chaque plan et entre les trois plans. Elle doit découler du sujet, de la problématique, du domaine, du niveau, du volume et des consignes. Ne cherche jamais une symétrie visuelle." +
                     "\n\n" + extraInstruction +
+                    (variationInstructions ? "\n\nINSTRUCTION DE VARIATION POUR CETTE PROPOSITION : " + variationInstructions : "") +
                     "\n\nLe volume demandé est de " + expectedWords + " mots pour le développement. Il sert uniquement à répartir le travail entre les chapitres." +
                     "\n\n" + (providedPlan ? "Le plan fourni par le client est prioritaire. Conserve sa logique et ses intitulés pertinents, puis complète uniquement les niveaux hiérarchiques nécessaires." : "") +
                     "\n\nNe fournis aucun commentaire, aucune description, aucune justification. Retourne uniquement le JSON."
