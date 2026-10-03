@@ -121,8 +121,13 @@ INSTRUCTIONS SPÉCIFIQUES DU BLOC :
 4. Utilise uniquement les informations fournies ou vérifiables.
 5. Ne crée aucun terrain, pays, institution ou résultat non fourni.
 6. Ne présente aucune donnée inventée comme un fait.
-7. Utilise des références académiques vérifiables lorsque nécessaire.
-8. Ne fabrique jamais d'auteur, de date, de DOI ou de citation.
+7. Recherche des sources académiques et institutionnelles avec l’outil de recherche Web lorsque le sujet nécessite des références.
+8. Pour chaque source retenue, utilise uniquement des informations réellement retrouvées dans les résultats de recherche.
+9. Ne fabrique jamais d'auteur, de date, de DOI, d'URL ou de citation.
+10. Privilégie les articles scientifiques, ouvrages universitaires, rapports d’institutions reconnues et documents officiels accessibles.
+11. Vérifie que chaque source retenue dispose d’un DOI ou d’une URL issue de la recherche.
+12. Évite les sources anciennes lorsque des travaux plus récents et pertinents existent.
+13. N’utilise pas de doublons parmi les sources déjà transmises dans les blocs précédents.
 9. Si une information manque, formule une analyse prudente.
 10. Ne répète pas les idées déjà développées dans le bloc.
 11. Les blocs précédents sont une mémoire de continuité, pas une matière à recopier.
@@ -189,8 +194,13 @@ ${blockTitle}
 STRUCTURE DU BLOC :
 ${structure.length ? structure.join(" > ") : "Structure fournie dans le plan"}
 
-CONTENU DES BLOCS PRÉCÉDENTS :
+CONTENU ET SOURCES DES BLOCS PRÉCÉDENTS :
 ${preceding.length ? JSON.stringify(preceding) : "Aucun bloc précédent transmis."}
+
+SOURCES :
+Recherchez les références nécessaires avant la rédaction. Retenez uniquement des sources réellement retrouvées, fiables et accessibles.
+Ne réutilisez pas inutilement une source déjà présente dans les blocs précédents.
+La rédaction finale doit permettre au document complet d’atteindre au minimum 10 références bibliographiques distinctes.
 
 OBJECTIF DE LONGUEUR :
 Environ ${safeWordTarget} mots.
@@ -215,6 +225,7 @@ Utilise des références vérifiables si elles sont nécessaires.
         body: JSON.stringify({
           model: process.env.OPENAI_MODEL || "gpt-5.6-luna",
           max_output_tokens: 5000,
+          tools: [{ type: "web_search_preview" }],
           input: [
             {
               role: "system",
@@ -277,13 +288,17 @@ Utilise des références vérifiables si elles sont nécessaires.
                         },
                         doi: {
                           type: "string"
+                        },
+                        url: {
+                          type: "string"
                         }
                       },
                       required: [
                         "author",
                         "year",
                         "title",
-                        "doi"
+                        "doi",
+                        "url"
                       ]
                     }
                   }
