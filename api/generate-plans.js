@@ -369,46 +369,59 @@ export default async function handler(req, res) {
     }
 
     async function requestPlans(extraInstruction) {
-      const response = await fetch(OPENAI_URL, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: "Bearer " + apiKey
-        },
-        body: JSON.stringify({
-          model,
-          input: [
-            {
-              role: "system",
-              content: [{ type: "input_text", text: systemPrompt() }]
-            },
-            {
-              role: "user",
-              content: [{
-                type: "input_text",
-                text:
-                  buildContext(project, problematic, providedPlan) +
-                  "\n\nGénère exactement " + count + " plan(s)." +
-                  "\n\nStructure : Introduction générale -> Partie -> Chapitre -> Section -> Sous-section facultative -> Conclusion générale." +
-                  "\n\nCONTRAINTE STRUCTURELLE : 2 ou 3 parties selon le sujet. Chaque partie peut avoir 2 ou 3 chapitres. Chaque chapitre a au moins 2 sections. Les sous-sections sont facultatives." +
-                  "\n\nLa variation doit être naturelle à l'intérieur de chaque plan et entre les trois plans. Elle doit découler du sujet, de la problématique, du domaine, du niveau, du volume et des consignes. Ne cherche jamais une symétrie visuelle." +
-                  "\n\n" + extraInstruction +
-                  "\n\nLe volume demandé est de " + expectedWords + " mots pour le développement. Il sert uniquement à répartir le travail entre les chapitres." +
-                  "\n\n" + (providedPlan ? "Le plan fourni par le client est prioritaire. Conserve sa logique et ses intitulés pertinents, puis complète uniquement les niveaux hiérarchiques nécessaires." : "") +
-                  "\n\nNe fournis aucun commentaire, aucune description, aucune justification. Retourne uniquement le JSON."
-              }]
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 90000);
+      let response;
+      try {
+        response = await fetch(OPENAI_URL, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: "Bearer " + apiKey
+          },
+          body: JSON.stringify({
+            model,
+            input: [
+              {
+                role: "system",
+                content: [{ type: "input_text", text: systemPrompt() }]
+              },
+              {
+                role: "user",
+                content: [{
+                  type: "input_text",
+                  text:
+                    buildContext(project, problematic, providedPlan) +
+                    "\n\nGénère exactement " + count + " plan(s)." +
+                    "\n\nStructure : Introduction générale -> Partie -> Chapitre -> Section -> Sous-section facultative -> Conclusion générale." +
+                    "\n\nCONTRAINTE STRUCTURELLE : 2 ou 3 parties selon le sujet. Chaque partie peut avoir 2 ou 3 chapitres. Chaque chapitre a au moins 2 sections. Les sous-sections sont facultatives." +
+                    "\n\nLa variation doit être naturelle à l'intérieur de chaque plan et entre les trois plans. Elle doit découler du sujet, de la problématique, du domaine, du niveau, du volume et des consignes. Ne cherche jamais une symétrie visuelle." +
+                    "\n\n" + extraInstruction +
+                    "\n\nLe volume demandé est de " + expectedWords + " mots pour le développement. Il sert uniquement à répartir le travail entre les chapitres." +
+                    "\n\n" + (providedPlan ? "Le plan fourni par le client est prioritaire. Conserve sa logique et ses intitulés pertinents, puis complète uniquement les niveaux hiérarchiques nécessaires." : "") +
+                    "\n\nNe fournis aucun commentaire, aucune description, aucune justification. Retourne uniquement le JSON."
+                }]
+              }
+            ],
+            text: {
+              format: {
+                type: "json_schema",
+                name: "trimemo_academic_toc",
+                strict: true,
+                schema: SCHEMA
+              }
             }
-          ],
-          text: {
-            format: {
-              type: "json_schema",
-              name: "trimemo_academic_toc",
-              strict: true,
-              schema: SCHEMA
-            }
-          }
-        })
-      });
+          }),
+          signal: controller.signal
+        });
+      } catch (error) {
+        if (error?.name === "AbortError") {
+          throw fail("La génération des trois plans a dépassé 90 secondes. Réessayez.", 504);
+        }
+        throw error;
+      } finally {
+        clearTimeout(timeout);
+      }
 
       const raw = await response.text();
       if (!response.ok) {
