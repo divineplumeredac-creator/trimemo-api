@@ -414,7 +414,7 @@ export default async function handler(req, res) {
         (!allThreeParts || providedPlanForcesThreeParts);
     }
 
-    async function requestPlans(extraInstruction, fileIds = []) {
+    async function requestPlans(extraInstruction, fileIds = [], requestedCount = count) {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 180000);
       let response;
@@ -484,29 +484,31 @@ export default async function handler(req, res) {
       }
 
       const parsed = parseJson(extractText(JSON.parse(raw)));
-      if (!Array.isArray(parsed?.plans) || parsed.plans.length < count) {
+      if (!Array.isArray(parsed?.plans) || parsed.plans.length < requestedCount) {
         throw fail("OpenAI n’a pas retourné le nombre de plans demandé.", 502);
       }
 
-      return parsed.plans.slice(0, count).map((plan, index) =>
+      return parsed.plans.slice(0, requestedCount).map((plan, index) =>
         normalizeGeneratedPlan(plan, index, expectedWords)
       );
     }
 
     const fileIds = await uploadProjectFiles(project.files, apiKey);
 
-    const plans = await requestPlans(
-      count === 3
-        ? "Les trois architectures doivent être distinctes. Le plan 1, le plan 2 et le plan 3 doivent chacun être construits selon la logique propre de leur angle. Évite toute répétition de la même distribution numérique. Ne génère pas systématiquement trois parties : lorsqu'aucune consigne client n'impose trois parties, construis au moins une proposition en deux parties si le sujet et la problématique le permettent."
-        : "Construis une architecture adaptée au contenu réel, sans symétrie artificielle.",
-      fileIds
-    );
+    const plans = [];
+    const instructions = [
+      "Construis la première architecture selon la logique principale du sujet et de la problématique. Ne copie pas une matrice générique.",
+      "Construis une deuxième architecture réellement distincte. Modifie la logique de progression et la distribution des chapitres ou sections lorsque le sujet le permet.",
+      "Construis une troisième architecture distincte. Ne reprends pas mécaniquement la structure précédente. Privilégie une logique scientifique propre à la problématique."
+    ];
 
-    if (!validateArchitecture(plans)) {
-      throw fail(
-        "Les trois plans générés ne respectent pas encore la variation structurelle attendue. Réessayez.",
-        502
-      );
+    for (let index = 0; index < count; index += 1) {
+      const generated = await requestPlans(instructions[index], fileIds, 1);
+      if (!generated[0]) {
+        throw fail("Le plan " + (index + 1) + " n'a pas pu être généré.", 502);
+      }
+      generated[0].id = "plan-" + (index + 1);
+      plans.push(generated[0]);
     }
 
     return res.status(200).json({ plans });
