@@ -1,6 +1,38 @@
 import { TRIMEMO_MASTER_ACADEMIC_RULES } from "../lib/trimemo-academic-rules.js";
 import { requireOwner } from "../lib/owner-auth.js";
 import { requirePremiumOrOwner } from "../lib/premium-auth.js";
+function extractDataUrl(dataUrl) {
+  const match = /^data:([^;]+);base64,(.+)$/s.exec(dataUrl || "");
+  if (!match) return null;
+  return { mime: match[1], buffer: Buffer.from(match[2], "base64") };
+}
+
+async function extractProjectDocuments(files) {
+  const chunks = [];
+  for (const file of Array.isArray(files) ? files : []) {
+    if (!file?.content) continue;
+    const decoded = extractDataUrl(file.content);
+    if (!decoded) continue;
+    const name = String(file.name || "document").toLowerCase();
+    try {
+      if (name.endsWith(".txt") || name.endsWith(".md")) {
+        chunks.push("DOCUMENT : " + file.name + "\n" + decoded.buffer.toString("utf8"));
+      } else if (name.endsWith(".docx")) {
+        const mammoth = await import("mammoth");
+        const result = await mammoth.extractRawText({ buffer: decoded.buffer });
+        chunks.push("DOCUMENT : " + file.name + "\n" + result.value);
+      } else if (name.endsWith(".pdf")) {
+        const pdfParse = (await import("pdf-parse")).default;
+        const result = await pdfParse(decoded.buffer);
+        chunks.push("DOCUMENT : " + file.name + "\n" + result.text);
+      }
+    } catch {
+      throw Object.assign(new Error("Impossible de lire le document méthodologique " + file.name + "."), { status: 422 });
+    }
+  }
+  return chunks.join("\n\n").slice(0, 90000);
+}
+
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
@@ -89,6 +121,7 @@ export default async function handler(req, res) {
     const preceding = Array.isArray(body.preceding)
       ? body.preceding.slice(-3)
       : [];
+    const methodologyText = await extractProjectDocuments(project.files);
 
     const targetWords = Number(
       body.targetWords ||
@@ -155,7 +188,7 @@ Le bloc doit être original, cohérent et directement exploitable
 dans un travail académique.
 `;
 
-    const fullSystemPrompt = systemPrompt + "\n\n" + TRIMEMO_MASTER_ACADEMIC_RULES;
+    const fullSystemPrompt = systemPrompt + "\n\n" + TRIMEMO_MASTER_ACADEMIC_RULES + "\n\nPRIORITÉ DOCUMENT CLIENT : les exigences explicites du guide méthodologique fourni priment sur toute règle générique Trimémo. Elles doivent être appliquées à ce bloc et ne doivent jamais être remplacées silencieusement.";
 
     const userPrompt = `
 DONNÉES DU PROJET
