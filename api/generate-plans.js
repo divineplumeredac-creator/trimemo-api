@@ -427,21 +427,15 @@ export default async function handler(req, res) {
       );
     }
 
-    let plans = await requestPlans(
+    const plans = await requestPlans(
       count === 3
         ? "Les trois architectures doivent être distinctes. Le plan 1, le plan 2 et le plan 3 doivent chacun être construits selon la logique propre de leur angle. Évite toute répétition de la même distribution numérique. Ne génère pas systématiquement trois parties : lorsqu'aucune consigne client n'impose trois parties, construis au moins une proposition en deux parties si le sujet et la problématique le permettent."
         : "Construis une architecture adaptée au contenu réel, sans symétrie artificielle."
     );
 
     if (!validateArchitecture(plans)) {
-      plans = await requestPlans(
-        "ATTENTION : la première proposition était trop mécanique. Recommence entièrement. Pour chaque plan, change réellement la distribution des parties, des chapitres et/ou des sections lorsque le contenu le justifie. À l'intérieur de chaque plan, évite que toutes les parties et tous les chapitres aient exactement la même profondeur. Si aucune consigne client n'impose trois parties, au moins une proposition doit comporter 2 parties et les autres peuvent en comporter 2 ou 3 selon la logique du sujet. Les différences doivent rester scientifiquement justifiées, jamais décoratives."
-      );
-    }
-
-    if (!validateArchitecture(plans)) {
       throw fail(
-        "Les plans générés restent trop symétriques. Une nouvelle génération est nécessaire pour obtenir des architectures réellement distinctes.",
+        "Les trois plans générés ne respectent pas encore la variation structurelle attendue. Réessayez.",
         502
       );
     }
