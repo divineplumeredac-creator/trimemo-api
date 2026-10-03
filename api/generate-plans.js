@@ -480,7 +480,7 @@ export default async function handler(req, res) {
       if (!response.ok) {
         let detail = raw;
         try { detail = JSON.stringify(JSON.parse(raw)); } catch {}
-        throw fail("Erreur OpenAI pendant la génération du plan.", 502);
+        throw fail("Erreur OpenAI pendant la génération du plan. " + detail, 502);
       }
 
       const parsed = parseJson(extractText(JSON.parse(raw)));
