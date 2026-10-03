@@ -19,6 +19,32 @@ function normalizeText(value) {
   return String(value ?? "").trim();
 }
 
+async function extractProjectDocuments(files) {
+  const chunks = [];
+  for (const file of Array.isArray(files) ? files : []) {
+    if (!file?.content) continue;
+    const decoded = extractDataUrl(file.content);
+    if (!decoded) continue;
+    const name = String(file.name || "document").toLowerCase();
+    try {
+      if (name.endsWith(".txt") || name.endsWith(".md")) {
+        chunks.push("DOCUMENT : " + file.name + "\n" + decoded.buffer.toString("utf8"));
+      } else if (name.endsWith(".docx")) {
+        const mammoth = await import("mammoth");
+        const result = await mammoth.extractRawText({ buffer: decoded.buffer });
+        chunks.push("DOCUMENT : " + file.name + "\n" + result.value);
+      } else if (name.endsWith(".pdf")) {
+        const pdfParse = (await import("pdf-parse")).default;
+        const result = await pdfParse(decoded.buffer);
+        chunks.push("DOCUMENT : " + file.name + "\n" + result.text);
+      }
+    } catch {
+      throw fail("Impossible de lire le document méthodologique " + file.name + ".", 422);
+    }
+  }
+  return chunks.join("\n\n").slice(0, 90000);
+}
+
 function extractDataUrl(dataUrl) {
   const match = /^data:([^;]+);base64,(.+)$/s.exec(dataUrl || "");
 
@@ -345,6 +371,7 @@ async function callOpenAI({
   apiKey,
   fileIds,
   count,
+  methodologyText,
 }) {
   const requestedCount = count === 1 ? 1 : 3;
   const citationMode = detectCitationMode(project);
@@ -355,7 +382,7 @@ async function callOpenAI({
   }));
 
   const userPrompt = `
-${buildProjectContext(project, citationMode)}
+${buildProjectContext(project, citationMode)}\n\nDOCUMENTS MÉTHODOLOGIQUES DU CLIENT :\n${methodologyText || "Aucun document exploitable."}\n\nRÈGLE DE PRIORITÉ : applique en premier les exigences explicites de ces documents. Les règles génériques Trimémo ne servent que pour les éléments non précisés par le client.
 
 NOMBRE DE PROBLÉMATIQUES DEMANDÉ :
 ${requestedCount}
@@ -570,17 +597,13 @@ export default async function handler(req, res) {
       });
     }
 
-    const fileIds = await uploadProjectFiles(
-      project.files,
-      apiKey
-    );
+    const methodologyText = await extractProjectDocuments(project.files);\n\n    const fileIds = await uploadProjectFiles(\n      project.files,\n      apiKey\n    );
 
     const rawResponse = await callOpenAI({
       project,
       apiKey,
       fileIds,
-      count,
-    });
+      count,\n      methodologyText,\n    });
 
     const problematiques = validateProblematiques(
       rawResponse,
