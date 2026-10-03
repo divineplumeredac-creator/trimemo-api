@@ -485,10 +485,12 @@ export default async function handler(req, res) {
                     "\n\n" + (providedPlan ? "Le plan fourni par le client est prioritaire. Conserve sa logique et ses intitulés pertinents, puis complète uniquement les niveaux hiérarchiques nécessaires." : "") +
                     "\n\nNe fournis aucun commentaire, aucune description, aucune justification. Retourne uniquement le JSON."
                   },
-                  ...fileIds.map((fileId) => ({
-                    type: "input_file",
-                    file_id: fileId,
-                  })),
+                  ...((methodologyText && methodologyText.trim())
+                    ? []
+                    : fileIds.map((fileId) => ({
+                        type: "input_file",
+                        file_id: fileId,
+                      }))),
                 ]
               }
             ],
