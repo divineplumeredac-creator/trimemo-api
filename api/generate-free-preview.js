@@ -1,3 +1,4 @@
+import { getOpenAIModel } from "../lib/openai-model.js";
 import { TRIMEMO_MASTER_ACADEMIC_RULES } from "../lib/trimemo-academic-rules.js";
 const OPENAI_URL = "https://api.openai.com/v1/responses";
 const WORDS_PER_PAGE = 320;
@@ -138,7 +139,7 @@ export default async function handler(req, res) {
       method:"POST",
       headers:{"Content-Type":"application/json",Authorization:"Bearer "+apiKey},
       body:JSON.stringify({
-        model: process.env.OPENAI_MODEL || "gpt-5.6-luna",
+        model: getOpenAIModel(),
         input:[
           {role:"system",content:[{type:"input_text",text:
             TRIMEMO_MASTER_ACADEMIC_RULES + "\n\nTu es le moteur d'aperçu gratuit de Trimémo. Génère en un seul appel une problématique, un plan détaillé et un aperçu incomplet d'introduction. Les consignes, informations, contexte, problématique et plan fournis par le client sont prioritaires. Respecte strictement les éléments fournis. N'invente aucun terrain, pays, organisation, donnée ou source. Le plan doit être cohérent avec le volume demandé. L'introduction générale complète représente environ 10 % du volume total.
