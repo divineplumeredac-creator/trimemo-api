@@ -142,6 +142,8 @@ export default async function handler(req, res) {
       "TYPE : " + (text(project.typeDoc || project.typeDocument || project.type) || "Mémoire"),
       "CONTEXTE : " + (text(project.contexte || project.context) || "Aucun"),
       "CONSIGNES : " + (text(project.consignes || project.instructions) || "Aucune"),
+      "PROBLÉMATIQUE PERSONNELLE : " + (text(project.problematiquePersonnelle || project.problematique || project.problematic) || "Aucune"),
+      "PLAN PERSONNEL : " + (text(project.planPersonnel || project.plan) || "Aucun"),
       buildDocumentInstructions(documentContext),
       "VOLUME : " + pages + " pages, environ " + targetWords + " mots.\nINTRODUCTION GÉNÉRALE : environ " + introductionWords + " mots, soit 10 % du volume total."
     ].join("\n");
@@ -163,7 +165,7 @@ Toute sous-section dont le contenu prévu dépasse 320 mots doit être subdivis�
 Les titres internes doivent correspondre à de véritables idées et ne doivent jamais être artificiels.
 La structure doit varier naturellement à l'intérieur du plan : ne donne pas le même nombre de chapitres à toutes les parties ni le même nombre de sections à tous les chapitres lorsque le contenu ne le justifie pas.
 La variation doit découler du sujet, de la problématique, du niveau, du volume et des consignes.
-N'ajoute aucun niveau uniquement pour créer une symétrie visuelle. Pour l'aperçu gratuit, ne rédige qu'un extrait d'environ 300 mots de cette introduction. Retourne uniquement le JSON demandé."
+N'ajoute aucun niveau uniquement pour créer une symétrie visuelle. Pour l'aperçu gratuit, rédige un extrait d'environ 320 mots. Le serveur plafonnera l'extrait à 320 mots. Retourne uniquement le JSON demandé."
           }]},
           {role:"user",content:[{type:"input_text",text:context+"\n\nGénère une problématique précise, un plan structuré et une introduction d'aperçu d'environ 300 mots."}]}
         ],
@@ -185,7 +187,7 @@ N'ajoute aucun niveau uniquement pour créer une symétrie visuelle. Pour l'aper
       success:true,
       problematic:result.problematic,
       plan:result.plan,
-      introduction:{...result.introduction,content:trimToWords(result.introduction.content, FREE_PREVIEW_WORDS),wordCount:Math.min(FREE_PREVIEW_WORDS, result.introduction.content.trim().split(/\s+/).filter(Boolean).length),incomplete:true,previewWords:FREE_PREVIEW_WORDS,targetWords:introductionWords}
+      introduction:{...result.introduction,content:trimToWords(result.introduction.content, FREE_PREVIEW_WORDS),wordCount:Math.min(FREE_PREVIEW_WORDS, trimToWords(result.introduction.content, FREE_PREVIEW_WORDS).split(/\s+/).filter(Boolean).length),incomplete:true,previewWords:FREE_PREVIEW_WORDS,targetWords:introductionWords}
     });
   } catch(error) {
     console.error("FREE_PREVIEW_ERROR",error);
