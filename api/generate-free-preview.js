@@ -167,7 +167,7 @@ La structure doit varier naturellement à l'intérieur du plan : ne donne pas le
 La variation doit découler du sujet, de la problématique, du niveau, du volume et des consignes.
 N'ajoute aucun niveau uniquement pour créer une symétrie visuelle. Pour l'aperçu gratuit, rédige un extrait d'environ 320 mots. Le serveur plafonnera l'extrait à 320 mots. Retourne uniquement le JSON demandé."
           }]},
-          {role:"user",content:[{type:"input_text",text:context+"\n\nGénère une problématique précise, un plan structuré et une introduction d'aperçu d'environ 300 mots."}]}
+          {role:"user",content:[{type:"input_text",text:context+"\n\nGénère une problématique précise, un plan structuré et une introduction d'aperçu d'environ 320 mots."}]}
         ],
         text:{format:{type:"json_schema",name:"trimemo_free_preview",strict:true,schema}}
       })
