@@ -1,4 +1,4 @@
-import { TRIMEMO_MASTER_ACADEMIC_RULES } from "../lib/trimemo-academic-rules.js";
+import { getOpenAIModel } from "../lib/openai-model.js";import { TRIMEMO_MASTER_ACADEMIC_RULES } from "../lib/trimemo-academic-rules.js";
 import { requireOwner } from "../lib/owner-auth.js";
 import { requirePremiumOrOwner } from "../lib/premium-auth.js";
 import { buildProjectDocumentContext, buildDocumentInstructions, uploadProjectFiles } from "../lib/project-documents.js";
@@ -226,7 +226,7 @@ Utilise des références vérifiables si elles sont nécessaires.
           Authorization: `Bearer ${apiKey}`
         },
         body: JSON.stringify({
-          model: (process.env.OPENAI_MODEL && process.env.OPENAI_MODEL !== "gpt-5.6-luna" ? process.env.OPENAI_MODEL : "gpt-6-luna"),
+          model: getOpenAIModel(),
           max_output_tokens: 5000,
           tools: [{ type: "web_search_preview" }],
           input: [
