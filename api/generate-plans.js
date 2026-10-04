@@ -11,12 +11,12 @@ function txt(v){return String(v??"").trim()}
 function out(d){if(d?.output_text?.trim())return d.output_text.trim();const t=(d?.output||[]).flatMap(x=>x?.content||[]).filter(x=>x?.type==="output_text").map(x=>x.text).join("").trim();if(!t)throw fail("OpenAI n’a retourné aucun plan exploitable.",502);return t}
 function json(v){try{return JSON.parse(v)}catch{const a=v.indexOf("{"),b=v.lastIndexOf("}");if(a>=0&&b>a)return JSON.parse(v.slice(a,b+1));throw fail("Réponse OpenAI invalide.",502)}}
 function title(v,k,f){const p={part:/^part(?:ie)?\s+(?:[IVXLCDM]+|\d+)\s*[.\-–—:]?\s*/i,chapter:/^chap(?:itre|ter)?\s+\d+(?:\.\d+)?\s*[.\-–—:]?\s*/i,section:/^section\s+\d+(?:\.\d+)?\s*[.\-–—:]?\s*/i,subsection:/^sous[- ]section\s+\d+(?:\.\d+)*\s*[.\-–—:]?\s*/i};return txt(v).replace(p[k],"").trim()||f}
-const internal={type:"array",minItems:0,maxItems:4,items:{type:"object",additionalProperties:false,properties:{title:{type:"string"}},required:["title"]}};
-const subs={type:"array",minItems:0,maxItems:8,items:{type:"object",additionalProperties:false,properties:{title:{type:"string"},internalTitles:internal},required:["title","internalTitles"]}};
-const sections={type:"array",minItems:1,maxItems:8,items:{type:"object",additionalProperties:false,properties:{title:{type:"string"},subsections:subs},required:["title","subsections"]}};
-const chapters={type:"array",minItems:1,maxItems:8,items:{type:"object",additionalProperties:false,properties:{title:{type:"string"},sections},required:["title","sections"]}};
-const parts={type:"array",minItems:1,maxItems:8,items:{type:"object",additionalProperties:false,properties:{title:{type:"string"},chapters},required:["title","chapters"]}};
-const SCHEMA={type:"object",additionalProperties:false,properties:{plans:{type:"array",minItems:1,maxItems:3,items:{type:"object",additionalProperties:false,properties:{title:{type:"string"},approach:{type:"string"},parts},required:["title","approach","parts"]}}},required:["plans"]};
+const internal={type:"array",items:{type:"object",additionalProperties:false,properties:{title:{type:"string"}},required:["title"]}};
+const subs={type:"array",items:{type:"object",additionalProperties:false,properties:{title:{type:"string"},internalTitles:internal},required:["title","internalTitles"]}};
+const sections={type:"array",items:{type:"object",additionalProperties:false,properties:{title:{type:"string"},subsections:subs},required:["title","subsections"]}};
+const chapters={type:"array",items:{type:"object",additionalProperties:false,properties:{title:{type:"string"},sections},required:["title","sections"]}};
+const parts={type:"array",items:{type:"object",additionalProperties:false,properties:{title:{type:"string"},chapters},required:["title","chapters"]}};
+const SCHEMA={type:"object",additionalProperties:false,properties:{plans:{type:"array",items:{type:"object",additionalProperties:false,properties:{title:{type:"string"},approach:{type:"string"},parts},required:["title","approach","parts"]}}},required:["plans"]};
 
 function normalize(raw,i,words){
  const ps=Array.isArray(raw?.parts)?raw.parts:[]; if(!ps.length)throw fail("Plan sans partie.",502);
@@ -45,7 +45,7 @@ export default async function handler(req,res){
   const system=["Tu conçois les plans du projet courant.","Lis et applique réellement les documents transmis.","Le guide méthodologique est local à ce projet et prime sur les règles génériques lorsqu’il impose une structure.","Ne force jamais une structure générique de 2 ou 3 parties si le guide en impose une autre.","Respecte les quantités de parties, chapitres, sections et sous-sections explicitement imposées.","Si une quantité n’est pas imposée, choisis-la selon le sujet et la logique scientifique.","Les trois plans doivent varier par logique scientifique, sans matrice artificielle.","N’invente aucun contexte absent.","Retourne uniquement le JSON.",TRIMEMO_MASTER_ACADEMIC_RULES].join("\n");
   const user=context+"\n\nGénère exactement "+count+" plan(s). Volume indicatif : "+words+" mots. Respecte d’abord le guide et les consignes du projet. Ne transforme jamais le guide en règle globale.";
   const r=await fetch(OPENAI_URL,{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+key},body:JSON.stringify({model:getOpenAIModel(),input:[{role:"system",content:[{type:"input_text",text:system}]},{role:"user",content:[{type:"input_text",text:user},...ids.map(file_id=>({type:"input_file",file_id}))]}],text:{format:{type:"json_schema",name:"trimemo_academic_toc",strict:true,schema:SCHEMA}}})});
-  const raw=await r.text();if(!r.ok)throw fail("Erreur OpenAI pendant la génération du plan.",502);
+  const raw=await r.text();if(!r.ok){let detail=raw;try{const e=JSON.parse(raw);detail=e?.error?.message||detail}catch{}throw fail("Erreur OpenAI pendant la génération du plan : "+String(detail).slice(0,1200),502);}
   const data=json(out(JSON.parse(raw)));if(!Array.isArray(data?.plans)||data.plans.length<count)throw fail("OpenAI n’a pas retourné le nombre de plans demandé.",502);
   return res.status(200).json({plans:data.plans.slice(0,count).map((x,i)=>normalize(x,i,words)).map((x,i)=>{x.id="plan-"+(i+1);return x;})});
  }catch(e){console.error("generate-plans error",e);return res.status(e.status||500).json({error:e.message||"Erreur interne lors de la génération des plans."});}
