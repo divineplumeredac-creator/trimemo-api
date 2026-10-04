@@ -176,6 +176,8 @@ export default async function handler(req, res) {
       body.plan ||
       project.plan ||
       null;
+    const documentContext = await buildProjectDocumentContext(project.files);
+    const fileIds = await uploadProjectFiles(project.files, apiKey);
 
     // L’aperçu public est volontairement plafonné à 320 mots.
     // La valeur envoyée par le client ne peut pas augmenter cette limite.
@@ -321,7 +323,8 @@ CONSIGNES FINALES :
                 {
                   type: "input_text",
                   text: userPrompt
-                }
+                },
+                ...fileIds.map((fileId) => ({ type: "input_file", file_id: fileId }))
               ]
             }
           ],
