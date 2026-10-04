@@ -1,7 +1,15 @@
 import { getOpenAIModel } from "../lib/openai-model.js";
 import { TRIMEMO_MASTER_ACADEMIC_RULES } from "../lib/trimemo-academic-rules.js";
+import { buildProjectDocumentContext, buildDocumentInstructions, uploadProjectFiles } from "../lib/project-documents.js";
 const OPENAI_URL = "https://api.openai.com/v1/responses";
 const WORDS_PER_PAGE = 320;
+const FREE_PREVIEW_WORDS = 320;
+
+function trimToWords(value, limit) {
+  const words = String(value || "").trim().split(/\s+/).filter(Boolean);
+  if (words.length <= limit) return words.join(" ");
+  return words.slice(0, limit).join(" ") + "…";
+}
 
 function cors(res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -125,6 +133,8 @@ export default async function handler(req, res) {
     const pages = Math.max(1, Number(project.pages || 30));
     const targetWords = pages * WORDS_PER_PAGE;
     const introductionWords = calculateAcademicIntroductionWords(pages);
+    const documentContext = await buildProjectDocumentContext(project.files);
+    const fileIds = await uploadProjectFiles(project.files, apiKey);
     const context = [
       "SUJET : " + sujet,
       "DOMAINE : " + (text(project.domaine || project.domain) || "Non précisé"),
@@ -132,6 +142,7 @@ export default async function handler(req, res) {
       "TYPE : " + (text(project.typeDoc || project.typeDocument || project.type) || "Mémoire"),
       "CONTEXTE : " + (text(project.contexte || project.context) || "Aucun"),
       "CONSIGNES : " + (text(project.consignes || project.instructions) || "Aucune"),
+      buildDocumentInstructions(documentContext),
       "VOLUME : " + pages + " pages, environ " + targetWords + " mots.\nINTRODUCTION GÉNÉRALE : environ " + introductionWords + " mots, soit 10 % du volume total."
     ].join("\n");
 
@@ -174,7 +185,7 @@ N'ajoute aucun niveau uniquement pour créer une symétrie visuelle. Pour l'aper
       success:true,
       problematic:result.problematic,
       plan:result.plan,
-      introduction:{...result.introduction,incomplete:true,previewWords:300,targetWords:introductionWords}
+      introduction:{...result.introduction,content:trimToWords(result.introduction.content, FREE_PREVIEW_WORDS),wordCount:Math.min(FREE_PREVIEW_WORDS, result.introduction.content.trim().split(/\s+/).filter(Boolean).length),incomplete:true,previewWords:FREE_PREVIEW_WORDS,targetWords:introductionWords}
     });
   } catch(error) {
     console.error("FREE_PREVIEW_ERROR",error);
