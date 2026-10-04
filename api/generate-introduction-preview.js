@@ -1,3 +1,4 @@
+import { getOpenAIModel } from "../lib/openai-model.js";
 import { TRIMEMO_MASTER_ACADEMIC_RULES } from "../lib/trimemo-academic-rules.js";
 import { buildProjectDocumentContext, buildDocumentInstructions, uploadProjectFiles } from "../lib/project-documents.js";
 function setCors(res) {
@@ -292,8 +293,7 @@ CONSIGNES FINALES :
 `;
 
     const model =
-      process.env.OPENAI_MODEL ||
-      "gpt-4o-mini";
+      getOpenAIModel();
 
     const openAIResponse = await fetch(
       "https://api.openai.com/v1/responses",
