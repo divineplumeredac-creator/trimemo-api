@@ -226,7 +226,7 @@ Utilise des références vérifiables si elles sont nécessaires.
           Authorization: `Bearer ${apiKey}`
         },
         body: JSON.stringify({
-          model: process.env.OPENAI_MODEL || "gpt-5.6-luna",
+          model: (process.env.OPENAI_MODEL && process.env.OPENAI_MODEL !== "gpt-5.6-luna" ? process.env.OPENAI_MODEL : "gpt-6-luna"),
           max_output_tokens: 5000,
           tools: [{ type: "web_search_preview" }],
           input: [
