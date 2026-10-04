@@ -398,8 +398,7 @@ Retourne uniquement le JSON.
       },
       body: JSON.stringify({
         model:
-          process.env.OPENAI_MODEL ||
-          "gpt-5.6-luna",
+          (process.env.OPENAI_MODEL && process.env.OPENAI_MODEL !== "gpt-5.6-luna" ? process.env.OPENAI_MODEL : "gpt-6-luna"),
 
         text: {
           format: {
