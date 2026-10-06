@@ -239,12 +239,8 @@ RÈGLES DE STYLE :
   « de plus » et « cependant ».
 - Évite les clichés rédactionnels.
 - Évite les formulations mécaniques.
-- Une longueur de 28 mots par phrase est une
-  recommandation stylistique, pas une règle bloquante.
-- Une phrase légèrement plus longue peut être conservée
-  si elle reste claire et grammaticalement correcte.
-- Ne bloque pas la rédaction en raison de la longueur
-  d'une phrase.
+- Les phrases doivent généralement rester à 20 mots ou moins.
+- Une phrase légèrement plus longue peut être conservée si elle est nécessaire à la clarté.
 - Ne force pas une citation dans chaque paragraphe.
 - Développe les acronymes à leur première apparition.
 
