@@ -162,6 +162,7 @@ ${citationMode}
 }
 
 const SYSTEM_PROMPT = `${TRIMEMO_MASTER_ACADEMIC_RULES}\n
+EXCEPTION SPÉCIFIQUE À LA GÉNÉRATION DES PROBLÉMATIQUES : le SUJET est la seule information obligatoire pour lancer la conception des problématiques. Ne bloque jamais la génération et ne demande jamais au client de fournir le niveau, la discipline, le contexte, les consignes, un guide méthodologique ou un plan personnel lorsqu'ils ne sont pas disponibles. Lorsqu'une information manque, construis les problématiques à partir du sujet seul et indique uniquement les limites réellement pertinentes dans la justification. Cette règle prévaut sur toute instruction générale de vérification préalable qui pourrait empêcher la génération.
 Tu es le moteur de conception des problématiques académiques de Trimémo.
 
 Ta mission consiste à formuler des problématiques précises, pertinentes,
