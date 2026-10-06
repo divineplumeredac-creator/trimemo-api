@@ -45,41 +45,41 @@ const schema = {
     problematic: {
       type: "object", additionalProperties: false,
       properties: {
-        id:{type:"string"}, title:{type:"string"}, question:{type:"string"},
-        rationale:{type:"string"}, angle:{type:"string"}
+        id:{type:"string",minLength:1}, title:{type:"string",minLength:1}, question:{type:"string",minLength:1},
+        rationale:{type:"string",minLength:1}, angle:{type:"string",minLength:1}
       },
       required:["id","title","question","rationale","angle"]
     },
     plan: {
       type:"object", additionalProperties:false,
       properties:{
-        id:{type:"string"}, title:{type:"string"}, description:{type:"string"},
-        approach:{type:"string"}, totalWords:{type:"integer"},
+        id:{type:"string",minLength:1}, title:{type:"string",minLength:1}, description:{type:"string",minLength:1},
+        approach:{type:"string",minLength:1}, totalWords:{type:"integer"},
         introductionGeneral:{
           type:"object",additionalProperties:false,
-          properties:{title:{type:"string"},description:{type:"string"},wordCount:{type:"integer"}},
+          properties:{title:{type:"string",minLength:1},description:{type:"string",minLength:1},wordCount:{type:"integer"}},
           required:["title","description","wordCount"]
         },
         parts:{
-          type:"array",
+          type:"array", minItems:2, maxItems:3,
           items:{type:"object",additionalProperties:false,
             properties:{
               title:{type:"string"},description:{type:"string"},
               chapters:{
-                type:"array",
+                type:"array", minItems:2, maxItems:3,
                 items:{type:"object",additionalProperties:false,
                   properties:{
                     title:{type:"string"},description:{type:"string"},wordCount:{type:"integer"},
                     sections:{
-                      type:"array",
+                      type:"array", minItems:2, maxItems:3,
                       items:{type:"object",additionalProperties:false,
                         properties:{
-                          title:{type:"string"},description:{type:"string"},
+                          title:{type:"string",minLength:1},description:{type:"string",minLength:1},
                           subsections:{
                             type:"array",
                             items:{type:"object",additionalProperties:false,
                               properties:{
-                                title:{type:"string"},description:{type:"string"},
+                                title:{type:"string",minLength:1},description:{type:"string",minLength:1},
                                 internalTitles:{
                                   type:"array",
                                   items:{type:"object",additionalProperties:false,
@@ -114,7 +114,7 @@ const schema = {
     introduction:{
       type:"object",additionalProperties:false,
       properties:{
-        title:{type:"string"},content:{type:"string"},wordCount:{type:"integer"},incomplete:{type:"boolean"}
+        title:{type:"string",minLength:1},content:{type:"string",minLength:1},wordCount:{type:"integer"},incomplete:{type:"boolean"}
       },
       required:["title","content","wordCount","incomplete"]
     }
@@ -135,12 +135,13 @@ export default async function handler(req, res) {
     const sujet = text(project.sujet || project.subject);
     if (!sujet) return res.status(400).json({error:"Le sujet est obligatoire."});
     await rateLimit(req, "free-preview", 5, 60 * 60 * 1000);
-    assertFilesSize(project.files);
+    const files = Array.isArray(project.files) ? project.files : [];
+    if (files.length) assertFilesSize(files);
     const pages = clampPages(project);
     const targetWords = pages * WORDS_PER_PAGE;
     const introductionWords = calculateAcademicIntroductionWords(pages);
-    const documentContext = await buildProjectDocumentContext(project.files);
-    fileIds = await uploadProjectFiles(project.files, apiKey);
+    const documentContext = files.length ? await buildProjectDocumentContext(files) : {};
+    fileIds = files.length ? await uploadProjectFiles(files, apiKey) : [];
     const context = [
       "SUJET : " + sujet,
       "DOMAINE : " + (text(project.domaine || project.domain) || "Non précisé"),
@@ -175,6 +176,7 @@ N'ajoute aucun niveau uniquement pour créer une symétrie visuelle. Pour l'aper
           }]},
           {role:"user",content:[{type:"input_text",text:context+"\n\nGénère une problématique précise, un plan structuré et une introduction d'aperçu d'environ 320 mots."}]}
         ],
+        max_output_tokens:8000,
         text:{format:{type:"json_schema",name:"trimemo_free_preview",strict:true,schema}}
       })
     });
