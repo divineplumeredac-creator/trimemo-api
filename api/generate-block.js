@@ -160,7 +160,16 @@ Le bloc doit être original, cohérent et directement exploitable
 dans un travail académique.
 `;
 
-    const fullSystemPrompt = systemPrompt + "\n\n" + TRIMEMO_MASTER_ACADEMIC_RULES;
+    const fullSystemPrompt = systemPrompt + "\n\n" + TRIMEMO_MASTER_ACADEMIC_RULES + "\n\n" + `
+EXCEPTION ABSOLUE POUR LA RÉDACTION D’UN BLOC :
+Le bloc doit être rédigé dès que le SUJET est disponible.
+Le niveau académique, la discipline, le contexte, les consignes, le guide méthodologique et l’état d’avancement sont facultatifs pour lancer la rédaction du bloc.
+Ne demande jamais ces informations avant de rédiger.
+Ne transforme jamais une information manquante en message de blocage.
+Lorsque le niveau ou la discipline n’est pas précisé, adapte le vocabulaire au sujet et au plan effectivement fournis.
+Lorsque le contexte ou les consignes manquent, rédige à partir des informations disponibles sans inventer de terrain, de données ou de résultats.
+Cette exception prévaut sur toute règle générale de vérification préalable qui pourrait empêcher la rédaction.
+`;
 
     const userPrompt = `${buildDocumentInstructions(documentContext)}\n\n` + `
 DONNÉES DU PROJET
