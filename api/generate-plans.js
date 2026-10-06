@@ -14,9 +14,9 @@ function json(v){try{return JSON.parse(v)}catch{const a=v.indexOf("{"),b=v.lastI
 function title(v,k,f){const p={part:/^part(?:ie)?\s+(?:[IVXLCDM]+|\d+)\s*[.\-–—:]?\s*/i,chapter:/^chap(?:itre|ter)?\s+\d+(?:\.\d+)?\s*[.\-–—:]?\s*/i,section:/^section\s+\d+(?:\.\d+)?\s*[.\-–—:]?\s*/i,subsection:/^sous[- ]section\s+\d+(?:\.\d+)*\s*[.\-–—:]?\s*/i};return txt(v).replace(p[k],"").trim()||f}
 const internal={type:"array",items:{type:"object",additionalProperties:false,properties:{title:{type:"string"}},required:["title"]}};
 const subs={type:"array",items:{type:"object",additionalProperties:false,properties:{title:{type:"string"},internalTitles:internal},required:["title","internalTitles"]}};
-const sections={type:"array",items:{type:"object",additionalProperties:false,properties:{title:{type:"string"},subsections:subs},required:["title","subsections"]}};
-const chapters={type:"array",items:{type:"object",additionalProperties:false,properties:{title:{type:"string"},sections},required:["title","sections"]}};
-const parts={type:"array",items:{type:"object",additionalProperties:false,properties:{title:{type:"string"},chapters},required:["title","chapters"]}};
+const sections={type:"array",minItems:2,maxItems:3,items:{type:"object",additionalProperties:false,properties:{title:{type:"string"},subsections:subs},required:["title","subsections"]}};
+const chapters={type:"array",minItems:2,maxItems:3,items:{type:"object",additionalProperties:false,properties:{title:{type:"string"},sections},required:["title","sections"]}};
+const parts={type:"array",minItems:2,maxItems:3,items:{type:"object",additionalProperties:false,properties:{title:{type:"string"},chapters},required:["title","chapters"]}};
 const SCHEMA={type:"object",additionalProperties:false,properties:{plans:{type:"array",items:{type:"object",additionalProperties:false,properties:{title:{type:"string"},approach:{type:"string"},parts},required:["title","approach","parts"]}}},required:["plans"]};
 
 function normalize(raw, i, words) {
