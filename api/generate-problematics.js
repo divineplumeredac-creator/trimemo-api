@@ -484,21 +484,36 @@ export default async function handler(req, res) {
       ""
     ).trim();
 
-    assertFilesSize(project.files);
-    const fileIds = await uploadProjectFiles(project.files, apiKey);
-    const generationCount = supplied && count === 3 ? 2 : count;
+    // Une problématique fournie par le client est une instruction directe.
+    // Elle ne doit jamais déclencher une nouvelle génération de problématiques.
+    if (supplied) {
+      return res.status(200).json({
+        problematiques: [{
+          id: "personal-problematic",
+          title: "Problématique fournie par le client",
+          question: supplied,
+          rationale: "Problématique saisie par le client et conservée telle quelle.",
+          angle: "Approche définie par le client",
+        }],
+        directToPlans: true,
+      });
+    }
+
+    const files = Array.isArray(project.files) ? project.files : [];
+    let fileIds = [];
     try {
+      if (files.length) {
+        assertFilesSize(files);
+        fileIds = await uploadProjectFiles(files, apiKey);
+      }
       const rawResponse = await callOpenAI({
-        project,
+        project: { ...project, files },
         apiKey,
         fileIds,
-        count: generationCount,
+        count,
       });
-      const generated = validateProblematiques(rawResponse, generationCount);
-      const problematiques = supplied
-        ? [{ id: "personal-problematic", title: "Problématique fournie par le client", question: supplied, rationale: "Problématique saisie par le client et conservée comme première option.", angle: "Approche définie par le client" }, ...generated].slice(0, count)
-        : generated;
-      return res.status(200).json({ problematiques });
+      const generated = validateProblematiques(rawResponse, count);
+      return res.status(200).json({ problematiques: generated });
     } finally {
       await deleteOpenAIFiles(fileIds, apiKey);
     }
