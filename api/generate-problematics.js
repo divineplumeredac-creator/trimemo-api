@@ -218,10 +218,8 @@ STYLE :
 - Pas de répétitions inutiles.
 - Pas de clichés rédactionnels.
 - Pas de phrases artificielles.
-- Une longueur de 28 mots par phrase est une recommandation,
-  et non une règle bloquante.
-- Ne rejette pas une formulation uniquement parce qu'une phrase dépasse
-  légèrement cette longueur.
+- Les phrases doivent généralement rester à 20 mots ou moins.
+- Une phrase légèrement plus longue peut être conservée si elle est nécessaire à la clarté.
 - N'impose pas une citation dans chaque élément.
 - N'invente aucune référence.
 - Développe les sigles lors de leur première utilisation.
