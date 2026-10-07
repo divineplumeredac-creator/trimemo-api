@@ -137,10 +137,11 @@ INSTRUCTIONS SPÉCIFIQUES DU BLOC :
 10. Ne répète pas les idées déjà développées dans le bloc.
 11. Les blocs précédents sont une mémoire de continuité, pas une matière à recopier.
 12. N’introduis pas de nouvelle introduction, de nouvelle problématique ou de nouvelle annonce du plan si ces éléments ont déjà été traités.
-13. Un bloc peut regrouper plusieurs sous-sections consécutives et leurs titres internes lorsque la structure reçue les rassemble.
-14. Développe toutes les unités présentes dans STRUCTURE DU BLOC, dans leur ordre, sans en supprimer une.
-15. Assure une transition naturelle entre les sous-sections regroupées. Ne crée pas de rupture artificielle entre elles.
-16. Ne répète pas l'introduction, la problématique ou l'annonce du plan à chaque sous-section.
+13. Le découpage en blocs est subordonné à la cohérence scientifique, jamais à un quota mécanique de mots.
+14. Un bloc peut couvrir une section entière et toutes ses sous-sections, ou plusieurs sections consécutives lorsqu'elles forment une même unité argumentative.
+15. Développe toutes les unités présentes dans STRUCTURE DU BLOC, dans leur ordre, sans en supprimer une.
+16. Assure une transition naturelle entre les unités regroupées. Ne crée pas de rupture artificielle pour respecter un nombre de mots.
+17. Ne répète pas l'introduction, la problématique ou l'annonce du plan à chaque unité.
 17. Assure une progression logique avec les blocs précédents.
 18. Chaque paragraphe doit développer une idée principale.
 19. Utilise un style rigoureux, fluide et naturel.
@@ -218,7 +219,11 @@ SOURCES :
 Recherchez les références nécessaires avant la rédaction. Retenez uniquement des sources réellement retrouvées, fiables et accessibles.
 Ne réutilisez pas inutilement une source déjà présente dans les blocs précédents.
 La rédaction finale doit permettre au document complet d’atteindre au minimum 10 références bibliographiques distinctes.
-Un bloc standard vise environ 900 mots. Il peut couvrir plusieurs sous-sections et leurs titres internes.
+900 mots constitue une cible de confort, pas une limite ni une obligation.
+Le bloc doit suivre la cohérence scientifique du plan. Il peut contenir plusieurs sous-sections, leurs titres internes, ou une section entière avec toutes ses sous-sections.
+Une section ne doit pas être artificiellement découpée uniquement pour atteindre 900 mots.
+Si une section est dense et scientifiquement cohérente, elle peut dépasser 900 mots.
+Si plusieurs sections consécutives forment une unité argumentative cohérente, elles peuvent être regroupées dans un même bloc.
 
 OBJECTIF DE LONGUEUR :
 Environ ${safeWordTarget} mots.
