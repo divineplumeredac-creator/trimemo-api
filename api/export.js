@@ -7,7 +7,9 @@ import {
   AlignmentType,
   PageBreak,
   Footer,
+  Header,
   PageNumber,
+  TableOfContents,
 } from 'docx';
 import compileDocument from '../lib/compile-document.js';
 import { resolveFormatting } from '../lib/academic-format.js';
@@ -32,12 +34,19 @@ function run(value, formatting, options = {}) {
     size: (options.size || formatting.bodySize) * 2,
     bold: Boolean(options.bold),
     italics: Boolean(options.italics),
+    color: options.color,
   });
 }
 function paragraph(value, formatting, options = {}) {
   return new Paragraph({
     alignment: options.alignment || AlignmentType.JUSTIFIED,
-    spacing: { line: Math.round(formatting.lineSpacing * 240), before: options.before || 0, after: options.after ?? 120 },
+    keepNext: Boolean(options.keepNext),
+    indent: options.indent ? { firstLine: options.indent } : undefined,
+    spacing: {
+      line: Math.round(formatting.lineSpacing * 240),
+      before: options.before || 0,
+      after: options.after ?? 120,
+    },
     children: [run(value, formatting, options)],
   });
 }
@@ -60,70 +69,77 @@ function heading(value, level, formatting) {
   return new Paragraph({
     heading: headingLevels[level] || HeadingLevel.HEADING_3,
     keepNext: true,
-    spacing: { before: 240, after: 120, line: Math.round(formatting.lineSpacing * 240) },
+    pageBreakBefore: level === 1,
+    spacing: {
+      before: level === 1 ? 360 : level === 2 ? 280 : 200,
+      after: 120,
+      line: Math.round(formatting.lineSpacing * 240),
+    },
     children: [run(value, formatting, { bold: true, size })],
   });
 }
-
 function roman(number) {
-  const values = [[10,"X"],[9,"IX"],[5,"V"],[4,"IV"],[1,"I"]];
-  let n = Number(number) || 1;
-  let out = "";
-  for (const [value, symbol] of values) {
-    while (n >= value) { out += symbol; n -= value; }
-  }
+  const values = [[1000,"M"],[900,"CM"],[500,"D"],[400,"CD"],[100,"C"],[90,"XC"],[50,"L"],[40,"XL"],[10,"X"],[9,"IX"],[5,"V"],[4,"IV"],[1,"I"]];
+  let n = Number(number) || 1, out = "";
+  for (const [value, symbol] of values) while (n >= value) { out += symbol; n -= value; }
   return out;
 }
-
-function partTitle(part) {
-  return "PARTIE " + roman(part.number) + " : " + text(part.title);
-}
-
-function chapterTitle(chapter) {
-  return "CHAPITRE " + chapter.number + " : " + text(chapter.title);
-}
-
-function sectionTitle(chapter, section) {
-  return "SECTION " + chapter.number + "." + section.number + " : " + text(section.title);
-}
-
+function partTitle(part) { return 'PARTIE ' + roman(part.number) + ' : ' + text(part.title); }
+function chapterTitle(chapter) { return 'CHAPITRE ' + chapter.number + ' : ' + text(chapter.title); }
+function sectionTitle(chapter, section) { return 'SECTION ' + chapter.number + '.' + section.number + ' : ' + text(section.title); }
 function subsectionTitle(chapter, section, subsection) {
-  return "Sous-section " + chapter.number + "." + section.number + "." + subsection.number + " : " + text(subsection.title);
+  return 'Sous-section ' + chapter.number + '.' + section.number + '.' + subsection.number + ' : ' + text(subsection.title);
 }
-
-function addTableOfContents(children, plan, formatting) {
-  children.push(heading("Table des matières", 1, formatting));
-  children.push(paragraph("Introduction générale", formatting, { alignment: AlignmentType.LEFT, bold: true, after: 100 }));
-
-  for (const part of plan.parts || []) {
-    children.push(paragraph(partTitle(part), formatting, { alignment: AlignmentType.LEFT, bold: true, before: 120, after: 80 }));
-    for (const chapter of part.chapters || []) {
-      children.push(paragraph(chapterTitle(chapter), formatting, { alignment: AlignmentType.LEFT, bold: true, before: 80, after: 60 }));
-      for (const section of chapter.sections || []) {
-        children.push(paragraph(sectionTitle(chapter, section), formatting, { alignment: AlignmentType.LEFT, before: 40, after: 40 }));
-        for (const subsection of section.subsections || []) {
-          children.push(paragraph(subsectionTitle(chapter, section, subsection), formatting, { alignment: AlignmentType.LEFT, before: 20, after: 30 }));
-          for (const internal of subsection.internalTitles || []) {
-            children.push(paragraph(
-              "Titre interne " + chapter.number + "." + section.number + "." + subsection.number + "." + internal.number + " : " + text(internal.title),
-              formatting,
-              { alignment: AlignmentType.LEFT, before: 10, after: 20 }
-            ));
-          }
-        }
-      }
-    }
-  }
-
-  children.push(paragraph("Conclusion générale", formatting, { alignment: AlignmentType.LEFT, bold: true, before: 120, after: 80 }));
-  children.push(paragraph("Bibliographie", formatting, { alignment: AlignmentType.LEFT, bold: true, after: 80 }));
+function internalTitle(chapter, section, subsection, internal) {
+  return 'Titre interne ' + chapter.number + '.' + section.number + '.' + subsection.number + '.' + internal.number + ' : ' + text(internal.title);
+}
+function structureLevel(label) {
+  const value = text(label).trim().toLowerCase();
+  if (/^(partie|part)\s+/i.test(value)) return 1;
+  if (/^chapitre\s+/i.test(value)) return 2;
+  if (/^section\s+/i.test(value)) return 3;
+  if (/^(sous-section|§)\s*/i.test(value)) return 4;
+  if (/^titre interne\s+/i.test(value)) return 5;
+  return 0;
+}
+function markdownHeading(line) {
+  const match = text(line).match(/^\s*(#{1,5})\s+(.+?)\s*#*\s*$/);
+  return match ? { level: match[1].length, title: match[2].trim() } : null;
 }
 function addContent(children, content, formatting, options = {}) {
-  for (const line of text(content).split(/\r?\n/).map((v) => v.trim()).filter(Boolean)) {
-    children.push(paragraph(line, formatting, options));
+  const lines = text(content).split(/\r?\n/);
+  let buffer = [];
+  const flush = () => {
+    if (!buffer.length) return;
+    const value = buffer.join(' ').replace(/\s+/g, ' ').trim();
+    if (value) children.push(paragraph(value, formatting, options));
+    buffer = [];
+  };
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) { flush(); continue; }
+    const h = markdownHeading(line);
+    if (h) {
+      flush();
+      children.push(heading(h.title, h.level, formatting));
+    } else {
+      buffer.push(line);
+    }
   }
+  flush();
 }
-function addPlan(children, plan, formatting) {
+function addStructuredBlock(children, block, formatting) {
+  const content = text(block.content);
+  const hasMarkdownHeadings = content.split(/\r?\n/).some((line) => markdownHeading(line));
+  if (!hasMarkdownHeadings && Array.isArray(block.structure) && block.structure.length) {
+    for (const label of block.structure) {
+      const level = structureLevel(label);
+      if (level) children.push(heading(label, level, formatting));
+    }
+  }
+  addContent(children, content, formatting);
+}
+function addPlanOutline(children, plan, formatting) {
   for (const part of plan.parts || []) {
     children.push(heading(partTitle(part), 1, formatting));
     for (const chapter of part.chapters || []) {
@@ -133,117 +149,123 @@ function addPlan(children, plan, formatting) {
         for (const subsection of section.subsections || []) {
           children.push(heading(subsectionTitle(chapter, section, subsection), 4, formatting));
           for (const internal of subsection.internalTitles || []) {
-            children.push(heading(
-              "Titre interne " + chapter.number + "." + section.number + "." + subsection.number + "." + internal.number + " : " + text(internal.title),
-              5,
-              formatting
-            ));
+            children.push(heading(internalTitle(chapter, section, subsection, internal), 5, formatting));
           }
         }
       }
     }
   }
 }
-function structureLevel(label) {
-  const value = text(label).toLowerCase();
-  if (value.startsWith("partie ")) return 1;
-  if (value.startsWith("chapitre ")) return 2;
-  if (value.startsWith("section ")) return 3;
-  if (value.startsWith("sous-section ") || value.startsWith("§ ")) return 4;
-  if (value.startsWith("titre interne ")) return 5;
-  if (value.startsWith("introduction générale") || value.startsWith("conclusion générale")) return 1;
-  return 3;
-}
-
-function addBlock(children, block, formatting, previousStructure = []) {
-  const structure = Array.isArray(block.structure) ? block.structure : [];
-  let common = 0;
-  while (common < Math.min(previousStructure.length, structure.length) &&
-         previousStructure[common] === structure[common]) {
-    common += 1;
-  }
-
-  for (let index = common; index < structure.length; index += 1) {
-    const label = text(structure[index]);
-    if (!label) continue;
-    const level = structureLevel(label);
-    if (level <= 5) {
-      children.push(heading(label, level, formatting));
-    } else {
-      children.push(paragraph(label, formatting, {
-        bold: true,
-        alignment: AlignmentType.LEFT,
-        before: 120,
-      }));
-    }
-  }
-
-  if (!structure.length && block.title) {
-    children.push(heading(block.title, 3, formatting));
-  }
-
-  addContent(children, block.content, formatting);
-
-  const footnotes = Array.isArray(block.footnotes) ? block.footnotes : [];
-  if (footnotes.length) {
-    children.push(paragraph('Notes de bas de page', formatting, {
-      bold: true,
-      alignment: AlignmentType.LEFT,
+function addTitlePage(children, compiled, formatting) {
+  const subject = compiled.project?.sujet || compiled.project?.subject || 'Document académique';
+  children.push(new Paragraph({
+    alignment: AlignmentType.CENTER,
+    spacing: { before: 2400, after: 500 },
+    children: [run(subject.toUpperCase(), formatting, { bold: true, size: 18 })],
+  }));
+  children.push(new Paragraph({
+    alignment: AlignmentType.CENTER,
+    spacing: { after: 500 },
+    children: [run('DOCUMENT ACADÉMIQUE', formatting, { bold: true, size: 14 })],
+  }));
+  const metadata = [
+    ['Niveau', compiled.project?.niveau || compiled.project?.level],
+    ['Type de document', compiled.project?.typeDoc || compiled.project?.documentType],
+    ['Discipline', compiled.project?.discipline],
+  ].filter(([, value]) => text(value).trim());
+  for (const [label, value] of metadata) {
+    children.push(new Paragraph({
+      alignment: AlignmentType.CENTER,
+      spacing: { after: 120 },
+      children: [
+        run(label + ' : ', formatting, { bold: true, size: 11 }),
+        run(value, formatting, { size: 11 }),
+      ],
     }));
-    footnotes.forEach((note, index) =>
-      children.push(
-        paragraph(String(index + 1) + '. ' + note, formatting, {
-          alignment: AlignmentType.LEFT,
-        })
-      )
-    );
+  }
+  children.push(new Paragraph({
+    alignment: AlignmentType.CENTER,
+    spacing: { before: 1000 },
+    children: [run('Généré avec Trimémo', formatting, { italics: true, size: 10 })],
+  }));
+  children.push(new Paragraph({ children: [new PageBreak()] }));
+}
+function addBibliography(children, compiled, formatting) {
+  children.push(heading('Bibliographie', 1, formatting));
+  const entries = Array.isArray(compiled.bibliography?.entries) ? compiled.bibliography.entries : [];
+  if (!entries.length) {
+    addContent(children, 'Aucune référence bibliographique validée n’a été transmise.', formatting);
+    return;
+  }
+  for (const entry of entries) {
+    children.push(paragraph(entry, formatting, {
+      alignment: AlignmentType.LEFT,
+      after: 180,
+      indent: 360,
+    }));
   }
 }
-
 function buildChildren(compiled, formatting) {
   const children = [];
-  const subject = compiled.project?.sujet || compiled.project?.subject || 'Document académique';
+  addTitlePage(children, compiled, formatting);
 
   children.push(new Paragraph({
-    alignment: AlignmentType.CENTER,
-    spacing: { before: 2400, after: 240 },
-    children: [run(subject, formatting, { bold: true, size: 16 })],
+    heading: HeadingLevel.HEADING_1,
+    keepNext: true,
+    spacing: { before: 240, after: 240 },
+    children: [run('Table des matières', formatting, { bold: true, size: formatting.partSize })],
   }));
-  children.push(new Paragraph({
-    alignment: AlignmentType.CENTER,
-    children: [run('Document académique généré avec Trimémo', formatting, { italics: true, size: 11 })],
+  children.push(new TableOfContents('Table des matières', {
+    hyperlink: true,
+    headingStyleRange: '1-5',
   }));
   children.push(new Paragraph({ children: [new PageBreak()] }));
-  addTableOfContents(children, compiled.plan, formatting);
-  children.push(new Paragraph({ children: [new PageBreak()] }));
 
-  children.push(heading('Problématique', 1, formatting));
-  const p = compiled.problematic || {};
-  addContent(children, p.title, formatting, { bold: true });
-  addContent(children, p.question || p.text || p.content, formatting);
+  children.push(heading('Introduction générale', 1, formatting));
+  const introductionBlocks = compiled.blocks.filter((block) => block.kind === 'introduction');
+  const chapterBlocks = compiled.blocks.filter((block) => block.kind === 'chapter' || !block.kind);
+  const conclusionBlocks = compiled.blocks.filter((block) => block.kind === 'conclusion');
 
-  children.push(heading('Plan retenu', 1, formatting));
-  addContent(children, compiled.plan.title, formatting, { bold: true });
-  addPlan(children, compiled.plan, formatting);
-  children.push(new Paragraph({ children: [new PageBreak()] }));
-
-  children.push(heading('Développement', 1, formatting));
-  let previousStructure = [];
-  for (const block of compiled.blocks) {
-    addBlock(children, block, formatting, previousStructure);
-    previousStructure = Array.isArray(block.structure) ? block.structure : [];
-  }
-
-  children.push(new Paragraph({ children: [new PageBreak()] }));
-  children.push(heading('Bibliographie', 1, formatting));
-  if (!compiled.bibliography.entries.length) {
-    addContent(children, 'Aucune référence bibliographique n’a été transmise ou validée.', formatting);
+  if (introductionBlocks.length) {
+    for (const block of introductionBlocks) addStructuredBlock(children, block, formatting);
   } else {
-    for (const entry of compiled.bibliography.entries) {
-      children.push(paragraph(entry, formatting, { alignment: AlignmentType.LEFT, after: 180 }));
-    }
+    const intro = compiled.plan?.introductionGeneral || compiled.plan?.introduction || {};
+    if (text(intro.content)) addContent(children, intro.content, formatting);
   }
+
+  for (const block of chapterBlocks) addStructuredBlock(children, block, formatting);
+
+  if (conclusionBlocks.length) {
+    children.push(heading('Conclusion générale', 1, formatting));
+    for (const block of conclusionBlocks) addStructuredBlock(children, block, formatting);
+  } else if (text(compiled.plan?.conclusionGeneral?.content || compiled.plan?.conclusion?.content)) {
+    children.push(heading('Conclusion générale', 1, formatting));
+    addContent(children, compiled.plan.conclusionGeneral?.content || compiled.plan.conclusion?.content, formatting);
+  }
+
+  addBibliography(children, compiled, formatting);
   return children;
+}
+function makeHeader(formatting, compiled) {
+  const subject = text(compiled.project?.sujet || compiled.project?.subject);
+  return new Header({
+    children: [new Paragraph({
+      alignment: AlignmentType.RIGHT,
+      spacing: { after: 0 },
+      children: [run(subject, formatting, { size: 9, italics: true })],
+    })],
+  });
+}
+function makeFooter(formatting) {
+  return new Footer({
+    children: [new Paragraph({
+      alignment: AlignmentType.CENTER,
+      children: [
+        run('Page ', formatting, { size: 9 }),
+        new TextRun({ children: [PageNumber.CURRENT], font: formatting.fontFamily, size: 18 }),
+      ],
+    })],
+  });
 }
 
 export default async function handler(req, res) {
@@ -257,20 +279,27 @@ export default async function handler(req, res) {
     if (body.format && body.format !== 'docx') return res.status(400).json({ error: 'Format non pris en charge. Utilisez docx.' });
 
     const compiled = compileDocument(body);
-    const uniqueSources = Array.isArray(compiled.bibliography?.sources)
-      ? compiled.bibliography.sources
-      : [];
-    const bibliographyWarning = uniqueSources.length < 10 || uniqueSources.some((source) => !source.doi && !source.url);
+    const uniqueSources = Array.isArray(compiled.bibliography?.sources) ? compiled.bibliography.sources : [];
+    const missingLinks = uniqueSources.filter((source) => !source.doi && !source.url).length;
+    const bibliographyWarning = uniqueSources.length < 10 || missingLinks > 0;
     res.setHeader('X-Trimemo-Bibliography-Warning', bibliographyWarning ? 'true' : 'false');
     res.setHeader('X-Trimemo-Bibliography-Count', String(uniqueSources.length));
-    res.setHeader('X-Trimemo-Bibliography-Missing-Links', String(uniqueSources.filter((source) => !source.doi && !source.url).length));
+    res.setHeader('X-Trimemo-Bibliography-Missing-Links', String(missingLinks));
+
     const formatting = resolveFormatting(body.formatting || {});
     const doc = new Document({
+      creator: 'Trimémo',
+      title: text(compiled.project?.sujet || 'Document académique'),
+      subject: 'Document académique généré avec Trimémo',
+      description: 'Document structuré et mis en forme automatiquement par Trimémo.',
+      settings: { updateFields: true },
       styles: {
         default: {
           document: {
             run: { font: formatting.fontFamily, size: formatting.bodySize * 2 },
-            paragraph: { spacing: { line: Math.round(formatting.lineSpacing * 240), after: 120 } },
+            paragraph: {
+              spacing: { line: Math.round(formatting.lineSpacing * 240), after: 120 },
+            },
           },
         },
       },
@@ -285,17 +314,8 @@ export default async function handler(req, res) {
             },
           },
         },
-        footers: {
-          default: new Footer({
-            children: [new Paragraph({
-              alignment: AlignmentType.CENTER,
-              children: [
-                run('Page ', formatting, { size: 9 }),
-                new TextRun({ children: [PageNumber.CURRENT], font: formatting.fontFamily, size: 18 }),
-              ],
-            })],
-          }),
-        },
+        headers: { default: makeHeader(formatting, compiled) },
+        footers: { default: makeFooter(formatting) },
         children: buildChildren(compiled, formatting),
       }],
     });
