@@ -148,27 +148,66 @@ function addContent(children, content, formatting, options = {}) {
 function addStructuredBlock(children, block, formatting, hierarchy = {}) {
   const content = text(block.content);
   const labels = Array.isArray(block.structure) ? block.structure.filter(Boolean) : [];
-  const structuralKeys = new Set(labels.map(normalizeHeadingKey));
+  const labelByKey = new Map(
+    labels
+      .map((label) => [normalizeHeadingKey(label), cleanAcademicText(label)])
+      .filter(([key]) => key)
+  );
   const lines = content.split(/\r?\n/);
-  const filtered = [];
-  for (const raw of lines) {
-    const plain = cleanAcademicText(raw);
-    const h = markdownHeading(raw);
-    if ((h && structuralKeys.has(normalizeHeadingKey(h.title))) || structuralKeys.has(normalizeHeadingKey(plain))) continue;
-    filtered.push(raw);
-  }
+  let buffer = [];
 
-  for (const label of labels) {
+  const flush = () => {
+    if (!buffer.length) return;
+    const value = cleanAcademicText(buffer.join(' ').replace(/\s+/g, ' '));
+    if (value) children.push(paragraph(value, formatting));
+    buffer = [];
+  };
+
+  const emitStructuralHeading = (label) => {
     const level = structureLevel(label);
-    if (!level) continue;
+    if (!level) return;
     const key = normalizeHeadingKey(label);
-    if (hierarchy[level] === key) continue;
-    children.push(heading(cleanAcademicText(label), level, formatting));
+    if (!key) return;
+
+    // The heading is emitted exactly where it occurs in the generated content.
+    // This keeps the opening paragraph of a PARTIE/CHAPITRE directly below
+    // its heading instead of moving all structural headings before the prose.
+    if (hierarchy[level] === key) return;
+
+    children.push(heading(label, level, formatting));
     hierarchy[level] = key;
     for (let deeper = level + 1; deeper <= 5; deeper++) delete hierarchy[deeper];
+  };
+
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) {
+      flush();
+      continue;
+    }
+
+    const markdown = markdownHeading(line);
+    const plainKey = normalizeHeadingKey(line);
+    const candidateKey = markdown
+      ? normalizeHeadingKey(markdown.title)
+      : plainKey;
+
+    if (labelByKey.has(candidateKey)) {
+      flush();
+      emitStructuralHeading(labelByKey.get(candidateKey));
+      continue;
+    }
+
+    if (markdown) {
+      flush();
+      children.push(heading(markdown.title, markdown.level, formatting));
+      continue;
+    }
+
+    buffer.push(line);
   }
 
-  addContent(children, filtered.join('\n'), formatting);
+  flush();
 }
 function addPlanOutline(children, plan, formatting) {
   for (const part of plan.parts || []) {
