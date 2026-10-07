@@ -104,23 +104,23 @@ function structureLevel(label) {
 }
 function cleanAcademicText(value) {
   return text(value)
-    .replace(/\\*\\*(.*?)\\*\\*/g, '$1')
-    .replace(/\\*(.*?)\\*/g, '$1')
-    .replace(/\\[([^\\]]+)\\]\\((https?:\\/\\/[^)]+)\\)/g, '$1')
-    .replace(/([?&])utm_(source|medium|campaign|term|content)=[^&\\s)]+/gi, '$1')
-    .replace(/[ \\t]+/g, ' ')
+    .replace(/\*\*(.*?)\*\*/g, '$1')
+    .replace(/\*(.*?)\*/g, '$1')
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, '$1')
+    .replace(/([?&])utm_(source|medium|campaign|term|content)=[^&\s)]+/gi, '$1')
+    .replace(/[ \t]+/g, ' ')
     .trim();
 }
 function normalizeHeadingKey(value) {
   return cleanAcademicText(value)
     .toLowerCase()
-    .replace(/^[#\\s]+/, '')
-    .replace(/^(partie|part|chapitre|section|sous-section|titre interne)\\s+[ivxlcdm0-9.]+\\s*[:.)-]?\\s*/i, '')
-    .replace(/\\s+/g, ' ')
+    .replace(/^[#\s]+/, '')
+    .replace(/^(partie|part|chapitre|section|sous-section|titre interne)\s+[ivxlcdm0-9.]+\s*[:.)-]?\s*/i, '')
+    .replace(/\s+/g, ' ')
     .trim();
 }
 function markdownHeading(line) {
-  const match = text(line).match(/^\\s*(#{1,5})\\s+(.+?)\\s*#*\\s*$/);
+  const match = text(line).match(/^\s*(#{1,5})\s+(.+?)\s*#*\s*$/);
   return match ? { level: match[1].length, title: cleanAcademicText(match[2].trim()) } : null;
 }
 function addContent(children, content, formatting, options = {}) {
