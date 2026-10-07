@@ -19,7 +19,7 @@ function txt(v){return String(v??"").trim()}
 function out(d){
   if(d?.output_text?.trim()) return d.output_text.trim();
   const t=(d?.output||[]).flatMap(x=>x?.content||[]).filter(x=>x?.type==="output_text").map(x=>x.text).join("").trim();
-  if(!t) throw fail("OpenAI n’a retourné aucun plan exploitable.",502);
+  if(!t) throw fail("OpenAI n’a retourné aucun résultat exploitable.",502);
   return t;
 }
 function json(v){
@@ -29,6 +29,22 @@ function json(v){
     throw fail("Réponse OpenAI invalide.",502);
   }
 }
+
+const CONTRACT_SCHEMA={
+  type:"object",additionalProperties:false,
+  properties:{
+    researchType:{type:"string"},documentType:{type:"string"},academicLevel:{type:"string"},
+    discipline:{type:"string"},methodology:{type:"string"},mandatoryStructure:{type:"string"},
+    mandatoryRequirements:{type:"array",items:{type:"string"}},
+    clientConstraints:{type:"array",items:{type:"string"}},
+    contextConstraints:{type:"array",items:{type:"string"}},
+    scientificDimensions:{type:"array",items:{type:"string"}},
+    requiredChain:{type:"array",items:{type:"string"}},
+    prohibitedAssumptions:{type:"array",items:{type:"string"}},
+    personalPlan:{type:"string"},personalProblematic:{type:"string"}
+  },
+  required:["researchType","documentType","academicLevel","discipline","methodology","mandatoryStructure","mandatoryRequirements","clientConstraints","contextConstraints","scientificDimensions","requiredChain","prohibitedAssumptions","personalPlan","personalProblematic"]
+};
 
 const SCHEMA={
   type:"object",
@@ -51,6 +67,120 @@ const SCHEMA={
   required:["plans"]
 };
 
+const EVALUATION_SCHEMA={
+  type:"object",additionalProperties:false,
+  properties:{
+    valid:{type:"boolean"},
+    score:{type:"integer"},
+    failures:{type:"array",items:{type:"string"}},
+    matchedRequirements:{type:"array",items:{type:"string"}},
+    scientificQuality:{type:"string"},
+    academicLogic:{type:"string"}
+  },
+  required:["valid","score","failures","matchedRequirements","scientificQuality","academicLogic"]
+};
+
+async function callModel({key,system,user,schema,name,files=[]}){
+  const response=await fetch(OPENAI_URL,{
+    method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+key},
+    body:JSON.stringify({
+      model:getOpenAIModel(),
+      input:[
+        {role:"system",content:[{type:"input_text",text:system}]},
+        {role:"user",content:[{type:"input_text",text:user},...files.map(file_id=>({type:"input_file",file_id}))]}
+      ],
+      text:{format:{type:"json_schema",name,strict:true,schema}}
+    })
+  });
+  const raw=await response.text();
+  if(!response.ok){
+    let detail=raw;try{const e=JSON.parse(raw);detail=e?.error?.message||detail}catch{}
+    throw fail("Erreur OpenAI : "+String(detail).slice(0,1200),502);
+  }
+  return json(out(JSON.parse(raw)));
+}
+
+async function buildClientContract({key,context,docs}){
+  const system=`Tu es l'analyste des exigences académiques de Trimémo.
+Ta mission n'est PAS de produire un plan. Tu dois transformer le dossier du client en CONTRAT SCIENTIFIQUE EXÉCUTABLE.
+
+Tu dois lire toutes les informations disponibles et les hiérarchiser.
+Les consignes explicites du client sont des contraintes obligatoires.
+Un guide méthodologique fourni est une contrainte locale prioritaire.
+Le contexte fourni doit influencer le périmètre du plan.
+Le niveau et le type de document doivent influencer le niveau de profondeur et la logique scientifique.
+Une problématique personnelle doit être conservée sans changement de sens.
+Un plan personnel doit être identifié séparément et ne doit pas être confondu avec le plan proposé par Trimémo.
+
+Tu dois distinguer :
+1. ce qui est explicitement imposé ;
+2. ce qui est déduit légitimement ;
+3. ce qui manque ;
+4. ce qui est interdit d'inventer.
+
+Pour un mémoire, une thèse ou un travail scientifique, identifie les dimensions nécessaires à l'analyse de la problématique.
+Ne réduis jamais le dossier à une liste de thèmes d'exposé.
+Ne transforme pas une consigne en simple information descriptive.
+Retourne uniquement le JSON.`;
+
+  return callModel({
+    key,system,
+    user:context+"\n\nDOCUMENTS DU PROJET :\n"+docs,
+    schema:CONTRACT_SCHEMA,name:"trimemo_client_contract"
+  });
+}
+
+function contractText(c){
+  return [
+    "CONTRAT SCIENTIFIQUE DU CLIENT :",
+    "Type de recherche : "+c.researchType,
+    "Type de document : "+c.documentType,
+    "Niveau : "+c.academicLevel,
+    "Discipline : "+c.discipline,
+    "Méthodologie : "+c.methodology,
+    "Structure imposée : "+c.mandatoryStructure,
+    "Problématique personnelle : "+c.personalProblematic,
+    "Plan personnel : "+c.personalPlan,
+    "EXIGENCES OBLIGATOIRES :\n- "+(c.mandatoryRequirements||[]).join("\n- "),
+    "CONTRAINTES CLIENT :\n- "+(c.clientConstraints||[]).join("\n- "),
+    "CONTRAINTES DE CONTEXTE :\n- "+(c.contextConstraints||[]).join("\n- "),
+    "DIMENSIONS SCIENTIFIQUES À TRAITER :\n- "+(c.scientificDimensions||[]).join("\n- "),
+    "CHAÎNE À RESPECTER :\n- "+(c.requiredChain||[]).join("\n- "),
+    "INTERDICTIONS :\n- "+(c.prohibitedAssumptions||[]).join("\n- ")
+  ].join("\n\n");
+}
+
+async function evaluatePlans({key,plans,contract,context,count}){
+  const system=`Tu es le contrôleur scientifique de Trimémo.
+Tu ne corriges pas les plans. Tu décides s'ils respectent réellement le contrat du client.
+
+Un plan est INVALID si :
+- une exigence explicite n'est pas intégrée ;
+- le contexte fourni n'influence pas réellement les axes ;
+- la méthodologie imposée est ignorée ;
+- le niveau académique est traité comme un simple exposé ;
+- la problématique est seulement reformulée sans architecture analytique ;
+- les parties sont organisées comme un exposé généraliste ;
+- les chapitres empilent définitions, importance, avantages/inconvénients ou solutions sans démonstration ;
+- les trois plans ne proposent pas de logiques scientifiques réellement distinctes ;
+- le plan personnel demandé comme référence est ignoré sans justification ;
+- un terrain, une organisation, des données ou une méthode non fournis sont inventés.
+
+Un bon plan scientifique doit faire apparaître une progression argumentative et analytique.
+Il doit permettre de relier concepts, cadre théorique, mécanismes, méthodologie, analyse et discussion selon le type de recherche.
+Le simple respect du nombre de parties ne constitue jamais une validation.
+
+Retourne uniquement le JSON.`;
+
+  return callModel({
+    key,system,
+    user:contractText(contract)+"\n\nDOSSIER INITIAL :\n"+context+
+      "\n\nPLANS À CONTRÔLER :\n"+JSON.stringify(plans)+
+      "\n\nNombre demandé : "+count,
+    schema:EVALUATION_SCHEMA,name:"trimemo_plan_scientific_evaluation"
+  });
+}
+
 export default async function handler(req,res){
   cors(res);
   if(req.method==="OPTIONS")return res.status(204).end();
@@ -64,8 +194,8 @@ export default async function handler(req,res){
     if(b.ownerMode===true) requireOwner(req); else requirePremiumOrOwner(req,b);
 
     const p=b.project||b.projet||b;
-    const s=txt(p.sujet||p.subject);
-    if(!s)return res.status(400).json({error:"Le sujet est obligatoire."});
+    const subject=txt(p.sujet||p.subject);
+    if(!subject)return res.status(400).json({error:"Le sujet est obligatoire."});
 
     const files=Array.isArray(p.files)?p.files:[];
     const count=Number(b.count)===1?1:3;
@@ -74,75 +204,85 @@ export default async function handler(req,res){
     ids=files.length?(assertFilesSize(files),await uploadProjectFiles(files,key)):[];
 
     const context=[
-      "SUJET : "+s,
+      "SUJET : "+subject,
       "DOMAINE : "+(txt(p.domaine||p.domain)||"Non précisé"),
       "NIVEAU : "+(txt(p.niveau||p.level)||"Non précisé"),
-      "TYPE : "+(txt(p.typeDoc||p.typeDocument||p.type)||"Non précisé"),
+      "TYPE DE DOCUMENT : "+(txt(p.typeDoc||p.typeDocument||p.type)||"Non précisé"),
       "CONTEXTE : "+(txt(p.contexte||p.context)||"Aucun"),
       "CONSIGNES : "+(txt(p.consignes||p.instructions)||"Aucune"),
       "PROBLÉMATIQUE : "+JSON.stringify(b.problematic||b.problematique||p.problematiquePersonnelle||{}),
-      "PLAN CLIENT : "+(txt(b.providedPlan||p.planPersonnel)||"Aucun"),
-      buildDocumentInstructions(docs),
-      "PRIORITÉ : contraintes explicites du client > guide méthodologique de ce projet > consignes du projet > problématique/plan > règles génériques Trimémo. Le guide reste strictement local à ce projet."
+      "PLAN PERSONNEL : "+(txt(b.providedPlan||p.planPersonnel)||"Aucun"),
+      buildDocumentInstructions(docs)
     ].join("\n\n");
 
-    const system=[
-      "Tu conçois les plans du projet courant.",
-      "Lis et applique réellement les documents transmis.",
-      "Le guide méthodologique est local à ce projet et prime sur les règles génériques lorsqu’il impose explicitement une autre architecture.",
-      "Construis chaque plan à partir du sujet et de la problématique sélectionnée.",
-      "Le nombre de parties, de chapitres, de sections et la profondeur de structure doivent découler du contenu réel.",
-      "Lorsque trois plans sont demandés, ils doivent être réellement distincts sans sacrifier la cohérence scientifique.",
-      "Ne retourne jamais trois architectures identiques ou symétriques.",
-      "Ces contraintes font partie du contrat de sortie et seront contrôlées après génération.",
-      "Si le guide méthodologique ou le plan client impose explicitement une autre structure, respecte cette contrainte locale.",
-      "Si un PLAN CLIENT est fourni, le premier plan doit le reprendre fidèlement lorsque sa structure est compatible avec les contraintes locales ; les deux autres plans doivent proposer des alternatives réellement distinctes.",
-      "N’invente aucun contexte absent.",
-      "Toute numérotation est ajoutée par Trimémo après validation. Ne mets aucun numéro dans les titres.",
-      "Retourne uniquement le JSON.",
-      TRIMEMO_MASTER_ACADEMIC_RULES
-    ].join("\n");
+    const contract=await buildClientContract({
+      key,
+      context,
+      docs:buildDocumentInstructions(docs)
+    });
 
-    const baseUser=context+"\n\nGénère exactement "+count+" plan(s). Volume indicatif : "+words+" mots. Respecte d’abord le guide et les consignes du projet. Ne transforme jamais le guide en règle globale.";
+    const generationSystem=`Tu es Trimémo Academic Engine.
+Tu dois produire un plan de recherche scientifique et analytique, pas un plan d'exposé.
+
+CONTRAINTE ABSOLUE : le CONTRAT SCIENTIFIQUE ci-dessous est la spécification du client.
+Chaque exigence obligatoire doit être prise en compte dans la structure.
+Tu dois raisonner à partir de la problématique, des dimensions scientifiques et de la méthodologie.
+Les titres doivent exprimer des objets scientifiques, mécanismes, relations, déterminants, processus, effets, tensions ou analyses.
+Évite les titres génériques tels que "généralités", "importance", "enjeux", "avantages et inconvénients", "solutions" lorsqu'ils ne correspondent pas à une véritable démonstration.
+
+Une partie ne doit pas être une simple catégorie thématique.
+Chaque partie doit jouer une fonction dans la démonstration.
+Chaque chapitre doit faire progresser la réponse à la problématique.
+Chaque section doit développer une dimension identifiable.
+Le plan doit être exploitable pour une rédaction de mémoire, thèse ou rapport scientifique selon le type demandé.
+
+N'invente jamais un terrain, une enquête, des données, une organisation, une population ou une méthode.
+Ne transforme pas une recherche documentaire en étude empirique.
+Si une donnée manque, construis autour de ce qui est réellement fourni.
+
+Pour trois plans, produis trois architectures argumentatives réellement différentes.
+La différence doit porter sur le raisonnement scientifique, pas seulement sur les titres.
+Un même nombre de parties est autorisé si les logiques sont réellement différentes.
+
+La numérotation sera ajoutée par Trimémo. Ne numérote aucun titre.
+Retourne uniquement le JSON.
+
+${TRIMEMO_MASTER_ACADEMIC_RULES}`;
+
+    const baseUser=contractText(contract)+"\n\nDOSSIER CLIENT COMPLET :\n"+context+
+      "\n\nGénère exactement "+count+" plan(s). Volume indicatif : "+words+" mots."+
+      "\nChaque plan doit expliciter une approche scientifique distincte dans le champ approach.";
 
     let validatedPlans=null;
-    let lastValidationReason="";
+    let lastReason="";
+    let evaluation=null;
 
     for(let attempt=0;attempt<3;attempt++){
-      const correction=attempt===0
-        ? ""
-        : "\n\nCONTRÔLE STRUCTUREL : la génération précédente a été rejetée : "+lastValidationReason+". Régénère les plans en corrigeant précisément ce défaut. Les titres doivent contenir uniquement leur contenu sémantique, sans numérotation.";
-
-      const response=await fetch(OPENAI_URL,{
-        method:"POST",
-        headers:{"Content-Type":"application/json",Authorization:"Bearer "+key},
-        body:JSON.stringify({
-          model:getOpenAIModel(),
-          input:[
-            {role:"system",content:[{type:"input_text",text:system}]},
-            {role:"user",content:[{type:"input_text",text:baseUser+correction},...ids.map(file_id=>({type:"input_file",file_id}))]}
-          ],
-          text:{format:{type:"json_schema",name:"trimemo_academic_toc",strict:true,schema:SCHEMA}}
-        })
+      const correction=attempt===0?"":"\n\nREJET PRÉCÉDENT : "+lastReason+"\nRégénère en corrigeant chacun de ces défauts. Ne te contente pas de changer les titres.";
+      const data=await callModel({
+        key,
+        system:generationSystem,
+        user:baseUser+correction,
+        schema:SCHEMA,
+        name:"trimemo_academic_toc",
+        files:ids
       });
 
-      const raw=await response.text();
-      if(!response.ok){
-        let detail=raw;
-        try{const e=JSON.parse(raw);detail=e?.error?.message||detail}catch{}
-        throw fail("Erreur OpenAI pendant la génération du plan : "+String(detail).slice(0,1200),502);
-      }
-
-      const data=json(out(JSON.parse(raw)));
       if(!Array.isArray(data?.plans)||data.plans.length<count){
-        lastValidationReason="le nombre de plans retournés est insuffisant";
+        lastReason="Le nombre de plans retournés est insuffisant.";
         continue;
       }
 
       const candidate=data.plans.slice(0,count);
-      const validation=validatePlanSet(candidate,{requireDistinct:count>1,requireNaturalVariation:true});
-      if(!validation.valid){
-        lastValidationReason=validation.reason;
+      const structure=validatePlanSet(candidate,{requireDistinct:count>1,requireNaturalVariation:true});
+      if(!structure.valid){
+        lastReason=structure.reason;
+        continue;
+      }
+
+      evaluation=await evaluatePlans({key,plans:candidate,contract,context,count});
+      if(!evaluation.valid || Number(evaluation.score||0)<85){
+        lastReason="Contrôle scientifique rejeté (score "+String(evaluation.score||0)+"). Défauts : "+(evaluation.failures||[]).join(" | ");
         continue;
       }
 
@@ -151,13 +291,21 @@ export default async function handler(req,res){
     }
 
     if(!validatedPlans){
-      throw fail("Les plans générés ne respectent pas les règles structurelles de Trimémo après trois tentatives : "+lastValidationReason,502);
+      throw fail("Les plans générés ne respectent pas suffisamment les exigences scientifiques et personnalisées du client après trois tentatives. Dernier contrôle : "+lastReason,502);
     }
 
     await deleteOpenAIFiles(ids,key);
     ids=[];
 
-    return res.status(200).json({plans:validatedPlans});
+    return res.status(200).json({
+      plans:validatedPlans,
+      academicControl:{
+        score:Number(evaluation?.score||0),
+        matchedRequirements:evaluation?.matchedRequirements||[],
+        scientificQuality:evaluation?.scientificQuality||"",
+        academicLogic:evaluation?.academicLogic||""
+      }
+    });
   }catch(e){
     await deleteOpenAIFiles(ids,key);
     console.error("generate-plans error",e);
