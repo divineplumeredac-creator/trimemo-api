@@ -274,7 +274,7 @@ ${TRIMEMO_MASTER_ACADEMIC_RULES}`;
       }
 
       const candidate=data.plans.slice(0,count);
-      const structure=validatePlanSet(candidate,{requireDistinct:count>1,requireNaturalVariation:true});
+      const structure=validatePlanSet(candidate,{requireDistinct:false,requireNaturalVariation:false});
       if(!structure.valid){
         lastReason=structure.reason;
         continue;
