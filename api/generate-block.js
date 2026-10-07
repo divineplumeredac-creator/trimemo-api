@@ -146,6 +146,8 @@ INSTRUCTIONS SPÉCIFIQUES DU BLOC :
 10. Ne répète pas les idées déjà développées dans le bloc.
 11. Les blocs précédents sont une mémoire de continuité, pas une matière à recopier.
 12. N’introduis pas de nouvelle introduction, de nouvelle problématique ou de nouvelle annonce du plan si ces éléments ont déjà été traités.
+12 bis. Lorsque tu utilises une source, cite-la dans le texte avec une citation auteur-date correspondant à la référence retournée dans SOURCES, par exemple (Organisation internationale du Travail, 2022). N’utilise pas les seuls domaines tels que (ilo.org), (osha.gov) ou (cdc.gov) comme citations académiques finales.
+12 ter. Chaque citation auteur-date du texte doit correspondre à une source retournée. N’invente jamais une correspondance bibliographique.
 13. Le découpage en blocs est subordonné à la cohérence scientifique, jamais à un quota mécanique de mots.
 14. Un bloc peut couvrir une section entière et toutes ses sous-sections, ou plusieurs sections consécutives lorsqu'elles forment une même unité argumentative.
 15. Développe toutes les unités présentes dans STRUCTURE DU BLOC, dans leur ordre, sans en supprimer une.
@@ -247,6 +249,7 @@ ${preceding.length ? JSON.stringify(preceding) : "Aucun bloc précédent transmi
 SOURCES :
 Recherchez les références nécessaires avant la rédaction. Retenez uniquement des sources réellement retrouvées, fiables et accessibles.
 Ne réutilisez pas inutilement une source déjà présente dans les blocs précédents.
+Les citations dans le texte doivent utiliser le nom de l’auteur ou de l’institution et l’année. Les domaines Web ne doivent jamais remplacer une citation auteur-date.
 La rédaction finale doit permettre au document complet d’atteindre au minimum 10 références bibliographiques distinctes.
 900 mots constitue une cible de confort, pas une limite ni une obligation.
 Le bloc doit suivre la cohérence scientifique du plan. Il peut contenir plusieurs sous-sections, leurs titres internes, ou une section entière avec toutes ses sous-sections.
@@ -379,6 +382,14 @@ Utilise des références vérifiables si elles sont nécessaires.
         details = parsedError?.error?.message || parsedError?.message || details;
       } catch {}
       console.error("[Trimémo] OpenAI block error", response.status, details);
+      if (response.status === 429) {
+        const noCredits = /no credits|insufficient_quota|quota|billing/i.test(details);
+        return res.status(429).json({
+          error: noCredits
+            ? "Les crédits OpenAI disponibles pour la rédaction sont épuisés. Ajoutez des crédits à votre compte OpenAI avant de relancer la rédaction."
+            : "Le service de rédaction OpenAI est temporairement indisponible. Veuillez réessayer plus tard.",
+        });
+      }
       return res.status(response.status >= 500 ? 502 : response.status).json({
         error: "Erreur OpenAI lors de la rédaction du bloc.",
       });
