@@ -80,6 +80,12 @@ export default async function handler(req, res) {
       "Introduction générale"
     ).trim();
 
+    const blockKind = String(
+      body.kind ||
+      body.block?.kind ||
+      ""
+    ).trim().toLowerCase();
+
     const problematic =
       body.problematic ||
       body.problematique ||
@@ -91,6 +97,9 @@ export default async function handler(req, res) {
       : Array.isArray(body.block?.structure)
         ? body.block.structure.filter(Boolean)
         : [];
+
+    const isPartStart = ["part", "partie", "part_intro", "partie_intro", "part-intro", "partie-intro"].includes(blockKind);
+    const isChapterStart = ["chapter", "chapitre", "chapter_intro", "chapitre_intro", "chapter-intro", "chapitre-intro"].includes(blockKind);
     const preceding = Array.isArray(body.preceding)
       ? body.preceding.slice(-3)
       : [];
@@ -152,7 +161,10 @@ Une section ne doit jamais être découpée artificiellement pour atteindre 900 
 Les 900 mots constituent une cible indicative. Ils ne priment jamais sur la cohérence scientifique, la hiérarchie du plan et la continuité argumentative.
 Ordre de priorité : cohérence scientifique > structure du plan > continuité argumentative > volume indicatif.
 16. Assure une transition naturelle entre les unités regroupées. Ne crée pas de rupture artificielle pour respecter un nombre de mots.
-17. Ne répète pas l'introduction, la problématique ou l'annonce du plan à chaque unité.
+17. Lorsque le bloc correspond au début d'une PARTIE, rédige d'abord un court paragraphe d'ouverture sous le titre de la partie. Ce paragraphe présente la logique, les enjeux et la progression de la partie vers ses chapitres. N'ajoute jamais un titre tel que « Introduction de la partie ».
+18. Lorsque le bloc correspond au début d'un CHAPITRE, rédige d'abord un court paragraphe d'ouverture sous le titre du chapitre. Ce paragraphe situe l'objet du chapitre et annonce sa progression vers les sections. N'ajoute jamais un titre tel que « Introduction du chapitre ».
+19. Ces ouvertures sont des paragraphes rédactionnels, pas de nouvelles unités du plan. Elles doivent rester brèves, éviter la répétition du titre et ne pas anticiper la conclusion.
+20. Ne répète pas l'introduction, la problématique ou l'annonce du plan à chaque unité.
 17. Assure une progression logique avec les blocs précédents.
 18. Chaque paragraphe doit développer une idée principale.
 19. Utilise un style rigoureux, fluide et naturel.
@@ -222,6 +234,12 @@ ${blockTitle}
 
 STRUCTURE DU BLOC :
 ${structure.length ? structure.join(" > ") : "Structure fournie dans le plan"}
+
+FONCTION DU BLOC :
+${blockKind || "Non précisée"}
+Début de partie : ${isPartStart ? "OUI" : "NON"}
+Début de chapitre : ${isChapterStart ? "OUI" : "NON"}
+Si « Début de partie » ou « Début de chapitre » vaut OUI, l'ouverture doit être un paragraphe directement placé sous le titre concerné, sans intertitre supplémentaire.
 
 CONTENU ET SOURCES DES BLOCS PRÉCÉDENTS :
 ${preceding.length ? JSON.stringify(preceding) : "Aucun bloc précédent transmis."}
