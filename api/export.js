@@ -100,6 +100,9 @@ function structureLevel(label) {
   if (/^section\s+/i.test(value)) return 3;
   if (/^(sous-section|§)\s*/i.test(value)) return 4;
   if (/^titre interne\s+/i.test(value)) return 5;
+  // Format académique préféré : 1.1.1 = sous-section, 1.1.1.1 = titre interne.
+  if (/^\d+\.\d+\.\d+\s*:/i.test(value)) return 4;
+  if (/^\d+\.\d+\.\d+\.\d+\s*:/i.test(value)) return 5;
   return 0;
 }
 function cleanAcademicText(value) {
