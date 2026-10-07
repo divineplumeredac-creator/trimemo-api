@@ -140,6 +140,17 @@ INSTRUCTIONS SPÉCIFIQUES DU BLOC :
 13. Le découpage en blocs est subordonné à la cohérence scientifique, jamais à un quota mécanique de mots.
 14. Un bloc peut couvrir une section entière et toutes ses sous-sections, ou plusieurs sections consécutives lorsqu'elles forment une même unité argumentative.
 15. Développe toutes les unités présentes dans STRUCTURE DU BLOC, dans leur ordre, sans en supprimer une.
+RÈGLE ABSOLUE DE STRUCTURATION DES BLOCS :
+Le bloc est une unité technique de génération. Il ne remplace jamais les unités scientifiques du plan.
+Un objectif d’environ 900 mots ne doit jamais produire un texte continu de 900 mots sans structuration.
+Toute section, sous-section ou titre interne présent dans STRUCTURE DU BLOC doit rester identifiable dans le contenu final.
+Pour chaque unité, reproduis son intitulé comme intertitre, puis développe son contenu sous cet intertitre.
+Si plusieurs sections sont regroupées, chacune conserve son propre titre et son développement.
+Une section entière peut constituer un bloc lorsque sa cohérence scientifique le justifie.
+Plusieurs sections peuvent être regroupées lorsqu’elles forment une même unité argumentative.
+Une section ne doit jamais être découpée artificiellement pour atteindre 900 mots.
+Les 900 mots constituent une cible indicative. Ils ne priment jamais sur la cohérence scientifique, la hiérarchie du plan et la continuité argumentative.
+Ordre de priorité : cohérence scientifique > structure du plan > continuité argumentative > volume indicatif.
 16. Assure une transition naturelle entre les unités regroupées. Ne crée pas de rupture artificielle pour respecter un nombre de mots.
 17. Ne répète pas l'introduction, la problématique ou l'annonce du plan à chaque unité.
 17. Assure une progression logique avec les blocs précédents.
