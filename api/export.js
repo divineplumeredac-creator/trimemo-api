@@ -149,7 +149,7 @@ function addStructuredBlock(children, block, formatting, hierarchy = {}) {
   const content = text(block.content);
   const labels = Array.isArray(block.structure) ? block.structure.filter(Boolean) : [];
   const structuralKeys = new Set(labels.map(normalizeHeadingKey));
-  const lines = content.split(/\\r?\\n/);
+  const lines = content.split(/\r?\n/);
   const filtered = [];
   for (const raw of lines) {
     const h = markdownHeading(raw);
@@ -167,7 +167,7 @@ function addStructuredBlock(children, block, formatting, hierarchy = {}) {
     for (let deeper = level + 1; deeper <= 5; deeper++) delete hierarchy[deeper];
   }
 
-  addContent(children, filtered.join('\\n'), formatting);
+  addContent(children, filtered.join('\n'), formatting);
 }
 function addPlanOutline(children, plan, formatting) {
   for (const part of plan.parts || []) {
@@ -234,15 +234,9 @@ function buildChildren(compiled, formatting) {
   const children = [];
   addTitlePage(children, compiled, formatting);
 
-  children.push(new Paragraph({
-    heading: HeadingLevel.HEADING_1,
-    keepNext: true,
-    spacing: { before: 240, after: 240 },
-    children: [run('Table des matières', formatting, { bold: true, size: formatting.partSize })],
-  }));
-  children.push(new TableOfContents('Table des matières', {
+  children.push(new TableOfContents('', {
     hyperlink: true,
-    headingStyleRange: '1-5',
+    headingStyleRange: '1-4',
   }));
   children.push(new Paragraph({ children: [new PageBreak()] }));
 
@@ -316,8 +310,8 @@ export default async function handler(req, res) {
     const doc = new Document({
       creator: 'Trimémo',
       title: text(compiled.project?.sujet || 'Document académique'),
-      subject: 'Document académique généré avec Trimémo',
-      description: 'Document structuré et mis en forme automatiquement par Trimémo.',
+      subject: 'Document académique',
+      description: 'Document académique structuré et mis en forme automatiquement.',
       settings: { updateFields: true },
       styles: {
         default: {
