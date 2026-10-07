@@ -165,7 +165,8 @@ Ordre de priorité : cohérence scientifique > structure du plan > continuité a
 16. Assure une transition naturelle entre les unités regroupées. Ne crée pas de rupture artificielle pour respecter un nombre de mots.
 17. Lorsque le bloc correspond au début d'une PARTIE, rédige d'abord un court paragraphe d'ouverture sous le titre de la partie. Ce paragraphe présente la logique, les enjeux et la progression de la partie vers ses chapitres. N'ajoute jamais un titre tel que « Introduction de la partie ».
 18. Lorsque le bloc correspond au début d'un CHAPITRE, rédige d'abord un court paragraphe d'ouverture sous le titre du chapitre. Ce paragraphe situe l'objet du chapitre et annonce sa progression vers les sections. N'ajoute jamais un titre tel que « Introduction du chapitre ».
-19. Ces ouvertures sont des paragraphes rédactionnels, pas de nouvelles unités du plan. Elles doivent rester brèves, éviter la répétition du titre et ne pas anticiper la conclusion.
+19. Lorsque le bloc contient le début d'une SECTION, rédige d'abord une brève introduction de section directement sous le titre de la section, avant toute sous-section. Si plusieurs sections sont regroupées dans le même bloc, chaque section doit recevoir sa propre brève introduction avant sa première sous-section. N'ajoute jamais un titre tel que « Introduction de la section ».
+20. Ces ouvertures sont des paragraphes rédactionnels, pas de nouvelles unités du plan. Elles doivent rester brèves, éviter la répétition du titre et ne pas anticiper la conclusion.
 20. Ne répète pas l'introduction, la problématique ou l'annonce du plan à chaque unité.
 17. Assure une progression logique avec les blocs précédents.
 18. Chaque paragraphe doit développer une idée principale.
@@ -242,6 +243,7 @@ ${blockKind || "Non précisée"}
 Début de partie : ${isPartStart ? "OUI" : "NON"}
 Début de chapitre : ${isChapterStart ? "OUI" : "NON"}
 Si « Début de partie » ou « Début de chapitre » vaut OUI, l'ouverture doit être un paragraphe directement placé sous le titre concerné, sans intertitre supplémentaire.
+Chaque SECTION doit également recevoir une brève introduction directement sous son titre, avant sa première sous-section. Si plusieurs sections figurent dans le bloc, répétez cette règle pour chacune.
 
 CONTENU ET SOURCES DES BLOCS PRÉCÉDENTS :
 ${preceding.length ? JSON.stringify(preceding) : "Aucun bloc précédent transmis."}
@@ -252,7 +254,7 @@ Ne réutilisez pas inutilement une source déjà présente dans les blocs préc�
 Les citations dans le texte doivent utiliser le nom de l’auteur ou de l’institution et l’année. Les domaines Web ne doivent jamais remplacer une citation auteur-date.
 La rédaction finale doit permettre au document complet d’atteindre au minimum 10 références bibliographiques distinctes.
 900 mots constitue une cible de confort, pas une limite ni une obligation.
-Le bloc doit suivre la cohérence scientifique du plan. Il peut contenir plusieurs sous-sections, leurs titres internes, ou une section entière avec toutes ses sous-sections.
+Le bloc doit suivre la cohérence scientifique du plan. Il peut contenir plusieurs sections, plusieurs sous-sections et leurs titres internes. Chaque SECTION doit commencer par sa brève introduction avant ses sous-sections.
 Une section ne doit pas être artificiellement découpée uniquement pour atteindre 900 mots.
 Si une section est dense et scientifiquement cohérente, elle peut dépasser 900 mots.
 Si plusieurs sections consécutives forment une unité argumentative cohérente, elles peuvent être regroupées dans un même bloc.
