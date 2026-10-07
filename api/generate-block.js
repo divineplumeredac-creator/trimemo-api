@@ -137,10 +137,13 @@ INSTRUCTIONS SPÉCIFIQUES DU BLOC :
 10. Ne répète pas les idées déjà développées dans le bloc.
 11. Les blocs précédents sont une mémoire de continuité, pas une matière à recopier.
 12. N’introduis pas de nouvelle introduction, de nouvelle problématique ou de nouvelle annonce du plan si ces éléments ont déjà été traités.
-13. Développe exclusivement l’unité correspondant au titre et à la structure reçus.
-14. Assure une progression logique avec les blocs précédents.
-15. Chaque paragraphe doit développer une idée principale.
-16. Utilise un style rigoureux, fluide et naturel.
+13. Un bloc peut regrouper plusieurs sous-sections consécutives et leurs titres internes lorsque la structure reçue les rassemble.
+14. Développe toutes les unités présentes dans STRUCTURE DU BLOC, dans leur ordre, sans en supprimer une.
+15. Assure une transition naturelle entre les sous-sections regroupées. Ne crée pas de rupture artificielle entre elles.
+16. Ne répète pas l'introduction, la problématique ou l'annonce du plan à chaque sous-section.
+17. Assure une progression logique avec les blocs précédents.
+18. Chaque paragraphe doit développer une idée principale.
+19. Utilise un style rigoureux, fluide et naturel.
 17. Évite les clichés rédactionnels et les formulations artificielles.
 18. Évite les répétitions de connecteurs.
 16. Évite les phrases trop longues et les constructions complexes.
@@ -215,6 +218,7 @@ SOURCES :
 Recherchez les références nécessaires avant la rédaction. Retenez uniquement des sources réellement retrouvées, fiables et accessibles.
 Ne réutilisez pas inutilement une source déjà présente dans les blocs précédents.
 La rédaction finale doit permettre au document complet d’atteindre au minimum 10 références bibliographiques distinctes.
+Un bloc standard vise environ 900 mots. Il peut couvrir plusieurs sous-sections et leurs titres internes.
 
 OBJECTIF DE LONGUEUR :
 Environ ${safeWordTarget} mots.
