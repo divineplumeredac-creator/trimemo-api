@@ -4,6 +4,7 @@ import { clampPages, assertFilesSize } from "../lib/limits.js";
 import { rateLimit } from "../lib/rate-limit.js";
 import { deleteOpenAIFiles } from "../lib/project-documents.js";
 import { buildProjectDocumentContext, buildDocumentInstructions, uploadProjectFiles } from "../lib/project-documents.js";
+import { PLAN_PARTS_SCHEMA, normalizePlanStructure, validatePlanSet } from "../lib/plan-structure.js";
 const OPENAI_URL = "https://api.openai.com/v1/responses";
 const WORDS_PER_PAGE = 320;
 const FREE_PREVIEW_WORDS = 320;
@@ -60,49 +61,7 @@ const schema = {
           properties:{title:{type:"string",minLength:1},description:{type:"string",minLength:1},wordCount:{type:"integer"}},
           required:["title","description","wordCount"]
         },
-        parts:{
-          type:"array", minItems:2, maxItems:3,
-          items:{type:"object",additionalProperties:false,
-            properties:{
-              title:{type:"string"},description:{type:"string"},
-              chapters:{
-                type:"array", minItems:2, maxItems:3,
-                items:{type:"object",additionalProperties:false,
-                  properties:{
-                    title:{type:"string"},description:{type:"string"},wordCount:{type:"integer"},
-                    sections:{
-                      type:"array", minItems:2, maxItems:3,
-                      items:{type:"object",additionalProperties:false,
-                        properties:{
-                          title:{type:"string",minLength:1},description:{type:"string",minLength:1},
-                          subsections:{
-                            type:"array",
-                            items:{type:"object",additionalProperties:false,
-                              properties:{
-                                title:{type:"string",minLength:1},description:{type:"string",minLength:1},
-                                internalTitles:{
-                                  type:"array",
-                                  items:{type:"object",additionalProperties:false,
-                                    properties:{title:{type:"string"}},
-                                    required:["title"]
-                                  }
-                                }
-                              },
-                              required:["title","description","internalTitles"]
-                            }
-                          }
-                        },
-                        required:["title","description","subsections"]
-                      }
-                    }
-                  },
-                  required:["title","description","wordCount","sections"]
-                }
-              }
-            },
-            required:["title","description","chapters"]
-          }
-        },
+        parts:PLAN_PARTS_SCHEMA,
         conclusionGeneral:{
           type:"object",additionalProperties:false,
           properties:{title:{type:"string"},description:{type:"string"},wordCount:{type:"integer"}},
