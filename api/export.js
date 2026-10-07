@@ -152,8 +152,9 @@ function addStructuredBlock(children, block, formatting, hierarchy = {}) {
   const lines = content.split(/\r?\n/);
   const filtered = [];
   for (const raw of lines) {
+    const plain = cleanAcademicText(raw);
     const h = markdownHeading(raw);
-    if (h && structuralKeys.has(normalizeHeadingKey(h.title))) continue;
+    if ((h && structuralKeys.has(normalizeHeadingKey(h.title))) || structuralKeys.has(normalizeHeadingKey(plain))) continue;
     filtered.push(raw);
   }
 
@@ -257,7 +258,10 @@ function buildChildren(compiled, formatting) {
 
   if (conclusionBlocks.length) {
     children.push(heading('Conclusion générale', 1, formatting));
-    for (const block of conclusionBlocks) addStructuredBlock(children, block, formatting, {});
+    for (const block of conclusionBlocks) {
+      const content = text(block.content);
+      addContent(children, content, formatting);
+    }
   } else if (text(compiled.plan?.conclusionGeneral?.content || compiled.plan?.conclusion?.content)) {
     children.push(heading('Conclusion générale', 1, formatting));
     addContent(children, compiled.plan.conclusionGeneral?.content || compiled.plan.conclusion?.content, formatting);
