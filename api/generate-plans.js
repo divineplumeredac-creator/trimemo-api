@@ -105,8 +105,21 @@ async function buildClientContract({key,context,docs}){
 Ta mission n'est PAS de produire un plan. Tu dois transformer le dossier du client en CONTRAT SCIENTIFIQUE EXÉCUTABLE.
 
 Tu dois lire toutes les informations disponibles et les hiérarchiser.
-Les consignes explicites du client sont des contraintes obligatoires.
-Un guide méthodologique fourni est une contrainte locale prioritaire.
+Toute consigne saisie directement dans le champ CONSIGNES doit être extraite mot à mot dans les exigences obligatoires lorsqu'elle impose une action, une structure, une méthode, un volume, une source, une présentation ou une interdiction.
+Les fichiers joints ne doivent pas être traités comme un simple contexte documentaire : leur catégorie détermine leur rôle.
+Les fichiers « Instructions » et « Méthodologie » sont normatifs pour ce projet.
+Les fichiers « Contexte » définissent le périmètre.
+Les fichiers « Source » et « Référence » servent de matière documentaire, pas de règles de structure, sauf instruction explicite contenue dans leur catégorie normative.
+HIÉRARCHIE ABSOLUE DES CONTRAINTES :
+1. CONSIGNES SAISIES DIRECTEMENT PAR LE CLIENT : priorité maximale.
+2. DOCUMENTS JOINTS CLASSÉS « Instructions » ou « Méthodologie » : priorité immédiatement après les consignes saisies.
+3. Problématique et plan personnels fournis par le client : doivent être conservés et pris en compte, sans les modifier silencieusement.
+4. Contexte, domaine, niveau et type de document.
+5. Règles académiques générales de Trimémo : elles ne peuvent jamais contredire une consigne client explicite ou une règle du guide joint.
+
+Une consigne saisie ou présente dans un document prioritaire n'est pas une information secondaire. Elle constitue une exigence exécutable du projet.
+Si une règle générale de Trimémo entre en conflit avec une consigne client explicite, la consigne client prévaut.
+Un guide méthodologique joint est local au projet et ne doit jamais être remplacé par les règles générales de la plateforme.
 Le contexte fourni doit influencer le périmètre du plan.
 Le niveau et le type de document doivent influencer le niveau de profondeur et la logique scientifique.
 Une problématique personnelle doit être conservée sans changement de sens.
@@ -132,6 +145,7 @@ Retourne uniquement le JSON.`;
 
 function contractText(c){
   return [
+    "ORDRE DE PRIORITÉ OBLIGATOIRE : les consignes saisies par le client et les documents joints classés Instructions/Méthodologie priment sur toute règle générale de Trimémo.",
     "CONTRAT SCIENTIFIQUE DU CLIENT :",
     "Type de recherche : "+c.researchType,
     "Type de document : "+c.documentType,
@@ -225,7 +239,12 @@ export default async function handler(req,res){
 Tu dois produire un plan de recherche scientifique et analytique, pas un plan d'exposé.
 
 CONTRAINTE ABSOLUE : le CONTRAT SCIENTIFIQUE ci-dessous est la spécification du client.
+PRIORITÉ 1 : les consignes saisies directement par le client.
+PRIORITÉ 2 : les fichiers joints classés Instructions ou Méthodologie.
+PRIORITÉ 3 : la problématique, le plan personnel et le contexte fournis.
+PRIORITÉ 4 : les règles générales de Trimémo.
 Chaque exigence obligatoire doit être prise en compte dans la structure.
+Aucune règle générale du moteur ne doit écraser une exigence explicite du client ou une instruction contenue dans un document normatif joint.
 Tu dois raisonner à partir de la problématique, des dimensions scientifiques et de la méthodologie.
 Les titres doivent exprimer des objets scientifiques, mécanismes, relations, déterminants, processus, effets, tensions ou analyses.
 Évite les titres génériques tels que "généralités", "importance", "enjeux", "avantages et inconvénients", "solutions" lorsqu'ils ne correspondent pas à une véritable démonstration.
