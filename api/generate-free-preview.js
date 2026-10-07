@@ -114,48 +114,35 @@ export default async function handler(req, res) {
       "VOLUME : " + pages + " pages, environ " + targetWords + " mots.\nINTRODUCTION GÉNÉRALE : environ " + introductionWords + " mots, soit 10 % du volume total."
     ].join("\n");
 
-    const response = await fetch(OPENAI_URL, {
-      method:"POST",
-      headers:{"Content-Type":"application/json",Authorization:"Bearer "+apiKey},
-      body:JSON.stringify({
-        model: getOpenAIModel(),
+    let result=null;
+    let lastValidationReason="";
+    for(let attempt=0;attempt<3;attempt++){
+      const correction=attempt===0?"":"\n\nCONTRÔLE STRUCTUREL : le plan précédent a été rejeté : "+lastValidationReason+". Régénère le plan en corrigeant ce défaut. Les titres ne doivent contenir aucune numérotation.";
+      const response=await fetch(OPENAI_URL,{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+apiKey},body:JSON.stringify({
+        model:getOpenAIModel(),
         input:[
-          {role:"system",content:[{type:"input_text",text:
-            TRIMEMO_MASTER_ACADEMIC_RULES + `\n\nEXCEPTION SPÉCIFIQUE À L'APERÇU GRATUIT : le SUJET est la seule information obligatoire. Ne bloque jamais la génération et ne demande jamais au client de préciser le niveau, la discipline, l'état d'avancement, le contexte, les consignes, un guide méthodologique ou un plan personnel lorsqu'ils ne sont pas fournis. Lorsqu'une information manque, adapte simplement la proposition au sujet et indique seulement les limites réellement pertinentes. Génère un résultat académique concret à partir du sujet seul. Cette règle prévaut sur toute instruction générale de vérification préalable qui pourrait empêcher l'aperçu gratuit.\n\nTu es le moteur d'aperçu gratuit de Trimémo. Génère en un seul appel une problématique, un plan détaillé et un aperçu incomplet d'introduction. Les consignes, informations, contexte, problématique et plan fournis par le client sont prioritaires. Respecte strictement les éléments fournis. N'invente aucun terrain, pays, organisation, donnée ou source. Le plan doit être cohérent avec le volume demandé. L'introduction générale complète représente environ 10 % du volume total.
-Le plan doit comporter 2 ou 3 parties selon le sujet.
-Chaque partie comporte 2 ou 3 chapitres, sans obligation d'en avoir 3.
-Chaque chapitre comporte au moins 2 sections.
-Les sous-sections sont facultatives lorsque le contenu reste inférieur au seuil de structuration.
-Toute section dont le contenu prévu dépasse 320 mots doit être subdivisée en sous-sections pertinentes.
-Toute sous-section dont le contenu prévu dépasse 320 mots doit être subdivisée par des titres internes pertinents.
-Les titres internes doivent correspondre à de véritables idées et ne doivent jamais être artificiels.
-La structure doit varier naturellement à l'intérieur du plan : ne donne pas le même nombre de chapitres à toutes les parties ni le même nombre de sections à tous les chapitres lorsque le contenu ne le justifie pas.
-La variation doit découler du sujet, de la problématique, du niveau, du volume et des consignes.
-N'ajoute aucun niveau uniquement pour créer une symétrie visuelle. Pour l'aperçu gratuit, rédige un extrait d'environ 320 mots. Le serveur plafonnera l'extrait à 320 mots. Retourne uniquement le JSON demandé.`
-          }]},
-          {role:"user",content:[{type:"input_text",text:context+"\n\nGénère une problématique précise, un plan structuré et une introduction d'aperçu d'environ 320 mots."}]}
+          {role:"system",content:[{type:"input_text",text:TRIMEMO_MASTER_ACADEMIC_RULES+"\n\nEXCEPTION APERÇU GRATUIT : le SUJET est la seule information obligatoire. Ne bloque jamais la génération pour une donnée facultative. Génère à partir du sujet seul si nécessaire. Les sous-sections sont facultatives et doivent être justifiées par la densité du contenu. Toute numérotation est ajoutée par Trimémo après validation. Ne mets aucun numéro dans les titres. N'ajoute aucun niveau pour créer une symétrie artificielle. Retourne uniquement le JSON."+correction}]},
+          {role:"user",content:[{type:"input_text",text:context+"\n\nGénère une problématique précise, un plan structuré et une introduction d'aperçu d'environ 320 mots."+correction}]}
         ],
         max_output_tokens:8000,
         text:{format:{type:"json_schema",name:"trimemo_free_preview",strict:true,schema}}
-      })
-    });
-    const raw = await response.text();
-    if (!response.ok) {
-      let detail = "Le service de génération a refusé la requête.";
-      try {
-        const errorData = JSON.parse(raw);
-        detail = errorData?.error?.message || detail;
-      } catch {}
-      throw fail("OpenAI a refusé l'aperçu : " + detail, 502);
+      })});
+      const raw=await response.text();
+      if(!response.ok){let detail="Le service de génération a refusé la requête.";try{const e=JSON.parse(raw);detail=e?.error?.message||detail}catch{}throw fail("OpenAI a refusé l'aperçu : "+detail,502);}
+      const candidate=parseJson(extractOutputText(JSON.parse(raw)));
+      const validation=validatePlanSet([candidate.plan],{requireDistinct:false,requireNaturalVariation:true});
+      if(!validation.valid){lastValidationReason=validation.reason;continue;}
+      result=candidate;
+      break;
     }
-    const result = parseJson(extractOutputText(JSON.parse(raw)));
+    if(!result) throw fail("L’aperçu gratuit n’a pas produit une structure académique conforme après trois tentatives : "+lastValidationReason,502);
     await deleteOpenAIFiles(fileIds, apiKey);
     fileIds = [];
     if (!result.problematic?.question || !result.plan?.parts?.length || !result.introduction?.content) throw fail("L'aperçu retourné est incomplet.",502);
     return res.status(200).json({
       success:true,
       problematic:result.problematic,
-      plan:result.plan,
+      plan:normalizePlanStructure(result.plan,0,targetWords),
       introduction:{...result.introduction,content:trimToWords(result.introduction.content, FREE_PREVIEW_WORDS),wordCount:Math.min(FREE_PREVIEW_WORDS, trimToWords(result.introduction.content, FREE_PREVIEW_WORDS).split(/\s+/).filter(Boolean).length),incomplete:true,previewWords:FREE_PREVIEW_WORDS,targetWords:introductionWords}
     });
   } catch(error) {
