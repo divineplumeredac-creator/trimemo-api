@@ -102,16 +102,33 @@ function structureLevel(label) {
   if (/^titre interne\s+/i.test(value)) return 5;
   return 0;
 }
+function cleanAcademicText(value) {
+  return text(value)
+    .replace(/\\*\\*(.*?)\\*\\*/g, '$1')
+    .replace(/\\*(.*?)\\*/g, '$1')
+    .replace(/\\[([^\\]]+)\\]\\((https?:\\/\\/[^)]+)\\)/g, '$1')
+    .replace(/([?&])utm_(source|medium|campaign|term|content)=[^&\\s)]+/gi, '$1')
+    .replace(/[ \\t]+/g, ' ')
+    .trim();
+}
+function normalizeHeadingKey(value) {
+  return cleanAcademicText(value)
+    .toLowerCase()
+    .replace(/^[#\\s]+/, '')
+    .replace(/^(partie|part|chapitre|section|sous-section|titre interne)\\s+[ivxlcdm0-9.]+\\s*[:.)-]?\\s*/i, '')
+    .replace(/\\s+/g, ' ')
+    .trim();
+}
 function markdownHeading(line) {
-  const match = text(line).match(/^\s*(#{1,5})\s+(.+?)\s*#*\s*$/);
-  return match ? { level: match[1].length, title: match[2].trim() } : null;
+  const match = text(line).match(/^\\s*(#{1,5})\\s+(.+?)\\s*#*\\s*$/);
+  return match ? { level: match[1].length, title: cleanAcademicText(match[2].trim()) } : null;
 }
 function addContent(children, content, formatting, options = {}) {
   const lines = text(content).split(/\r?\n/);
   let buffer = [];
   const flush = () => {
     if (!buffer.length) return;
-    const value = buffer.join(' ').replace(/\s+/g, ' ').trim();
+    const value = cleanAcademicText(buffer.join(' ').replace(/\s+/g, ' '));
     if (value) children.push(paragraph(value, formatting, options));
     buffer = [];
   };
@@ -128,16 +145,29 @@ function addContent(children, content, formatting, options = {}) {
   }
   flush();
 }
-function addStructuredBlock(children, block, formatting) {
+function addStructuredBlock(children, block, formatting, hierarchy = {}) {
   const content = text(block.content);
-  const hasMarkdownHeadings = content.split(/\r?\n/).some((line) => markdownHeading(line));
-  if (!hasMarkdownHeadings && Array.isArray(block.structure) && block.structure.length) {
-    for (const label of block.structure) {
-      const level = structureLevel(label);
-      if (level) children.push(heading(label, level, formatting));
-    }
+  const labels = Array.isArray(block.structure) ? block.structure.filter(Boolean) : [];
+  const structuralKeys = new Set(labels.map(normalizeHeadingKey));
+  const lines = content.split(/\\r?\\n/);
+  const filtered = [];
+  for (const raw of lines) {
+    const h = markdownHeading(raw);
+    if (h && structuralKeys.has(normalizeHeadingKey(h.title))) continue;
+    filtered.push(raw);
   }
-  addContent(children, content, formatting);
+
+  for (const label of labels) {
+    const level = structureLevel(label);
+    if (!level) continue;
+    const key = normalizeHeadingKey(label);
+    if (hierarchy[level] === key) continue;
+    children.push(heading(cleanAcademicText(label), level, formatting));
+    hierarchy[level] = key;
+    for (let deeper = level + 1; deeper <= 5; deeper++) delete hierarchy[deeper];
+  }
+
+  addContent(children, filtered.join('\\n'), formatting);
 }
 function addPlanOutline(children, plan, formatting) {
   for (const part of plan.parts || []) {
@@ -183,11 +213,6 @@ function addTitlePage(children, compiled, formatting) {
       ],
     }));
   }
-  children.push(new Paragraph({
-    alignment: AlignmentType.CENTER,
-    spacing: { before: 1000 },
-    children: [run('Généré avec Trimémo', formatting, { italics: true, size: 10 })],
-  }));
   children.push(new Paragraph({ children: [new PageBreak()] }));
 }
 function addBibliography(children, compiled, formatting) {
@@ -223,21 +248,22 @@ function buildChildren(compiled, formatting) {
 
   children.push(heading('Introduction générale', 1, formatting));
   const introductionBlocks = compiled.blocks.filter((block) => block.kind === 'introduction');
-  const chapterBlocks = compiled.blocks.filter((block) => block.kind === 'chapter' || !block.kind);
+  const chapterBlocks = compiled.blocks.filter((block) => block.kind === 'chapter' || block.kind === 'part' || block.kind === 'part_intro' || block.kind === 'chapter_intro' || block.kind === 'partie_intro' || block.kind === 'chapitre_intro' || !block.kind);
   const conclusionBlocks = compiled.blocks.filter((block) => block.kind === 'conclusion');
+  const hierarchy = {};
 
   if (introductionBlocks.length) {
-    for (const block of introductionBlocks) addStructuredBlock(children, block, formatting);
+    for (const block of introductionBlocks) addStructuredBlock(children, block, formatting, hierarchy);
   } else {
     const intro = compiled.plan?.introductionGeneral || compiled.plan?.introduction || {};
     if (text(intro.content)) addContent(children, intro.content, formatting);
   }
 
-  for (const block of chapterBlocks) addStructuredBlock(children, block, formatting);
+  for (const block of chapterBlocks) addStructuredBlock(children, block, formatting, hierarchy);
 
   if (conclusionBlocks.length) {
     children.push(heading('Conclusion générale', 1, formatting));
-    for (const block of conclusionBlocks) addStructuredBlock(children, block, formatting);
+    for (const block of conclusionBlocks) addStructuredBlock(children, block, formatting, {});
   } else if (text(compiled.plan?.conclusionGeneral?.content || compiled.plan?.conclusion?.content)) {
     children.push(heading('Conclusion générale', 1, formatting));
     addContent(children, compiled.plan.conclusionGeneral?.content || compiled.plan.conclusion?.content, formatting);
