@@ -80,8 +80,12 @@ const EVALUATION_SCHEMA={
   required:["valid","score","failures","matchedRequirements","scientificQuality","academicLogic"]
 };
 
-async function callModel({key,system,user,schema,name,files=[]}){
-  const response=await fetch(OPENAI_URL,{
+async function callModel({key,system,user,schema,name,files=[],timeoutMs=45000}){
+  const controller=new AbortController();
+  const timer=setTimeout(()=>controller.abort(),timeoutMs);
+  let response;
+  try{
+    response=await fetch(OPENAI_URL,{
     method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+key},
     body:JSON.stringify({
       model:getOpenAIModel(),
@@ -92,6 +96,12 @@ async function callModel({key,system,user,schema,name,files=[]}){
       text:{format:{type:"json_schema",name,strict:true,schema}}
     })
   });
+  }catch(e){
+    if(e?.name==="AbortError") throw fail("Le service de génération a dépassé le délai interne. La génération est arrêtée pour éviter le timeout Vercel.",504);
+    throw e;
+  }finally{
+    clearTimeout(timer);
+  }
   const raw=await response.text();
   if(!response.ok){
     let detail=raw;try{const e=JSON.parse(raw);detail=e?.error?.message||detail}catch{}
@@ -276,7 +286,9 @@ ${TRIMEMO_MASTER_ACADEMIC_RULES}`;
     let lastReason="";
     let evaluation=null;
 
-    for(let attempt=0;attempt<3;attempt++){
+    // Deux passages maximum : contrat -> génération -> contrôle, puis une seule correction si nécessaire.
+    // Trois passages pouvaient dépasser la limite d'exécution Vercel lorsque OpenAI était lent.
+    for(let attempt=0;attempt<2;attempt++){
       const correction=attempt===0?"":"\n\nREJET PRÉCÉDENT : "+lastReason+"\nRégénère en corrigeant chacun de ces défauts. Ne te contente pas de changer les titres.";
       const data=await callModel({
         key,
@@ -310,7 +322,7 @@ ${TRIMEMO_MASTER_ACADEMIC_RULES}`;
     }
 
     if(!validatedPlans){
-      throw fail("Les plans générés ne respectent pas suffisamment les exigences scientifiques et personnalisées du client après trois tentatives. Dernier contrôle : "+lastReason,502);
+      throw fail("La génération des plans n'a pas pu être validée dans le délai prévu. Dernier contrôle : "+lastReason,502);
     }
 
     await deleteOpenAIFiles(ids,key);
