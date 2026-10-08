@@ -295,22 +295,28 @@ ${TRIMEMO_MASTER_ACADEMIC_RULES}`;
       timeoutMs:120000
     });
 
-    let validationReason="";
     if(!Array.isArray(data?.plans)||data.plans.length<count){
-      validationReason="Le nombre de plans retournés est insuffisant.";
-    } else {
-      for(let i=0;i<count;i++){
+      throw fail("OpenAI n’a pas retourné le nombre de plans demandé.",422);
+    }
+
+    for(let i=0;i<count;i++){
       const plan=data.plans[i];
       const guideCheck=validateMethodologyStructure(plan,methodologyContract);
-      if(!guideCheck.valid) throw fail("La génération a été automatiquement réparée, mais le plan "+(i+1)+" reste incompatible avec le guide local : "+guideCheck.reason,422);
+      if(!guideCheck.valid) throw fail("Le plan "+(i+1)+" reste incompatible avec le guide local : "+guideCheck.reason,422);
       const parts=Array.isArray(plan?.parts)?plan.parts:[];
-      if(parts.length<requiredPartMin || parts.length>requiredPartMax) throw fail("Plan "+(i+1)+" : nombre de parties hors contrat.",422);
+      if(parts.length<requiredPartMin || parts.length>requiredPartMax) {
+        throw fail("Plan "+(i+1)+" : nombre de parties hors contrat.",422);
+      }
       for(let pi=0;pi<parts.length;pi++){
         const chapters=Array.isArray(parts[pi]?.chapters)?parts[pi].chapters:[];
-        if(chapters.length<requiredChapterMin || chapters.length>requiredChapterMax) throw fail("Plan "+(i+1)+" : la partie "+(pi+1)+" ne respecte pas le nombre de chapitres attendu.",422);
+        if(chapters.length<requiredChapterMin || chapters.length>requiredChapterMax) {
+          throw fail("Plan "+(i+1)+" : la partie "+(pi+1)+" ne respecte pas le nombre de chapitres attendu.",422);
+        }
         for(let ci=0;ci<chapters.length;ci++){
           const sections=Array.isArray(chapters[ci]?.sections)?chapters[ci].sections:[];
-          if(sections.length<2 || sections.length>3) throw fail("Plan "+(i+1)+" : le chapitre "+(ci+1)+" doit comporter 2 ou 3 sections.",422);
+          if(sections.length<2 || sections.length>3) {
+            throw fail("Plan "+(i+1)+" : le chapitre "+(ci+1)+" doit comporter 2 ou 3 sections.",422);
+          }
         }
       }
     }
