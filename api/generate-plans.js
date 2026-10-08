@@ -94,8 +94,7 @@ async function callModel({key,system,user,schema,name,files=[],timeoutMs=45000})
       ],
       max_output_tokens:12000,
       text:{format:{type:"json_schema",name,strict:true,schema}}
-    })
-  });
+    });
   }catch(e){
     if(e?.name==="AbortError") throw fail("Le service de génération a dépassé le délai interne. La génération est arrêtée pour éviter le timeout Vercel.",504);
     throw e;
