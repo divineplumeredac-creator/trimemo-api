@@ -242,7 +242,7 @@ export default async function handler(req,res){
     ].join("\n\n");
 
     const guideRules=docs?.methodologyText?.trim()
-      ? "GUIDE MÉTHODOLOGIQUE LOCAL DU PROJET :\\n"+docs.methodologyText.trim()
+      ? "GUIDE MÉTHODOLOGIQUE LOCAL DU PROJET :\n"+docs.methodologyText.trim()
       : "";
 
     // Les informations du client sont déjà structurées dans le dossier transmis.
