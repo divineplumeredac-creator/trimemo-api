@@ -661,7 +661,7 @@ ${TRIMEMO_MASTER_ACADEMIC_RULES}`;
       }
     }
 
-    // Le contrôle inter-plans est désactivé pour la nouvelle génération unitaire.\n    const normalizedPlans=data.plans.slice(0,count).map((plan,i)=>normalizePlanStructure(plan,i,words));
+    // Le contrôle inter-plans est désactivé pour la nouvelle génération unitaire.\n    var normalizedPlans=data.plans.slice(0,count).map((plan,i)=>normalizePlanStructure(plan,i,words));
 
     stage="nettoyage des fichiers temporaires";
     await safeCleanup();
