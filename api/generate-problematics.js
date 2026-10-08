@@ -2,7 +2,7 @@ import { getOpenAIModel } from "../lib/openai-model.js";
 import { TRIMEMO_MASTER_ACADEMIC_RULES } from "../lib/trimemo-academic-rules.js";
 import { requireOwner } from "../lib/owner-auth.js";
 import { requirePremiumOrOwner } from "../lib/premium-auth.js";
-import { buildProjectDocumentContext, buildDocumentInstructions, uploadProjectFiles, deleteOpenAIFiles } from "../lib/project-documents.js";
+import { buildProjectDocumentContext, buildDocumentInstructions, uploadProjectFiles, deleteOpenAIFiles, buildImageInputs } from "../lib/project-documents.js";
 import { assertFilesSize } from "../lib/limits.js";
 const OPENAI_URL = "https://api.openai.com/v1/responses";
 
@@ -280,6 +280,8 @@ async function callOpenAI({
   const requestedCount = Math.min(3, Math.max(1, Number(count) || 3));
   const citationMode = detectCitationMode(project);
   const documentContext = await buildProjectDocumentContext(project.files);
+
+  const imageInputs = buildImageInputs(project.files);
 
   const fileInputs = fileIds.map((fileId) => ({
     type: "input_file",
