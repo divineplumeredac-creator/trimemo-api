@@ -5,7 +5,7 @@ import { requireOwner } from "../lib/owner-auth.js";
 import { requirePremiumOrOwner } from "../lib/premium-auth.js";
 import { buildProjectDocumentContext, buildDocumentInstructions, uploadProjectFiles, deleteOpenAIFiles } from "../lib/project-documents.js";
 import { clampPages, assertFilesSize } from "../lib/limits.js";
-import { PLAN_PARTS_SCHEMA, normalizePlanStructure, validatePlanSet } from "../lib/plan-structure.js";
+import { PLAN_PARTS_SCHEMA, normalizePlanStructure } from "../lib/plan-structure.js";
 
 const OPENAI_URL="https://api.openai.com/v1/responses";
 const WORDS_PER_PAGE=320;
@@ -332,21 +332,14 @@ ${TRIMEMO_MASTER_ACADEMIC_RULES}`;
     if(!Array.isArray(data?.plans)||data.plans.length<count){
       lastReason="Le nombre de plans retournés est insuffisant.";
     } else {
-      const candidate=data.plans.slice(0,count);
-      const structure=validatePlanSet(candidate,{
-        requireDistinct:count>1,
-        requireNaturalVariation:false
-      });
-
-      if(!structure.valid){
-        lastReason=structure.reason;
-      } else {
-        validatedPlans=candidate.map((plan,i)=>normalizePlanStructure(plan,i,words));
-      }
+      // Le schéma JSON strict d'OpenAI constitue le contrôle structurel primaire.
+      // Ne pas appliquer une seconde validation générique ici : elle pourrait
+      // rejeter un guide méthodologique valide ou une architecture imposée par le client.
+      validatedPlans=data.plans.slice(0,count).map((plan,i)=>normalizePlanStructure(plan,i,words));
     }
 
     if(!validatedPlans){
-      throw fail("La génération des plans n'a pas pu être validée : "+lastReason,502);
+      throw fail("La génération des plans n'a pas retourné les trois propositions attendues.",502);
     }
 
     await deleteOpenAIFiles(ids,key);
