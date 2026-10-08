@@ -4,7 +4,7 @@ import { clampPages, assertFilesSize } from "../lib/limits.js";
 import { rateLimit } from "../lib/rate-limit.js";
 import { deleteOpenAIFiles } from "../lib/project-documents.js";
 import { buildProjectDocumentContext, buildDocumentInstructions, uploadProjectFiles } from "../lib/project-documents.js";
-import { PLAN_PARTS_SCHEMA, normalizePlanStructure, validatePlanSet } from "../lib/plan-structure.js";
+import { PLAN_PARTS_SCHEMA, normalizePlanStructure } from "../lib/plan-structure.js";
 const OPENAI_URL = "https://api.openai.com/v1/responses";
 const WORDS_PER_PAGE = 320;
 const FREE_PREVIEW_WORDS = 320;
@@ -133,8 +133,19 @@ export default async function handler(req, res) {
       const raw=await response.text();
       if(!response.ok){let detail="Le service de génération a refusé la requête.";try{const e=JSON.parse(raw);detail=e?.error?.message||detail}catch{}throw fail("OpenAI a refusé l'aperçu : "+detail,502);}
       const candidate=parseJson(extractOutputText(JSON.parse(raw)));
-      const validation=validatePlanSet([candidate.plan],{requireDistinct:false,requireNaturalVariation:true});
-      if(!validation.valid){lastValidationReason=validation.reason;continue;}
+      const plan=candidate?.plan;
+      const parts=Array.isArray(plan?.parts)?plan.parts:[];
+      const validStructure=parts.length>=2 && parts.length<=3 && parts.every(part=>{
+        const chapters=Array.isArray(part?.chapters)?part.chapters:[];
+        return chapters.length>=2 && chapters.length<=3 && chapters.every(chapter=>{
+          const sections=Array.isArray(chapter?.sections)?chapter.sections:[];
+          return sections.length>=2 && sections.length<=3;
+        });
+      });
+      if(!validStructure){
+        lastValidationReason="Le plan doit comporter 2 ou 3 parties, 2 ou 3 chapitres par partie et 2 ou 3 sections par chapitre.";
+        continue;
+      }
       result=candidate;
       break;
     }
