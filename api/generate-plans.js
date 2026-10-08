@@ -91,7 +91,7 @@ async function repairPlanSet({key,system,user,schema,name,files,plans,reason}) {
   return callModel({key,system,user:repairUser,schema,name,files,timeoutMs:90000});
 }
 
-const ANGLE_REVIEW_SCHEMA={
+// Inter-plan exclusivity is validated separately after angle coherence.\nconst ANGLE_REVIEW_SCHEMA={
   type:"object",
   additionalProperties:false,
   properties:{
