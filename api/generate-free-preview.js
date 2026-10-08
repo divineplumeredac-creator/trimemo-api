@@ -15,8 +15,11 @@ function trimToWords(value, limit) {
   return words.slice(0, limit).join(" ") + "…";
 }
 
-function cors(res) {
-  res.setHeader("Access-Control-Allow-Origin", String(process.env.TRIMEMO_FRONTEND_URL || ""));
+function cors(res, req) {
+  const origin = String(req?.headers?.origin || "").trim().replace(/\/$/, "");
+  const allowed = origin === "https://trimemo-frontend.vercel.app" || /^https:\/\/trimemo-frontend-[a-z0-9-]+\.vercel\.app$/i.test(origin) ? origin : "https://trimemo-frontend.vercel.app";
+  res.setHeader("Access-Control-Allow-Origin", allowed);
+  res.setHeader("Vary", "Origin");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Accept, Authorization, X-Trimemo-Premium-Token");
   res.setHeader("Access-Control-Max-Age", "86400");
@@ -82,7 +85,7 @@ const schema = {
 };
 
 export default async function handler(req, res) {
-  cors(res);
+  cors(res, req);
   if (req.method === "OPTIONS") return res.status(204).end();
   if (req.method !== "POST") return res.status(405).json({error:"Méthode non autorisée. Utilisez POST."});
   const apiKey = process.env.OPENAI_API_KEY;
