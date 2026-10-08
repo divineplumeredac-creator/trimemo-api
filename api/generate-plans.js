@@ -5,6 +5,7 @@ import { requirePremiumOrOwner } from "../lib/premium-auth.js";
 import { buildProjectDocumentContext, buildDocumentInstructions, uploadProjectFiles, deleteOpenAIFiles } from "../lib/project-documents.js";
 import { clampPages, assertFilesSize } from "../lib/limits.js";
 import { PLAN_PARTS_SCHEMA, normalizePlanStructure, validatePlanSet } from "../lib/plan-structure.js";
+import { getOpenAIModel } from "../lib/openai-model.js";
 
 const OPENAI_URL="https://api.openai.com/v1/responses";
 const WORDS_PER_PAGE=320;
