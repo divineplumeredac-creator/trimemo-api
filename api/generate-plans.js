@@ -87,8 +87,8 @@ async function callModel({key,system,user,schema,name,files=[],timeoutMs=45000})
 async function repairPlanSet({key,system,user,schema,name,files,plans,reason}) {
   const repairUser = user + "\n\nRÉPARATION OBLIGATOIRE :\nLa première génération a été rejetée par le validateur serveur.\nMotif : " + reason +
     "\nVoici la génération rejetée :\n" + JSON.stringify(plans) +
-    "\nCorrige uniquement les défauts structurels. Conserve le sujet, la problématique, les consignes et la logique scientifique. Respecte exactement le schéma et toutes les contraintes numériques du contrat méthodologique local. Retourne exactement le nombre de plans demandé.";
-  return callModel({key,system,user:repairUser,schema,name,files,timeoutMs:90000});
+    "\nRedessine les éléments nécessaires pour corriger le défaut détecté. Pour un recouvrement inter-plans, modifie réellement l’angle, les mécanismes ou la logique argumentative du ou des plans concernés. Ne te contente jamais de changer les titres. Conserve le sujet, la problématique, les consignes et toutes les contraintes du guide client. Respecte exactement le schéma et les contraintes numériques du contrat méthodologique local. Retourne exactement le nombre de plans demandé.";
+  return callModel({key,system,user:repairUser,schema,name,files,timeoutMs:75000});
 }
 
 // Inter-plan exclusivity is validated separately after angle coherence.\nconst PLAN_SEPARATION_SCHEMA={
@@ -169,7 +169,7 @@ async function reviewPlanAngles({key,methodologyAuthority,context,plans,count,fi
     "PLANS À CONTRÔLER :\n" + JSON.stringify(plans) + "\n\n" +
     "Pour chaque plan, formule son angle directeur en une phrase. Vérifie son unité sur toute la structure et la différence réelle entre les angles. " +
     "Si un défaut existe, reason doit expliquer précisément quel plan mélange quels angles ou pourquoi deux plans ne sont pas réellement distincts.";
-  return callModel({key,system,user,schema:ANGLE_REVIEW_SCHEMA,name:"trimemo_plan_angle_review",files,timeoutMs:90000});
+  return callModel({key,system,user,schema:ANGLE_REVIEW_SCHEMA,name:"trimemo_plan_angle_review",files,timeoutMs:50000});
 }
 
 async function reviewPlanSeparation({key,methodologyAuthority,context,plans,count,files}) {
@@ -194,7 +194,7 @@ async function reviewPlanSeparation({key,methodologyAuthority,context,plans,coun
     "Compare Plan 1/2, Plan 1/3 et Plan 2/3. " +
     "Rejette tout transfert d'angle, notamment lorsqu'un plan reprend le cœur du Plan 1 comme introduction ou cadre du Plan 2 ou 3. " +
     "Un simple changement de vocabulaire ne constitue pas une séparation.";
-  return callModel({key,system,user,schema:PLAN_SEPARATION_SCHEMA,name:"trimemo_plan_separation_review",files,timeoutMs:90000});
+  return callModel({key,system,user,schema:PLAN_SEPARATION_SCHEMA,name:"trimemo_plan_separation_review",files,timeoutMs:50000});
 }
 
 function contractText(c){
@@ -226,10 +226,21 @@ export default async function handler(req,res){
   if(!key)return res.status(500).json({error:"OPENAI_API_KEY est absente du serveur."});
 
   let ids=[];
+  let stage="initialisation";
+  const safeCleanup=async()=>{
+    if(!ids.length)return;
+    const pending=ids;
+    ids=[];
+    try{await deleteOpenAIFiles(pending,key)}catch(cleanupError){
+      console.error("generate-plans cleanup error",cleanupError);
+    }
+  };
   try{
+    stage="authentification";
     const b=req.body||{};
     if(b.ownerMode===true) requireOwner(req); else requirePremiumOrOwner(req,b);
 
+    stage="lecture du dossier";
     const p=b.project||b.projet||b;
     const subject=txt(p.sujet||p.subject);
     if(!subject)return res.status(400).json({error:"Le sujet est obligatoire."});
@@ -244,7 +255,9 @@ export default async function handler(req,res){
     const introductionWords=introductionPages*WORDS_PER_PAGE;
     const conclusionWords=conclusionPages*WORDS_PER_PAGE;
     const bodyWords=Math.max(0,words-introductionWords-conclusionWords);
+    stage="lecture des documents";
     const docs=files.length?await buildProjectDocumentContext(files):{};
+    stage="transfert des documents vers OpenAI";
     ids=files.length?(assertFilesSize(files),await uploadProjectFiles(files,key)):[];
 
     const context=[
@@ -539,6 +552,7 @@ ${TRIMEMO_MASTER_ACADEMIC_RULES}`;
 
     // Les contraintes structurelles du guide sont injectées directement dans le JSON Schema.
     // Le modèle ne peut donc plus retourner un nombre de parties ou de chapitres incompatible.
+    stage="génération initiale OpenAI";
     let data=await callModel({
       key,
       system:generationSystem,
@@ -576,6 +590,7 @@ ${TRIMEMO_MASTER_ACADEMIC_RULES}`;
 
     let validation=validateGeneratedPlans(data?.plans);
     if(!validation.valid){
+      stage="réparation de la structure";
       data=await repairPlanSet({
         key,
         system:generationSystem,
@@ -593,6 +608,7 @@ ${TRIMEMO_MASTER_ACADEMIC_RULES}`;
     }
 
     // Contrôle scientifique séparé : une structure correcte peut malgré tout mélanger plusieurs angles.
+    stage="contrôle de cohérence des angles";
     let angleReview=await reviewPlanAngles({
       key,
       methodologyAuthority,
@@ -603,6 +619,7 @@ ${TRIMEMO_MASTER_ACADEMIC_RULES}`;
     });
 
     if(!angleReview?.valid){
+      stage="réparation des angles";
       data=await repairPlanSet({
         key,
         system:generationSystem,
@@ -631,6 +648,7 @@ ${TRIMEMO_MASTER_ACADEMIC_RULES}`;
       }
     }
 
+    stage="contrôle d’exclusivité inter-plans";
     let separationReview=await reviewPlanSeparation({
       key,
       methodologyAuthority,
@@ -641,6 +659,7 @@ ${TRIMEMO_MASTER_ACADEMIC_RULES}`;
     });
 
     if(!separationReview?.valid){
+      stage="réparation de l’exclusivité inter-plans";
       data=await repairPlanSet({
         key,
         system:generationSystem,
@@ -672,8 +691,8 @@ ${TRIMEMO_MASTER_ACADEMIC_RULES}`;
 
     const validatedPlans=data.plans.slice(0,count).map((plan,i)=>normalizePlanStructure(plan,i,words));
 
-    await deleteOpenAIFiles(ids,key);
-    ids=[];
+    stage="nettoyage des fichiers temporaires";
+    await safeCleanup();
 
     return res.status(200).json({
       plans:validatedPlans,
@@ -685,11 +704,12 @@ ${TRIMEMO_MASTER_ACADEMIC_RULES}`;
       }
     });
   }catch(e){
-    await deleteOpenAIFiles(ids,key);
-    console.error("generate-plans error",e);
+    await safeCleanup();
+    console.error("generate-plans error", {stage,error:e?.message||e,stack:e?.stack});
     const status=Number.isInteger(e?.status)?e.status:500;
     return res.status(status).json({
       error:e?.message||"Une erreur est survenue pendant la génération des plans.",
+      stage,
       code:e?.code||"PLAN_GENERATION_ERROR"
     });
   }
