@@ -121,7 +121,14 @@ export default async function handler(req,res){
 
     const files=Array.isArray(p.files)?p.files:[];
     const count=Number(b.count)===1?1:3;
-    const words=Math.max(640,clampPages(p)*WORDS_PER_PAGE);
+    const requestedPages=clampPages(p);
+    const words=requestedPages*WORDS_PER_PAGE;
+    const introductionPages=Math.max(1,Math.round(requestedPages*0.10));
+    const conclusionPages=Math.max(1,Math.round(requestedPages*0.06));
+    const bodyPages=Math.max(1,requestedPages-introductionPages-conclusionPages);
+    const introductionWords=introductionPages*WORDS_PER_PAGE;
+    const conclusionWords=conclusionPages*WORDS_PER_PAGE;
+    const bodyWords=Math.max(0,words-introductionWords-conclusionWords);
     const docs=files.length?await buildProjectDocumentContext(files):{};
     ids=files.length?(assertFilesSize(files),await uploadProjectFiles(files,key)):[];
 
@@ -134,6 +141,11 @@ export default async function handler(req,res){
       "CONSIGNES : "+(txt(p.consignes||p.instructions)||"Aucune"),
       "PROBLÉMATIQUE : "+JSON.stringify(b.problematic||b.problematique||p.problematiquePersonnelle||{}),
       "PLAN PERSONNEL : "+(txt(b.providedPlan||p.planPersonnel)||"Aucun"),
+      "NOMBRE DE PAGES DEMANDE : "+requestedPages,
+      "VOLUME TOTAL CIBLE : "+words+" mots ("+requestedPages+" pages à "+WORDS_PER_PAGE+" mots/page)",
+      "VOLUME RESERVE A L INTRODUCTION : "+introductionWords+" mots ("+introductionPages+" pages)",
+      "VOLUME RESERVE A LA CONCLUSION : "+conclusionWords+" mots ("+conclusionPages+" pages)",
+      "VOLUME DISPONIBLE POUR LE CORPS : "+bodyWords+" mots ("+bodyPages+" pages)",
       buildDocumentInstructions(docs)
     ].join("\n\n");
 
