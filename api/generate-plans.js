@@ -338,7 +338,7 @@ ${TRIMEMO_MASTER_ACADEMIC_RULES}`;
         requireNaturalVariation:false
       });
 
-      if(!structure.valid || !guideShape.valid){
+      if(!structure.valid){
         lastReason=structure.reason;
       } else {
         validatedPlans=candidate.map((plan,i)=>normalizePlanStructure(plan,i,words));
