@@ -231,11 +231,19 @@ ${TRIMEMO_MASTER_ACADEMIC_RULES}`;
       ].slice(0,count)
       :["PLAN UNIQUE : choisir l'architecture la plus pertinente selon le sujet, la problématique et les exigences du projet."];
 
-    const baseUser=contractText(contract)+"\n\nDOSSIER CLIENT COMPLET :\n"+context+
-      "\n\nGénère exactement "+count+" plan(s). Volume indicatif : "+words+" mots."+
-      "\nChaque plan doit expliciter une approche scientifique distincte dans le champ approach."+\n      "\nCONTRAINTE DE VOLUME : "+requestedPages+" pages visées, soit "+words+" mots au total."+\n      "\nRépartition indicative : introduction "+introductionPages+" pages, corps "+bodyPages+" pages, conclusion "+conclusionPages+" pages."+\n      "\nLes chapitres doivent se partager les "+bodyWords+" mots du corps. Ne crée pas une architecture dont la rédaction normale dépasserait ce budget."+
-      "\n\nARCHITECTURES STRUCTURELLES OBLIGATOIRES :\n- "+structureTargets.join("\n- ")+
-      "\nNe remplace pas les exigences du projet par une architecture standard de Trimémo. Les différences entre plans doivent porter sur la logique scientifique, tout en respectant le contrat méthodologique local et le guide fourni. Les contraintes numériques détectées dans le contrat sont obligatoires.";
+    const baseUser = [
+      contractText(contract),
+      "DOSSIER CLIENT COMPLET:",
+      context,
+      "Génère exactement "+count+" plan(s). Volume indicatif : "+words+" mots.",
+      "Chaque plan doit expliciter une approche scientifique distincte dans le champ approach.",
+      "CONTRAINTE DE VOLUME : "+requestedPages+" pages visées, soit "+words+" mots au total.",
+      "Répartition indicative : introduction "+introductionPages+" pages, corps "+bodyPages+" pages, conclusion "+conclusionPages+" pages.",
+      "Les chapitres doivent se partager les "+bodyWords+" mots du corps. Ne crée pas une architecture dont la rédaction normale dépasserait ce budget.",
+      "ARCHITECTURES STRUCTURELLES OBLIGATOIRES:",
+      ...structureTargets.map(item => "- "+item),
+      "Ne remplace pas les exigences du projet par une architecture standard de Trimémo. Les différences entre plans doivent porter sur la logique scientifique, tout en respectant le contrat méthodologique local et le guide fourni. Les contraintes numériques détectées dans le contrat sont obligatoires."
+    ].join("\n\n");
 
     const defaultPartMin=2, defaultPartMax=3;
     const defaultChapterMin=2, defaultChapterMax=3;
