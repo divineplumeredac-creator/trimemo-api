@@ -1,4 +1,5 @@
 import { getOpenAIModel } from "../lib/openai-model.js";
+import { setCors } from "../lib/http.js";
 import { TRIMEMO_MASTER_ACADEMIC_RULES } from "../lib/trimemo-academic-rules.js";
 import { requireOwner } from "../lib/owner-auth.js";
 import { requirePremiumOrOwner } from "../lib/premium-auth.js";
@@ -10,12 +11,7 @@ const OPENAI_URL="https://api.openai.com/v1/responses";
 const WORDS_PER_PAGE=320;
 
 function cors(res,req){
-  const origin=String(req?.headers?.origin || "");
-  const allowed = origin === "https://trimemo-frontend.vercel.app" || /^https:\/\/trimemo-frontend-[a-z0-9-]+\\.vercel\\.app$/i.test(origin);
-  res.setHeader("Access-Control-Allow-Origin", allowed ? origin : "https://trimemo-frontend.vercel.app");
-  res.setHeader("Vary","Origin");
-  res.setHeader("Access-Control-Allow-Methods","POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers","Content-Type, Accept, Authorization, X-Trimemo-Premium-Token");
+  setCors(res, req, "POST, OPTIONS");
 }
 function fail(m,s=400){const e=new Error(m);e.status=s;return e}
 function txt(v){return String(v??"").trim()}
@@ -96,6 +92,7 @@ async function callModel({key,system,user,schema,name,files=[],timeoutMs=45000})
         {role:"system",content:[{type:"input_text",text:system}]},
         {role:"user",content:[{type:"input_text",text:user},...files.map(file_id=>({type:"input_file",file_id}))]}
       ],
+      max_output_tokens:12000,
       text:{format:{type:"json_schema",name,strict:true,schema}}
     })
   });
@@ -349,6 +346,10 @@ ${TRIMEMO_MASTER_ACADEMIC_RULES}`;
   }catch(e){
     await deleteOpenAIFiles(ids,key);
     console.error("generate-plans error",e);
-    return res.status(e.status||500).json({error:e?.status&&e.status<500?e.message:"Une erreur interne est survenue pendant la génération des plans."});
+    const status = Number.isInteger(e?.status) ? e.status : 500;
+    return res.status(status).json({
+      error: e?.message || "Une erreur est survenue pendant la génération des plans.",
+      code: e?.code || "PLAN_GENERATION_ERROR"
+    });
   }
 }
