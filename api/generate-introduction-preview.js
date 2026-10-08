@@ -3,8 +3,11 @@ import { TRIMEMO_MASTER_ACADEMIC_RULES } from "../lib/trimemo-academic-rules.js"
 import { buildProjectDocumentContext, buildDocumentInstructions, uploadProjectFiles, deleteOpenAIFiles } from "../lib/project-documents.js";
 import { rateLimit } from "../lib/rate-limit.js";
 import { assertFilesSize } from "../lib/limits.js";
-function setCors(res) {
-  res.setHeader("Access-Control-Allow-Origin", String(process.env.TRIMEMO_FRONTEND_URL || ""));
+function setCors(res, req) {
+  const origin = String(req?.headers?.origin || "").trim().replace(/\/$/, "");
+  const allowed = origin === "https://trimemo-frontend.vercel.app" || /^https:\/\/trimemo-frontend-[a-z0-9-]+\.vercel\.app$/i.test(origin) ? origin : "https://trimemo-frontend.vercel.app";
+  res.setHeader("Access-Control-Allow-Origin", allowed);
+  res.setHeader("Vary", "Origin");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Accept, Authorization");
 }
@@ -84,7 +87,7 @@ function getOpenAIErrorMessage(data, rawText) {
 }
 
 export default async function handler(req, res) {
-  setCors(res);
+  setCors(res, req);
 
   if (req.method === "OPTIONS") {
     return res.status(204).end();
