@@ -3,7 +3,7 @@ import { TRIMEMO_MASTER_ACADEMIC_RULES } from "../lib/trimemo-academic-rules.js"
 import { clampPages, assertFilesSize } from "../lib/limits.js";
 import { rateLimit } from "../lib/rate-limit.js";
 import { deleteOpenAIFiles } from "../lib/project-documents.js";
-import { buildProjectDocumentContext, buildDocumentInstructions, uploadProjectFiles } from "../lib/project-documents.js";
+import { buildProjectDocumentContext, buildDocumentInstructions, uploadProjectFiles, buildImageInputs } from "../lib/project-documents.js";
 import { PLAN_PARTS_SCHEMA, normalizePlanStructure } from "../lib/plan-structure.js";
 const OPENAI_URL = "https://api.openai.com/v1/responses";
 const WORDS_PER_PAGE = 320;
@@ -104,6 +104,7 @@ export default async function handler(req, res) {
     const introductionWords = calculateAcademicIntroductionWords(pages);
     const documentContext = files.length ? await buildProjectDocumentContext(files) : {};
     fileIds = files.length ? await uploadProjectFiles(files, apiKey) : [];
+    const imageInputs = buildImageInputs(files);
     const context = [
       "SUJET : " + sujet,
       "DOMAINE : " + (text(project.domaine || project.domain) || "Non précisé"),
