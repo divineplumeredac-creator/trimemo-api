@@ -247,7 +247,7 @@ export default async function handler(req,res){
     if(!subject)return res.status(400).json({error:"Le sujet est obligatoire."});
 
     const files=Array.isArray(p.files)?p.files:[];
-    const count=Number(b.count)===1?1:3;
+    const count=1;
     const requestedPages=clampPages(p);
     const words=requestedPages*WORDS_PER_PAGE;
     const introductionPages=Math.max(1,Math.round(requestedPages*0.10));
@@ -268,7 +268,7 @@ export default async function handler(req,res){
       "TYPE DE DOCUMENT : "+(txt(p.typeDoc||p.typeDocument||p.type)||"Non précisé"),
       "CONTEXTE : "+(txt(p.contexte||p.context)||"Aucun"),
       "CONSIGNES : "+(txt(p.consignes||p.instructions)||"Aucune"),
-      "PROBLÉMATIQUE : "+JSON.stringify(b.problematic||b.problematique||p.problematiquePersonnelle||{}),
+      "PROBLÉMATIQUE SÉLECTIONNÉE : "+JSON.stringify(b.problematic||b.problematique||p.problematiquePersonnelle||{}),
       "PLAN PERSONNEL : "+(txt(b.providedPlan||p.planPersonnel)||"Aucun"),
       "NOMBRE DE PAGES DEMANDE : "+requestedPages,
       "VOLUME TOTAL CIBLE : "+words+" mots ("+requestedPages+" pages à "+WORDS_PER_PAGE+" mots/page)",
@@ -429,11 +429,21 @@ ${TRIMEMO_MASTER_ACADEMIC_RULES}`;
       ].slice(0,count)
       :["PLAN UNIQUE : choisir l'architecture la plus pertinente selon le sujet, la problématique et les exigences du projet."];
 
+    const planAction=txt(b.planAction||"new");
+    const currentPlan=b.currentPlan||null;
+    const rejectedPlans=Array.isArray(b.rejectedPlans)?b.rejectedPlans.slice(0,3):[];
+    const improvementComments=txt(b.improvementComments||"");
+
     const baseUser = [
       contractText(contract),
       "DOSSIER CLIENT COMPLET:",
       context,
-      "Génère exactement "+count+" plan(s). Volume indicatif : "+words+" mots.",
+      "Génère exactement un seul plan. Volume indicatif : "+words+" mots.",
+      planAction==="improve" ? "MODE AMÉLIORATION : améliore le plan actuel selon les commentaires du client. Préserve les éléments explicitement approuvés et ne modifie que ce qui est demandé ou ce qui est scientifiquement nécessaire." : "",
+      planAction==="improve" ? "COMMENTAIRES DU CLIENT : "+improvementComments : "",
+      planAction==="improve" ? "PLAN ACTUEL À AMÉLIORER : "+JSON.stringify(currentPlan||{}) : "",
+      planAction==="alternative" && rejectedPlans.length ? "PLANS PRÉCÉDEMMENT REJETÉS À NE PAS REPRODUIRE : "+JSON.stringify(rejectedPlans) : "",
+      planAction==="alternative" && rejectedPlans.length ? "Construis une architecture réellement différente des plans rejetés. Ne change pas seulement les titres : change la logique scientifique directrice tout en respectant strictement le guide client." : "",
       "Chaque plan doit expliciter une approche scientifique distincte dans le champ approach.",
       "Chaque plan doit aussi renseigner angle et coverage. angle = un seul angle scientifique directeur. coverage = ce que ce plan couvre intégralement sous cet angle.",
       "Aucun plan ne doit mélanger deux angles directeurs. Ne commence jamais un raisonnement sous un angle pour le poursuivre sous un autre angle non subordonné.",
@@ -609,7 +619,7 @@ ${TRIMEMO_MASTER_ACADEMIC_RULES}`;
     }
 
     // Contrôle scientifique séparé : une structure correcte peut malgré tout mélanger plusieurs angles.
-    stage="contrôle de cohérence des angles";
+    stage="contrôle de cohérence du plan";
     let angleReview=await reviewPlanAngles({
       key,
       methodologyAuthority,
@@ -619,7 +629,7 @@ ${TRIMEMO_MASTER_ACADEMIC_RULES}`;
       files:ids
     });
 
-    if(!angleReview?.valid){
+    if(count>1 && !angleReview?.valid){
       stage="réparation des angles";
       data=await repairPlanSet({
         key,
@@ -649,53 +659,13 @@ ${TRIMEMO_MASTER_ACADEMIC_RULES}`;
       }
     }
 
-    stage="contrôle d’exclusivité inter-plans";
-    let separationReview=await reviewPlanSeparation({
-      key,
-      methodologyAuthority,
-      context,
-      plans:data?.plans || [],
-      count,
-      files:ids
-    });
-
-    if(!separationReview?.valid){
-      stage="réparation de l’exclusivité inter-plans";
-      data=await repairPlanSet({
-        key,
-        system:generationSystem,
-        user:baseUser,
-        schema,
-        name:"trimemo_academic_toc_separation_repair",
-        files:ids,
-        plans:data?.plans || [],
-        reason:"Contrôle d'exclusivité inter-plans : "+(separationReview?.reason||"les plans se recouvrent dans leur raisonnement central.")+
-          "\nDiagnostic des plans : "+JSON.stringify(separationReview?.plans||[])+
-          "\nRecouvrements détectés : "+JSON.stringify(separationReview?.overlaps||[])
-      });
-      validation=validateGeneratedPlans(data?.plans);
-      if(!validation.valid){
-        throw fail("La réparation de séparation a rendu la structure incompatible avec le contrat méthodologique : "+validation.reason,422);
-      }
-      separationReview=await reviewPlanSeparation({
-        key,
-        methodologyAuthority,
-        context,
-        plans:data?.plans || [],
-        count,
-        files:ids
-      });
-      if(!separationReview?.valid){
-        throw fail("Les plans restent trop proches ou dépendants les uns des autres après réparation : "+(separationReview?.reason||"contrôle d'exclusivité inter-plans non validé."),422);
-      }
-    }
-
-    const validatedPlans=data.plans.slice(0,count).map((plan,i)=>normalizePlanStructure(plan,i,words));
+    // Le contrôle inter-plans est désactivé pour la nouvelle génération unitaire.\n    const validatedPlans=data.plans.slice(0,count).map((plan,i)=>normalizePlanStructure(plan,i,words));
 
     stage="nettoyage des fichiers temporaires";
     await safeCleanup();
 
     return res.status(200).json({
+      plan:validatedPlans[0],
       plans:validatedPlans,
       academicControl:{
         score:null,
