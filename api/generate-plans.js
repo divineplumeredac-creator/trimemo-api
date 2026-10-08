@@ -156,7 +156,18 @@ export default async function handler(req,res){
       buildDocumentInstructions(docs)
     ].join("\n\n");
 
-    const detectedGuideText=docs?.methodologyText?.trim() || (docs?.allText||"").match(/guide\s+m[ée]thodologique|deux\s+grandes\s+parties|trois\s+propositions\s+de\s+probl[ée]matiques/i) ? (docs?.methodologyText?.trim() || docs?.allText || "") : "";
+    // Seuls les fichiers explicitement identifiés comme méthodologie/instructions
+    // peuvent imposer une structure. Les références générales ne deviennent jamais
+    // automatiquement un contrat méthodologique.
+    const methodologyDocs = Array.isArray(files)
+      ? files.filter(file => {
+          const category = String(file?.category || "").trim().toLowerCase();
+          const name = String(file?.name || "").toLowerCase();
+          return category === "methodology" || category === "instructions" || /(methodolog|méthodolog|guide|consigne|instruction|norme|format|jury)/i.test(name);
+        })
+      : [];
+    const methodologyContext = methodologyDocs.length ? await buildProjectDocumentContext(methodologyDocs) : {};
+    const detectedGuideText = String(methodologyContext?.methodologyText || methodologyContext?.instructionsText || "").trim();
     const methodologyContract=extractMethodologyContract(detectedGuideText);
     const guideRules=detectedGuideText
       ? methodologyContractText(methodologyContract)+"\n\nTEXTE INTÉGRAL DU GUIDE MÉTHODOLOGIQUE :\n"+detectedGuideText.trim()
@@ -226,6 +237,12 @@ ${TRIMEMO_MASTER_ACADEMIC_RULES}`;
       "\n\nARCHITECTURES STRUCTURELLES OBLIGATOIRES :\n- "+structureTargets.join("\n- ")+
       "\nNe remplace pas les exigences du projet par une architecture standard de Trimémo. Les différences entre plans doivent porter sur la logique scientifique, tout en respectant le contrat méthodologique local et le guide fourni. Les contraintes numériques détectées dans le contrat sont obligatoires.";
 
+    const defaultPartMin=2, defaultPartMax=3;
+    const defaultChapterMin=2, defaultChapterMax=3;
+    const requiredPartMin=methodologyContract.partCount||defaultPartMin;
+    const requiredPartMax=methodologyContract.partCount||defaultPartMax;
+    const requiredChapterMin=methodologyContract.chaptersPerPart||defaultChapterMin;
+    const requiredChapterMax=methodologyContract.chaptersPerPart||defaultChapterMax;
     const schema={
       ...SCHEMA,
       properties:{
@@ -240,16 +257,16 @@ ${TRIMEMO_MASTER_ACADEMIC_RULES}`;
               ...SCHEMA.properties.plans.items.properties,
               parts:{
                 ...PLAN_PARTS_SCHEMA,
-                ...(methodologyContract.partCount ? {
-                  minItems: methodologyContract.partCount,
-                  maxItems: methodologyContract.partCount
-                } : {}),
+                minItems:requiredPartMin,
+                maxItems:requiredPartMax,
                 items:{
                   ...PLAN_PARTS_SCHEMA.items,
-                  ...(methodologyContract.chaptersPerPart ? {
-                    minItems: methodologyContract.chaptersPerPart,
-                    maxItems: methodologyContract.chaptersPerPart
-                  } : {})
+                  minItems:requiredChapterMin,
+                  maxItems:requiredChapterMax,
+                  properties:{
+                    ...PLAN_PARTS_SCHEMA.items.properties,
+                    sections:{...PLAN_PARTS_SCHEMA.items.properties.sections,minItems:2,maxItems:3}
+                  }
                 }
               }
             }
@@ -275,34 +292,19 @@ ${TRIMEMO_MASTER_ACADEMIC_RULES}`;
       validationReason="Le nombre de plans retournés est insuffisant.";
     } else {
       for(let i=0;i<count;i++){
-        const guideCheck=validateMethodologyStructure(data.plans[i],methodologyContract);
-        if(!guideCheck.valid){
-          validationReason="Plan "+(i+1)+" : "+guideCheck.reason;
-          break;
+      const plan=data.plans[i];
+      const guideCheck=validateMethodologyStructure(plan,methodologyContract);
+      if(!guideCheck.valid) throw fail("La génération a été automatiquement réparée, mais le plan "+(i+1)+" reste incompatible avec le guide local : "+guideCheck.reason,422);
+      const parts=Array.isArray(plan?.parts)?plan.parts:[];
+      if(parts.length<requiredPartMin || parts.length>requiredPartMax) throw fail("Plan "+(i+1)+" : nombre de parties hors contrat.",422);
+      for(let pi=0;pi<parts.length;pi++){
+        const chapters=Array.isArray(parts[pi]?.chapters)?parts[pi].chapters:[];
+        if(chapters.length<requiredChapterMin || chapters.length>requiredChapterMax) throw fail("Plan "+(i+1)+" : la partie "+(pi+1)+" ne respecte pas le nombre de chapitres attendu.",422);
+        for(let ci=0;ci<chapters.length;ci++){
+          const sections=Array.isArray(chapters[ci]?.sections)?chapters[ci].sections:[];
+          if(sections.length<2 || sections.length>3) throw fail("Plan "+(i+1)+" : le chapitre "+(ci+1)+" doit comporter 2 ou 3 sections.",422);
         }
       }
-    }
-
-    if(validationReason){
-      data=await repairPlanSet({
-        key,
-        system:generationSystem,
-        user:baseUser,
-        schema,
-        name:"trimemo_academic_toc_repair",
-        files:ids,
-        plans:data?.plans||[],
-        reason:validationReason
-      });
-    }
-
-    if(!Array.isArray(data?.plans)||data.plans.length<count){
-      throw fail("La génération des plans reste incomplète après réparation automatique.",502);
-    }
-
-    for(let i=0;i<count;i++){
-      const guideCheck=validateMethodologyStructure(data.plans[i],methodologyContract);
-      if(!guideCheck.valid) throw fail("La génération a été automatiquement réparée, mais le plan "+(i+1)+" reste incompatible avec le guide local : "+guideCheck.reason,422);
     }
 
     const validatedPlans=data.plans.slice(0,count).map((plan,i)=>normalizePlanStructure(plan,i,words));
