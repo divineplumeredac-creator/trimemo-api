@@ -251,36 +251,94 @@ ${TRIMEMO_MASTER_ACADEMIC_RULES}`;
     const requiredPartMax=methodologyContract.partCount||defaultPartMax;
     const requiredChapterMin=methodologyContract.chaptersPerPart||defaultChapterMin;
     const requiredChapterMax=methodologyContract.chaptersPerPart||defaultChapterMax;
+    // Construire explicitement tout le sous-schema imbrique.
+    // OpenAI Responses API exige un type sur chaque niveau de properties.
     const schema={
-      ...SCHEMA,
+      type:"object",
+      additionalProperties:false,
       properties:{
-        ...SCHEMA.properties,
         plans:{
-          ...SCHEMA.properties.plans,
+          type:"array",
           minItems:count,
           maxItems:count,
           items:{
-            ...SCHEMA.properties.plans.items,
+            type:"object",
+            additionalProperties:false,
             properties:{
-              ...SCHEMA.properties.plans.items.properties,
+              title:{type:"string"},
+              approach:{type:"string"},
               parts:{
-                ...PLAN_PARTS_SCHEMA,
+                type:"array",
                 minItems:requiredPartMin,
                 maxItems:requiredPartMax,
                 items:{
-                  ...PLAN_PARTS_SCHEMA.items,
-                  minItems:requiredChapterMin,
-                  maxItems:requiredChapterMax,
+                  type:"object",
+                  additionalProperties:false,
                   properties:{
-                    ...PLAN_PARTS_SCHEMA.items.properties,
-                    sections:{...PLAN_PARTS_SCHEMA.items.properties.sections,minItems:2,maxItems:3}
-                  }
+                    title:{type:"string"},
+                    description:{type:"string"},
+                    chapters:{
+                      type:"array",
+                      minItems:requiredChapterMin,
+                      maxItems:requiredChapterMax,
+                      items:{
+                        type:"object",
+                        additionalProperties:false,
+                        properties:{
+                          title:{type:"string"},
+                          description:{type:"string"},
+                          wordCount:{type:"integer"},
+                          sections:{
+                            type:"array",
+                            minItems:2,
+                            maxItems:3,
+                            items:{
+                              type:"object",
+                              additionalProperties:false,
+                              properties:{
+                                title:{type:"string"},
+                                description:{type:"string"},
+                                subsections:{
+                                  type:"array",
+                                  maxItems:8,
+                                  items:{
+                                    type:"object",
+                                    additionalProperties:false,
+                                    properties:{
+                                      title:{type:"string"},
+                                      description:{type:"string"},
+                                      internalTitles:{
+                                        type:"array",
+                                        maxItems:8,
+                                        items:{
+                                          type:"object",
+                                          additionalProperties:false,
+                                          properties:{title:{type:"string"}},
+                                          required:["title"]
+                                        }
+                                      }
+                                    },
+                                    required:["title","description","internalTitles"]
+                                  }
+                                }
+                              },
+                              required:["title","description","subsections"]
+                            }
+                          }
+                        },
+                        required:["title","description","wordCount","sections"]
+                      }
+                    }
+                  },
+                  required:["title","description","chapters"]
                 }
               }
-            }
+            },
+            required:["title","approach","parts"]
           }
         }
-      }
+      },
+      required:["plans"]
     };
 
     // Les contraintes structurelles du guide sont injectées directement dans le JSON Schema.
