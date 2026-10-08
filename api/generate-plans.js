@@ -187,7 +187,7 @@ Les titres doivent exprimer des objets scientifiques, mécanismes, relations, d�
 Évite les titres génériques tels que "généralités", "importance", "enjeux", "avantages et inconvénients", "solutions" lorsqu'ils ne correspondent pas à une véritable démonstration.
 
 Une partie ne doit pas être une simple catégorie thématique.
-Chaque partie doit jouer une fonction dans la démonstration.
+Le nombre de pages demandé est une contrainte de volume obligatoire.\nLe document entier doit rester autour du volume cible calculé.\nLe corps dispose du volume restant après les réserves de l introduction et de la conclusion.\nRépartis ce volume entre les chapitres selon leur importance scientifique.\nLe nombre de sections et de sous-sections doit rester proportionné au volume disponible.\nNe multiplie pas artificiellement les niveaux de structure.\nChaque partie doit jouer une fonction dans la démonstration.
 Chaque chapitre doit faire progresser la réponse à la problématique.
 Chaque section doit développer une dimension identifiable.
 Le plan doit être exploitable pour une rédaction de mémoire, thèse ou rapport scientifique selon le type demandé.
@@ -215,7 +215,7 @@ ${TRIMEMO_MASTER_ACADEMIC_RULES}`;
 
     const baseUser=contractText(contract)+"\n\nDOSSIER CLIENT COMPLET :\n"+context+
       "\n\nGénère exactement "+count+" plan(s). Volume indicatif : "+words+" mots."+
-      "\nChaque plan doit expliciter une approche scientifique distincte dans le champ approach."+
+      "\nChaque plan doit expliciter une approche scientifique distincte dans le champ approach."+\n      "\nCONTRAINTE DE VOLUME : "+requestedPages+" pages visées, soit "+words+" mots au total."+\n      "\nRépartition indicative : introduction "+introductionPages+" pages, corps "+bodyPages+" pages, conclusion "+conclusionPages+" pages."+\n      "\nLes chapitres doivent se partager les "+bodyWords+" mots du corps. Ne crée pas une architecture dont la rédaction normale dépasserait ce budget."+
       "\n\nARCHITECTURES STRUCTURELLES OBLIGATOIRES :\n- "+structureTargets.join("\n- ")+
       "\nNe remplace pas les exigences du projet par une architecture standard de Trimémo. Les différences entre plans doivent porter sur la logique scientifique, tout en respectant le contrat méthodologique local et le guide fourni. Les contraintes numériques détectées dans le contrat sont obligatoires.";
 
