@@ -239,11 +239,25 @@ export default async function handler(req,res){
       buildDocumentInstructions(docs)
     ].join("\n\n");
 
-    const contract=await buildClientContract({
-      key,
-      context,
-      docs:buildDocumentInstructions(docs)
-    });
+    // Les informations du client sont déjà structurées dans le dossier transmis.
+    // Éviter un second appel LLM uniquement pour reformater les consignes réduit fortement
+    // le risque de timeout et conserve les exigences originales dans le prompt de génération.
+    const contract = {
+      researchType: txt(p.typeDoc || p.typeDocument || p.type) || "Travail académique",
+      documentType: txt(p.typeDoc || p.typeDocument || p.type) || "Mémoire",
+      academicLevel: txt(p.niveau || p.level) || "Non précisé",
+      discipline: txt(p.domaine || p.domain) || "Non précisée",
+      methodology: txt(p.methodologie || p.methodology) || "Selon les consignes et documents fournis",
+      mandatoryStructure: txt(p.structure || p.structureObligatoire) || "Structure académique adaptée au sujet",
+      mandatoryRequirements: [txt(p.consignes || p.instructions)].filter(Boolean),
+      clientConstraints: [txt(p.contexte || p.context)].filter(Boolean),
+      contextConstraints: [],
+      scientificDimensions: [],
+      requiredChain: [],
+      prohibitedAssumptions: ["Ne rien inventer : terrain, données, institution, population ou méthode."],
+      personalPlan: txt(p.planPersonnel),
+      personalProblematic: txt(p.problematiquePersonnelle),
+    };
 
     const generationSystem=`Tu es Trimémo Academic Engine.
 Tu dois produire un plan de recherche scientifique et analytique, pas un plan d'exposé.
@@ -284,45 +298,37 @@ ${TRIMEMO_MASTER_ACADEMIC_RULES}`;
 
     let validatedPlans=null;
     let lastReason="";
-    let evaluation=null;
 
-    // Deux passages maximum : contrat -> génération -> contrôle, puis une seule correction si nécessaire.
-    // Trois passages pouvaient dépasser la limite d'exécution Vercel lorsque OpenAI était lent.
-    for(let attempt=0;attempt<2;attempt++){
-      const correction=attempt===0?"":"\n\nREJET PRÉCÉDENT : "+lastReason+"\nRégénère en corrigeant chacun de ces défauts. Ne te contente pas de changer les titres.";
-      const data=await callModel({
-        key,
-        system:generationSystem,
-        user:baseUser+correction,
-        schema:SCHEMA,
-        name:"trimemo_academic_toc",
-        files:ids
+    // Un seul appel de génération : les contrôles de structure sont déterministes
+    // et ne nécessitent pas un second appel OpenAI.
+    const data=await callModel({
+      key,
+      system:generationSystem,
+      user:baseUser,
+      schema:SCHEMA,
+      name:"trimemo_academic_toc",
+      files:ids,
+      timeoutMs:90000
+    });
+
+    if(!Array.isArray(data?.plans)||data.plans.length<count){
+      lastReason="Le nombre de plans retournés est insuffisant.";
+    } else {
+      const candidate=data.plans.slice(0,count);
+      const structure=validatePlanSet(candidate,{
+        requireDistinct:count>1,
+        requireNaturalVariation:false
       });
 
-      if(!Array.isArray(data?.plans)||data.plans.length<count){
-        lastReason="Le nombre de plans retournés est insuffisant.";
-        continue;
-      }
-
-      const candidate=data.plans.slice(0,count);
-      const structure=validatePlanSet(candidate,{requireDistinct:false,requireNaturalVariation:false});
       if(!structure.valid){
         lastReason=structure.reason;
-        continue;
+      } else {
+        validatedPlans=candidate.map((plan,i)=>normalizePlanStructure(plan,i,words));
       }
-
-      evaluation=await evaluatePlans({key,plans:candidate,contract,context,count});
-      if(!evaluation.valid || Number(evaluation.score||0)<85){
-        lastReason="Contrôle scientifique rejeté (score "+String(evaluation.score||0)+"). Défauts : "+(evaluation.failures||[]).join(" | ");
-        continue;
-      }
-
-      validatedPlans=candidate.map((plan,i)=>normalizePlanStructure(plan,i,words));
-      break;
     }
 
     if(!validatedPlans){
-      throw fail("La génération des plans n'a pas pu être validée dans le délai prévu. Dernier contrôle : "+lastReason,502);
+      throw fail("La génération des plans n'a pas pu être validée : "+lastReason,502);
     }
 
     await deleteOpenAIFiles(ids,key);
@@ -331,10 +337,10 @@ ${TRIMEMO_MASTER_ACADEMIC_RULES}`;
     return res.status(200).json({
       plans:validatedPlans,
       academicControl:{
-        score:Number(evaluation?.score||0),
-        matchedRequirements:evaluation?.matchedRequirements||[],
-        scientificQuality:evaluation?.scientificQuality||"",
-        academicLogic:evaluation?.academicLogic||""
+        score:null,
+        matchedRequirements:[],
+        scientificQuality:"Validation structurelle effectuée côté serveur.",
+        academicLogic:"Validation déterministe de la structure et conservation des exigences client."
       }
     });
   }catch(e){
