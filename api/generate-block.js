@@ -1,7 +1,7 @@
 import { getOpenAIModel } from "../lib/openai-model.js";import { TRIMEMO_MASTER_ACADEMIC_RULES } from "../lib/trimemo-academic-rules.js";
 import { requireOwner } from "../lib/owner-auth.js";
 import { requirePremiumOrOwner } from "../lib/premium-auth.js";
-import { buildProjectDocumentContext, buildDocumentInstructions } from "../lib/project-documents.js";
+import { buildProjectDocumentContext, buildDocumentInstructions, buildImageInputs } from "../lib/project-documents.js";
 import { assertFilesSize } from "../lib/limits.js";
 import { verifySources } from "../lib/verify-sources.js";
 export default async function handler(req, res) {
@@ -36,6 +36,7 @@ export default async function handler(req, res) {
     else requirePremiumOrOwner(req, body);
     const project = body.project || body;
     const documentContext = await buildProjectDocumentContext(project.files);
+    const imageInputs = buildImageInputs(project.files);
     assertFilesSize(project.files);
 
     const sujet = String(
