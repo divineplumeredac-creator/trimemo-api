@@ -226,11 +226,33 @@ ${TRIMEMO_MASTER_ACADEMIC_RULES}`;
         plans:{
           ...SCHEMA.properties.plans,
           minItems:count,
-          maxItems:count
+          maxItems:count,
+          items:{
+            ...SCHEMA.properties.plans.items,
+            properties:{
+              ...SCHEMA.properties.plans.items.properties,
+              parts:{
+                ...PLAN_PARTS_SCHEMA,
+                ...(methodologyContract.partCount ? {
+                  minItems: methodologyContract.partCount,
+                  maxItems: methodologyContract.partCount
+                } : {}),
+                items:{
+                  ...PLAN_PARTS_SCHEMA.items,
+                  ...(methodologyContract.chaptersPerPart ? {
+                    minItems: methodologyContract.chaptersPerPart,
+                    maxItems: methodologyContract.chaptersPerPart
+                  } : {})
+                }
+              }
+            }
+          }
         }
       }
     };
 
+    // Les contraintes structurelles du guide sont injectées directement dans le JSON Schema.
+    // Le modèle ne peut donc plus retourner un nombre de parties ou de chapitres incompatible.
     const data=await callModel({
       key,
       system:generationSystem,
