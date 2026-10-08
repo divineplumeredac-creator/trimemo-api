@@ -137,9 +137,10 @@ export default async function handler(req,res){
       buildDocumentInstructions(docs)
     ].join("\n\n");
 
-    const methodologyContract=extractMethodologyContract(docs?.methodologyText||"");
-    const guideRules=docs?.methodologyText?.trim()
-      ? methodologyContractText(methodologyContract)+"\n\nTEXTE INTÉGRAL DU GUIDE MÉTHODOLOGIQUE :\n"+docs.methodologyText.trim()
+    const detectedGuideText=docs?.methodologyText?.trim() || (docs?.allText||"").match(/guide\s+m[ée]thodologique|deux\s+grandes\s+parties|trois\s+propositions\s+de\s+probl[ée]matiques/i) ? (docs?.methodologyText?.trim() || docs?.allText || "") : "";
+    const methodologyContract=extractMethodologyContract(detectedGuideText);
+    const guideRules=detectedGuideText
+      ? methodologyContractText(methodologyContract)+"\n\nTEXTE INTÉGRAL DU GUIDE MÉTHODOLOGIQUE :\n"+detectedGuideText.trim()
       : methodologyContractText(methodologyContract);
 
     const contract={
