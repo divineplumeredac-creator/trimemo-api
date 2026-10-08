@@ -91,7 +91,37 @@ async function repairPlanSet({key,system,user,schema,name,files,plans,reason}) {
   return callModel({key,system,user:repairUser,schema,name,files,timeoutMs:90000});
 }
 
-// Inter-plan exclusivity is validated separately after angle coherence.\nconst ANGLE_REVIEW_SCHEMA={
+// Inter-plan exclusivity is validated separately after angle coherence.\nconst PLAN_SEPARATION_SCHEMA={
+  type:"object",
+  additionalProperties:false,
+  properties:{
+    valid:{type:"boolean"},
+    reason:{type:"string"},
+    plans:{type:"array",minItems:1,maxItems:3,items:{
+      type:"object",additionalProperties:false,
+      properties:{
+        plan:{type:"integer"},
+        exclusiveAngle:{type:"string"},
+        centralElements:{type:"array",items:{type:"string"}},
+        forbiddenOverlap:{type:"array",items:{type:"string"}}
+      },
+      required:["plan","exclusiveAngle","centralElements","forbiddenOverlap"]
+    }},
+    overlaps:{type:"array",maxItems:3,items:{
+      type:"object",additionalProperties:false,
+      properties:{
+        planA:{type:"integer"},
+        planB:{type:"integer"},
+        overlap:{type:"string"},
+        severity:{type:"string"}
+      },
+      required:["planA","planB","overlap","severity"]
+    }}
+  },
+  required:["valid","reason","plans","overlaps"]
+};
+
+const ANGLE_REVIEW_SCHEMA={
   type:"object",
   additionalProperties:false,
   properties:{
