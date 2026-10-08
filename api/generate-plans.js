@@ -3,7 +3,7 @@ import { setCors } from "../lib/http.js";
 import { TRIMEMO_MASTER_ACADEMIC_RULES } from "../lib/trimemo-academic-rules.js";
 import { requireOwner } from "../lib/owner-auth.js";
 import { requirePremiumOrOwner } from "../lib/premium-auth.js";
-import { buildProjectDocumentContext, buildDocumentInstructions, uploadProjectFiles, deleteOpenAIFiles } from "../lib/project-documents.js";
+import { buildProjectDocumentContext, buildDocumentInstructions, uploadProjectFiles, deleteOpenAIFiles, extractFileText } from "../lib/project-documents.js";
 import { clampPages, assertFilesSize } from "../lib/limits.js";
 import { PLAN_PARTS_SCHEMA, normalizePlanStructure } from "../lib/plan-structure.js";
 import { extractMethodologyContract, methodologyContractText, validateMethodologyStructure } from "../lib/methodology-contract.js";
@@ -186,22 +186,30 @@ export default async function handler(req,res){
       return hits >= 2;
     };
 
-    const fallbackGuideFiles = Array.isArray(files)
-      ? files.filter(file => {
-          if (methodologyDocs.includes(file)) return false;
-          const text = String(file?.content || "");
-          return false;
-        })
-      : [];
+    // La détection de secours se fait fichier par fichier.
+    // Un document de référence ne devient jamais un guide simplement parce
+    // qu'un autre document du dossier contient des marqueurs méthodologiques.
+    const fallbackGuideFiles = [];
+    if (Array.isArray(files)) {
+      for (const file of files) {
+        if (methodologyDocs.includes(file)) continue;
+        try {
+          const text = await extractFileText(file);
+          if (looksLikeMethodologyGuide(text)) {
+            fallbackGuideFiles.push({ file, text: String(text || "").trim() });
+          }
+        } catch (e) {
+          console.warn("methodology fallback extraction failed", file?.name, e?.message || e);
+        }
+      }
+    }
 
     const methodologyContext = methodologyDocs.length ? await buildProjectDocumentContext(methodologyDocs) : {};
-    let detectedGuideText = String(methodologyContext?.methodologyText || methodologyContext?.instructionsText || "").trim();
-
-    // Si la classification est absente, on utilise le texte déjà extrait du dossier
-    // uniquement après vérification de marqueurs normatifs forts.
-    if (!detectedGuideText && looksLikeMethodologyGuide(docs?.allText)) {
-      detectedGuideText = String(docs.allText || "").trim();
-    }
+    const classifiedGuideText = String(methodologyContext?.methodologyText || methodologyContext?.instructionsText || "").trim();
+    const fallbackGuideText = fallbackGuideFiles.map(({file,text}) =>
+      "DOCUMENT : "+(file?.name || "guide méthodologique")+"\n"+text
+    ).join("\n\n");
+    const detectedGuideText = [classifiedGuideText, fallbackGuideText].filter(Boolean).join("\n\n").trim();
     const methodologyContract=extractMethodologyContract(detectedGuideText);
     const guideRules=detectedGuideText
       ? methodologyContractText(methodologyContract)+"\n\nTEXTE INTÉGRAL DU GUIDE MÉTHODOLOGIQUE :\n"+detectedGuideText.trim()
@@ -224,14 +232,33 @@ export default async function handler(req,res){
       personalProblematic:txt(p.problematiquePersonnelle)
     };
 
+    const methodologyAuthority = detectedGuideText
+      ? `DOCUMENTS MÉTHODOLOGIQUES DU CLIENT — AUTORITÉ SUPÉRIEURE POUR CE PROJET UNIQUEMENT :
+Les documents ci-dessous sont les consignes méthodologiques du client.
+Tu dois les lire intégralement avant de construire le plan.
+Leurs exigences explicites priment sur toute règle générale de Trimémo.
+Aucune règle générique de structure, de nombre de parties, de chapitres, de sections,
+de sous-sections, de méthode, de présentation ou de raisonnement ne peut les remplacer.
+Si une règle générale de Trimémo entre en conflit avec une exigence explicite du guide,
+applique le guide du client.
+Cette priorité est locale à ce projet et ne doit jamais devenir une règle générale pour les autres projets.
+
+TEXTE INTÉGRAL DES DOCUMENTS MÉTHODOLOGIQUES :
+${detectedGuideText}`
+      : "AUCUN DOCUMENT MÉTHODOLOGIQUE CLIENT DÉTECTÉ.";
+
     const generationSystem=`Tu es Trimémo Academic Engine.
 Tu dois produire un plan de recherche scientifique et analytique, pas un plan d'exposé.
 
-CONTRAINTE ABSOLUE : le CONTRAT SCIENTIFIQUE ci-dessous est la spécification du client.
-PRIORITÉ 1 : les consignes saisies directement par le client.
-PRIORITÉ 2 : les fichiers joints classés Instructions ou Méthodologie.
-PRIORITÉ 3 : la problématique, le plan personnel et le contexte fournis.
-PRIORITÉ 4 : les règles générales de Trimémo.
+${methodologyAuthority}
+
+ORDRE DE PRIORITÉ DES INSTRUCTIONS :
+PRIORITÉ 1 : documents méthodologiques du client.
+PRIORITÉ 2 : autres consignes explicites du client.
+PRIORITÉ 3 : problématique, plan personnel et contexte fournis.
+PRIORITÉ 4 : règles générales de Trimémo.
+
+CONTRAINTE ABSOLUE : aucune règle générale du moteur ne doit écraser une exigence explicite du client ou de son guide.
 Chaque exigence obligatoire doit être prise en compte dans la structure.
 Aucune règle générale du moteur ne doit écraser une exigence explicite du client ou une instruction contenue dans un document normatif joint.
 Tu dois raisonner à partir de la problématique, des dimensions scientifiques et de la méthodologie.
@@ -276,7 +303,10 @@ ${TRIMEMO_MASTER_ACADEMIC_RULES}`;
       "Les chapitres doivent se partager les "+bodyWords+" mots du corps. Ne crée pas une architecture dont la rédaction normale dépasserait ce budget.",
       "ARCHITECTURES STRUCTURELLES OBLIGATOIRES:",
       ...structureTargets.map(item => "- "+item),
-      "Ne remplace pas les exigences du projet par une architecture standard de Trimémo. Les différences entre plans doivent porter sur la logique scientifique, tout en respectant le contrat méthodologique local et le guide fourni. Les contraintes numériques détectées dans le contrat sont obligatoires."
+      "ORDRE DE PRIORITÉ FINAL : guide méthodologique client > autres instructions client > problématique/plan/contexte client > règles générales Trimémo.",
+      "Le guide méthodologique doit être traité comme la spécification contractuelle de ce projet. Ne l'interprète pas comme un simple document de référence.",
+      "Ne remplace jamais une exigence explicite du guide par une architecture standard de Trimémo. Si le guide impose une structure différente, respecte exactement celle du guide.",
+      "Les différences entre plans doivent porter sur la logique scientifique, sans modifier aucune contrainte imposée par le guide. Les contraintes numériques détectées dans le contrat sont obligatoires."
     ].join("\n\n");
 
     const defaultPartMin=2, defaultPartMax=3;
