@@ -388,6 +388,9 @@ Chaque partie, chaque chapitre et chaque section doivent servir le même angle d
 Les trois plans doivent proposer trois angles directeurs réellement différents.
 La différence ne doit pas être une simple reformulation des titres.
 Un plan peut mobiliser plusieurs dimensions secondaires, mais elles doivent rester subordonnées à son angle directeur.
+Les plans sont mutuellement exclusifs sur leur raisonnement central : aucun plan ne peut reprendre comme introduction, prémisse, cadre argumentatif ou axe développé le cœur scientifique d'un autre plan.
+Les éléments communs indispensables peuvent être rappelés, mais aucun mécanisme, relation causale, déterminant, effet central ou progression argumentative propre à un plan ne doit devenir le cœur d'un autre plan.
+Chaque plan doit rester autonome si les autres sont supprimés.
 Les plans doivent donc être distincts par leur logique scientifique tout en restant chacun complet, autonome et cohérent.
 Le plan doit être exploitable pour une rédaction de mémoire, thèse ou rapport scientifique selon le type demandé.
 
