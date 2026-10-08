@@ -292,9 +292,20 @@ Retourne uniquement le JSON.
 
 ${TRIMEMO_MASTER_ACADEMIC_RULES}`;
 
+    const structureTargets = count > 1
+      ? [
+          "PLAN 1 : architecture en 2 parties. La partie 1 comporte 2 chapitres et la partie 2 comporte 3 chapitres. Les chapitres doivent avoir 2 ou 3 sections selon la matière.",
+          "PLAN 2 : architecture en 3 parties. Chaque partie comporte 2 chapitres. Fais varier le nombre de sections entre les chapitres lorsque le contenu le justifie.",
+          "PLAN 3 : architecture en 2 parties. La partie 1 comporte 3 chapitres et la partie 2 comporte 2 chapitres. Fais varier le nombre de sections entre les chapitres lorsque le contenu le justifie."
+        ].slice(0, count)
+      : [
+          "PLAN UNIQUE : choisis librement 2 ou 3 parties selon la logique scientifique du sujet, sans architecture artificiellement symétrique."
+        ];
     const baseUser=contractText(contract)+"\n\nDOSSIER CLIENT COMPLET :\n"+context+
       "\n\nGénère exactement "+count+" plan(s). Volume indicatif : "+words+" mots."+
-      "\nChaque plan doit expliciter une approche scientifique distincte dans le champ approach.";
+      "\nChaque plan doit expliciter une approche scientifique distincte dans le champ approach."+
+      "\n\nARCHITECTURES STRUCTURELLES OBLIGATOIRES :\n- "+structureTargets.join("\n- ")+
+      "\nNe remplace pas ces architectures par trois plans identiques. Les différences structurelles doivent être visibles dans le JSON.";
 
     let validatedPlans=null;
     let lastReason="";
@@ -308,7 +319,7 @@ ${TRIMEMO_MASTER_ACADEMIC_RULES}`;
       schema:SCHEMA,
       name:"trimemo_academic_toc",
       files:ids,
-      timeoutMs:90000
+      timeoutMs:150000
     });
 
     if(!Array.isArray(data?.plans)||data.plans.length<count){
