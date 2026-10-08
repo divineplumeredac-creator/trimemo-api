@@ -40,9 +40,11 @@ const SCHEMA={
         properties:{
           title:{type:"string"},
           approach:{type:"string"},
+          angle:{type:"string"},
+          coverage:{type:"string"},
           parts:PLAN_PARTS_SCHEMA
         },
-        required:["title","approach","parts"]
+        required:["title","approach","angle","coverage","parts"]
       }
     }
   },
@@ -87,6 +89,57 @@ async function repairPlanSet({key,system,user,schema,name,files,plans,reason}) {
     "\nVoici la génération rejetée :\n" + JSON.stringify(plans) +
     "\nCorrige uniquement les défauts structurels. Conserve le sujet, la problématique, les consignes et la logique scientifique. Respecte exactement le schéma et toutes les contraintes numériques du contrat méthodologique local. Retourne exactement le nombre de plans demandé.";
   return callModel({key,system,user:repairUser,schema,name,files,timeoutMs:90000});
+}
+
+const ANGLE_REVIEW_SCHEMA={
+  type:"object",
+  additionalProperties:false,
+  properties:{
+    valid:{type:"boolean"},
+    reason:{type:"string"},
+    planAngles:{
+      type:"array",
+      minItems:1,
+      maxItems:3,
+      items:{
+        type:"object",
+        additionalProperties:false,
+        properties:{
+          plan:{type:"integer"},
+          angle:{type:"string"},
+          coherence:{type:"string"}
+        },
+        required:["plan","angle","coherence"]
+      }
+    }
+  },
+  required:["valid","reason","planAngles"]
+};
+
+async function reviewPlanAngles({key,methodologyAuthority,context,plans,count,files}) {
+  const system =
+    "Tu es le contrôleur scientifique de Trimémo.\n" +
+    methodologyAuthority + "\n\n" +
+    "Tu contrôles uniquement la cohérence des angles des plans proposés.\n\n" +
+    "RÈGLE ABSOLUE :\n" +
+    "1. Chaque plan doit répondre à la même problématique sélectionnée, mais par UN angle scientifique directeur unique.\n" +
+    "2. Cet angle doit couvrir l'ensemble du plan sans devenir un assemblage de thèmes.\n" +
+    "3. Un plan ne doit pas commencer par un angle A puis poursuivre sous un angle B non subordonné.\n" +
+    "4. Toutes les parties et tous les chapitres d'un même plan doivent servir le même angle directeur.\n" +
+    "5. Les trois plans doivent proposer des angles directeurs réellement différents.\n" +
+    "6. Les dimensions secondaires doivent rester subordonnées à l'angle principal.\n" +
+    "7. La structure imposée par le guide client ne doit jamais être modifiée pour créer cette différence.\n" +
+    "8. Ne juge pas la diversité sur les seuls titres : examine descriptions et enchaînement scientifique.\n" +
+    "9. Rejette tout plan qui mélange plusieurs angles centraux ou plusieurs logiques non subordonnées.\n" +
+    "10. Rejette deux plans si leurs angles sont seulement reformulés avec des synonymes.\n\n" +
+    "Le guide client est prioritaire et reste local à ce projet. Retourne uniquement le JSON demandé.";
+  const user =
+    "DOSSIER ET CONTEXTE :\n" + context + "\n\n" +
+    "NOMBRE DE PLANS : " + count + "\n\n" +
+    "PLANS À CONTRÔLER :\n" + JSON.stringify(plans) + "\n\n" +
+    "Pour chaque plan, formule son angle directeur en une phrase. Vérifie son unité sur toute la structure et la différence réelle entre les angles. " +
+    "Si un défaut existe, reason doit expliquer précisément quel plan mélange quels angles ou pourquoi deux plans ne sont pas réellement distincts.";
+  return callModel({key,system,user,schema:ANGLE_REVIEW_SCHEMA,name:"trimemo_plan_angle_review",files,timeoutMs:90000});
 }
 
 function contractText(c){
@@ -272,6 +325,15 @@ Une partie ne doit pas être une simple catégorie thématique.
 Le nombre de pages demandé est une contrainte de volume obligatoire.\nLe document entier doit rester autour du volume cible calculé.\nLe corps dispose du volume restant après les réserves de l introduction et de la conclusion.\nRépartis ce volume entre les chapitres selon leur importance scientifique.\nLe nombre de sections et de sous-sections doit rester proportionné au volume disponible.\nNe multiplie pas artificiellement les niveaux de structure.\nChaque partie doit jouer une fonction dans la démonstration.
 Chaque chapitre doit faire progresser la réponse à la problématique.
 Chaque section doit développer une dimension identifiable.
+RÈGLE CENTRALE SUR LES ANGLES :
+Chaque plan doit retenir un seul angle scientifique directeur, directement relié à la problématique sélectionnée et au sujet.
+Le plan doit rester complet sur cet angle du début à la fin.
+Il est interdit de découper un même angle en commençant son traitement dans une partie puis en le poursuivant sous une autre logique dans une autre partie.
+Chaque partie, chaque chapitre et chaque section doivent servir le même angle directeur.
+Les trois plans doivent proposer trois angles directeurs réellement différents.
+La différence ne doit pas être une simple reformulation des titres.
+Un plan peut mobiliser plusieurs dimensions secondaires, mais elles doivent rester subordonnées à son angle directeur.
+Les plans doivent donc être distincts par leur logique scientifique tout en restant chacun complet, autonome et cohérent.
 Le plan doit être exploitable pour une rédaction de mémoire, thèse ou rapport scientifique selon le type demandé.
 
 N'invente jamais un terrain, une enquête, des données, une organisation, une population ou une méthode.
@@ -301,6 +363,10 @@ ${TRIMEMO_MASTER_ACADEMIC_RULES}`;
       context,
       "Génère exactement "+count+" plan(s). Volume indicatif : "+words+" mots.",
       "Chaque plan doit expliciter une approche scientifique distincte dans le champ approach.",
+      "Chaque plan doit aussi renseigner angle et coverage. angle = un seul angle scientifique directeur. coverage = ce que ce plan couvre intégralement sous cet angle.",
+      "Aucun plan ne doit mélanger deux angles directeurs. Ne commence jamais un raisonnement sous un angle pour le poursuivre sous un autre angle non subordonné.",
+      "Les parties, chapitres et sections d'un même plan doivent rester subordonnés au même angle directeur.",
+      "Les trois plans doivent avoir des angles directeurs différents. Une simple reformulation lexicale ne suffit pas.",
       "CONTRAINTE DE VOLUME : "+requestedPages+" pages visées, soit "+words+" mots au total.",
       "Répartition indicative : introduction "+introductionPages+" pages, corps "+bodyPages+" pages, conclusion "+conclusionPages+" pages.",
       "Les chapitres doivent se partager les "+bodyWords+" mots du corps. Ne crée pas une architecture dont la rédaction normale dépasserait ce budget.",
@@ -462,6 +528,45 @@ ${TRIMEMO_MASTER_ACADEMIC_RULES}`;
       validation=validateGeneratedPlans(data?.plans);
       if(!validation.valid){
         throw fail("La génération reste incompatible avec le contrat méthodologique après réparation : "+validation.reason,422);
+      }
+    }
+
+    // Contrôle scientifique séparé : une structure correcte peut malgré tout mélanger plusieurs angles.
+    let angleReview=await reviewPlanAngles({
+      key,
+      methodologyAuthority,
+      context,
+      plans:data?.plans || [],
+      count,
+      files:ids
+    });
+
+    if(!angleReview?.valid){
+      data=await repairPlanSet({
+        key,
+        system:generationSystem,
+        user:baseUser,
+        schema,
+        name:"trimemo_academic_toc_angle_repair",
+        files:ids,
+        plans:data?.plans || [],
+        reason:"Contrôle des angles : "+(angleReview?.reason||"les plans ne sont pas suffisamment cohérents ou distincts.")+
+          "\nDiagnostic détaillé : "+JSON.stringify(angleReview?.planAngles||[])
+      });
+      validation=validateGeneratedPlans(data?.plans);
+      if(!validation.valid){
+        throw fail("La réparation des angles a rendu la structure incompatible avec le contrat méthodologique : "+validation.reason,422);
+      }
+      angleReview=await reviewPlanAngles({
+        key,
+        methodologyAuthority,
+        context,
+        plans:data?.plans || [],
+        count,
+        files:ids
+      });
+      if(!angleReview?.valid){
+        throw fail("Les plans générés restent incohérents ou trop proches dans leurs angles scientifiques après réparation : "+(angleReview?.reason||"contrôle des angles non validé."),422);
       }
     }
 
