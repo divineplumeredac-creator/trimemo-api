@@ -206,7 +206,7 @@ Retourne uniquement le JSON.`;
 }
 
 export default async function handler(req,res){
-  cors(res);
+  cors(res, req);
   if(req.method==="OPTIONS")return res.status(204).end();
   if(req.method!=="POST")return res.status(405).json({error:"Méthode non autorisée."});
   const key=process.env.OPENAI_API_KEY;
