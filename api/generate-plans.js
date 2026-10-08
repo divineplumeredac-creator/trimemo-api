@@ -172,6 +172,31 @@ async function reviewPlanAngles({key,methodologyAuthority,context,plans,count,fi
   return callModel({key,system,user,schema:ANGLE_REVIEW_SCHEMA,name:"trimemo_plan_angle_review",files,timeoutMs:90000});
 }
 
+async function reviewPlanSeparation({key,methodologyAuthority,context,plans,count,files}) {
+  const system =
+    "Tu es le contrôleur d'exclusivité scientifique de Trimémo.\n" +
+    methodologyAuthority + "\n\n" +
+    "Vérifie que les plans sont mutuellement exclusifs dans leur raisonnement central.\n" +
+    "Chaque plan doit être autonome si les autres sont supprimés.\n" +
+    "Chaque plan réserve son propre angle central, ses mécanismes, relations causales, déterminants, effets ou logique argumentative.\n" +
+    "Un plan ne peut pas reprendre comme introduction, prémisse, cadre argumentatif ou axe développé le cœur scientifique d'un autre plan.\n" +
+    "Compare tous les couples de plans.\n" +
+    "Ignore seulement les éléments obligatoirement communs : sujet, problématique, terrain imposé, définitions indispensables et contraintes méthodologiques.\n" +
+    "Signale tout recouvrement du raisonnement scientifique central, même si cet élément est présenté comme introduction ou contexte dans l'autre plan.\n" +
+    "Les différences doivent être scientifiques et non de simples synonymes.\n" +
+    "Ne modifie jamais la structure imposée par le guide client.\n" +
+    "Retourne uniquement le JSON demandé.";
+  const user =
+    "DOSSIER ET CONTEXTE :\n" + context + "\n\n" +
+    "NOMBRE DE PLANS : " + count + "\n\n" +
+    "PLANS À CONTRÔLER :\n" + JSON.stringify(plans) + "\n\n" +
+    "Pour chaque plan, identifie son angle exclusif et ses éléments scientifiques centraux. " +
+    "Compare Plan 1/2, Plan 1/3 et Plan 2/3. " +
+    "Rejette tout transfert d'angle, notamment lorsqu'un plan reprend le cœur du Plan 1 comme introduction ou cadre du Plan 2 ou 3. " +
+    "Un simple changement de vocabulaire ne constitue pas une séparation.";
+  return callModel({key,system,user,schema:PLAN_SEPARATION_SCHEMA,name:"trimemo_plan_separation_review",files,timeoutMs:90000});
+}
+
 function contractText(c){
   return [
     "ORDRE DE PRIORITÉ OBLIGATOIRE : les consignes saisies par le client et les documents joints classés Instructions/Méthodologie priment sur toute règle générale de Trimémo.",
