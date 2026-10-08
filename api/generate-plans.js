@@ -205,7 +205,10 @@ export default async function handler(req,res){
     }
 
     const methodologyContext = methodologyDocs.length ? await buildProjectDocumentContext(methodologyDocs) : {};
-    const classifiedGuideText = String(methodologyContext?.methodologyText || methodologyContext?.instructionsText || "").trim();
+    const classifiedGuideText = [
+      methodologyContext?.methodologyText,
+      methodologyContext?.instructionsText
+    ].map(v => String(v || "").trim()).filter(Boolean).join("\n\n").trim();
     const fallbackGuideText = fallbackGuideFiles.map(({file,text}) =>
       "DOCUMENT : "+(file?.name || "guide méthodologique")+"\n"+text
     ).join("\n\n");
@@ -417,29 +420,46 @@ ${TRIMEMO_MASTER_ACADEMIC_RULES}`;
       timeoutMs:120000
     });
 
-    if(!Array.isArray(data?.plans)||data.plans.length<count){
-      throw fail("OpenAI n’a pas retourné le nombre de plans demandé.",422);
-    }
-
-    for(let i=0;i<count;i++){
-      const plan=data.plans[i];
-      const guideCheck=validateMethodologyStructure(plan,methodologyContract);
-      if(!guideCheck.valid) throw fail("Le plan "+(i+1)+" reste incompatible avec le guide local : "+guideCheck.reason,422);
-      const parts=Array.isArray(plan?.parts)?plan.parts:[];
-      if(parts.length<requiredPartMin || parts.length>requiredPartMax) {
-        throw fail("Plan "+(i+1)+" : nombre de parties hors contrat.",422);
+    const validateGeneratedPlans = (plans) => {
+      if(!Array.isArray(plans) || plans.length !== count){
+        return {valid:false,reason:"OpenAI doit retourner exactement "+count+" plan(s), mais en a retourné "+(Array.isArray(plans)?plans.length:0)+"."};
       }
-      for(let pi=0;pi<parts.length;pi++){
-        const chapters=Array.isArray(parts[pi]?.chapters)?parts[pi].chapters:[];
-        if(chapters.length<requiredChapterMin || chapters.length>requiredChapterMax) {
-          throw fail("Plan "+(i+1)+" : la partie "+(pi+1)+" ne respecte pas le nombre de chapitres attendu.",422);
-        }
-        for(let ci=0;ci<chapters.length;ci++){
-          const sections=Array.isArray(chapters[ci]?.sections)?chapters[ci].sections:[];
-          if(sections.length<2 || sections.length>3) {
-            throw fail("Plan "+(i+1)+" : le chapitre "+(ci+1)+" doit comporter 2 ou 3 sections.",422);
+      for(let i=0;i<count;i++){
+        const plan=plans[i];
+        const guideCheck=validateMethodologyStructure(plan,methodologyContract);
+        if(!guideCheck.valid) return {valid:false,reason:"Plan "+(i+1)+" : "+guideCheck.reason};
+        const parts=Array.isArray(plan?.parts)?plan.parts:[];
+        if(parts.length<requiredPartMin || parts.length>requiredPartMax)
+          return {valid:false,reason:"Plan "+(i+1)+" : nombre de parties hors contrat."};
+        for(let pi=0;pi<parts.length;pi++){
+          const chapters=Array.isArray(parts[pi]?.chapters)?parts[pi].chapters:[];
+          if(chapters.length<requiredChapterMin || chapters.length>requiredChapterMax)
+            return {valid:false,reason:"Plan "+(i+1)+" : la partie "+(pi+1)+" ne respecte pas le nombre de chapitres attendu."};
+          for(let ci=0;ci<chapters.length;ci++){
+            const sections=Array.isArray(chapters[ci]?.sections)?chapters[ci].sections:[];
+            if(sections.length<2 || sections.length>3)
+              return {valid:false,reason:"Plan "+(i+1)+" : le chapitre "+(ci+1)+" doit comporter 2 ou 3 sections."};
           }
         }
+      }
+      return {valid:true,reason:""};
+    };
+
+    let validation=validateGeneratedPlans(data?.plans);
+    if(!validation.valid){
+      data=await repairPlanSet({
+        key,
+        system:generationSystem,
+        user:baseUser,
+        schema,
+        name:"trimemo_academic_toc_repair",
+        files:ids,
+        plans:data?.plans || [],
+        reason:validation.reason
+      });
+      validation=validateGeneratedPlans(data?.plans);
+      if(!validation.valid){
+        throw fail("La génération reste incompatible avec le contrat méthodologique après réparation : "+validation.reason,422);
       }
     }
 
