@@ -318,6 +318,8 @@ ${TRIMEMO_MASTER_ACADEMIC_RULES}`;
     const requiredPartMax=methodologyContract.partCount||defaultPartMax;
     const requiredChapterMin=methodologyContract.chaptersPerPart||defaultChapterMin;
     const requiredChapterMax=methodologyContract.chaptersPerPart||defaultChapterMax;
+    const requiredSectionMin=methodologyContract.sectionsPerChapter||2;
+    const requiredSectionMax=methodologyContract.sectionsPerChapter||3;
     // Construire explicitement tout le sous-schema imbrique.
     // OpenAI Responses API exige un type sur chaque niveau de properties.
     const schema={
@@ -357,8 +359,8 @@ ${TRIMEMO_MASTER_ACADEMIC_RULES}`;
                           wordCount:{type:"integer"},
                           sections:{
                             type:"array",
-                            minItems:2,
-                            maxItems:3,
+                            minItems:requiredSectionMin,
+                            maxItems:requiredSectionMax,
                             items:{
                               type:"object",
                               additionalProperties:false,
@@ -437,8 +439,8 @@ ${TRIMEMO_MASTER_ACADEMIC_RULES}`;
             return {valid:false,reason:"Plan "+(i+1)+" : la partie "+(pi+1)+" ne respecte pas le nombre de chapitres attendu."};
           for(let ci=0;ci<chapters.length;ci++){
             const sections=Array.isArray(chapters[ci]?.sections)?chapters[ci].sections:[];
-            if(sections.length<2 || sections.length>3)
-              return {valid:false,reason:"Plan "+(i+1)+" : le chapitre "+(ci+1)+" doit comporter 2 ou 3 sections."};
+            if(sections.length<requiredSectionMin || sections.length>requiredSectionMax)
+              return {valid:false,reason:"Plan "+(i+1)+" : le chapitre "+(ci+1)+" doit comporter "+requiredSectionMin+" section(s), conformément au contrat local."};
           }
         }
       }
