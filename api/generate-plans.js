@@ -82,6 +82,13 @@ async function callModel({key,system,user,schema,name,files=[],timeoutMs=45000})
   return json(out(JSON.parse(raw)));
 }
 
+async function repairPlanSet({key,system,user,schema,name,files,plans,reason}) {
+  const repairUser = user + "\n\nRÉPARATION OBLIGATOIRE :\nLa première génération a été rejetée par le validateur serveur.\nMotif : " + reason +
+    "\nVoici la génération rejetée :\n" + JSON.stringify(plans) +
+    "\nCorrige uniquement les défauts structurels. Conserve le sujet, la problématique, les consignes et la logique scientifique. Respecte exactement le schéma et toutes les contraintes numériques du contrat méthodologique local. Retourne exactement le nombre de plans demandé.";
+  return callModel({key,system,user:repairUser,schema,name,files,timeoutMs:90000});
+}
+
 function contractText(c){
   return [
     "ORDRE DE PRIORITÉ OBLIGATOIRE : les consignes saisies par le client et les documents joints classés Instructions/Méthodologie priment sur toute règle générale de Trimémo.",
@@ -253,23 +260,49 @@ ${TRIMEMO_MASTER_ACADEMIC_RULES}`;
 
     // Les contraintes structurelles du guide sont injectées directement dans le JSON Schema.
     // Le modèle ne peut donc plus retourner un nombre de parties ou de chapitres incompatible.
-    const data=await callModel({
+    let data=await callModel({
       key,
       system:generationSystem,
       user:baseUser,
       schema,
       name:"trimemo_academic_toc",
       files:ids,
-      timeoutMs:150000
+      timeoutMs:120000
     });
 
+    let validationReason="";
     if(!Array.isArray(data?.plans)||data.plans.length<count){
-      throw fail("La génération des plans n'a pas retourné les propositions attendues.",502);
+      validationReason="Le nombre de plans retournés est insuffisant.";
+    } else {
+      for(let i=0;i<count;i++){
+        const guideCheck=validateMethodologyStructure(data.plans[i],methodologyContract);
+        if(!guideCheck.valid){
+          validationReason="Plan "+(i+1)+" : "+guideCheck.reason;
+          break;
+        }
+      }
+    }
+
+    if(validationReason){
+      data=await repairPlanSet({
+        key,
+        system:generationSystem,
+        user:baseUser,
+        schema,
+        name:"trimemo_academic_toc_repair",
+        files:ids,
+        plans:data?.plans||[],
+        reason:validationReason
+      });
+    }
+
+    if(!Array.isArray(data?.plans)||data.plans.length<count){
+      throw fail("La génération des plans reste incomplète après réparation automatique.",502);
     }
 
     for(let i=0;i<count;i++){
       const guideCheck=validateMethodologyStructure(data.plans[i],methodologyContract);
-      if(!guideCheck.valid) throw fail("Le plan "+(i+1)+" ne respecte pas le guide méthodologique fourni : "+guideCheck.reason,422);
+      if(!guideCheck.valid) throw fail("La génération a été automatiquement réparée, mais le plan "+(i+1)+" reste incompatible avec le guide local : "+guideCheck.reason,422);
     }
 
     const validatedPlans=data.plans.slice(0,count).map((plan,i)=>normalizePlanStructure(plan,i,words));
