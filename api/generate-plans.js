@@ -6,6 +6,7 @@ import { requirePremiumOrOwner } from "../lib/premium-auth.js";
 import { buildProjectDocumentContext, buildDocumentInstructions, uploadProjectFiles, deleteOpenAIFiles } from "../lib/project-documents.js";
 import { clampPages, assertFilesSize } from "../lib/limits.js";
 import { PLAN_PARTS_SCHEMA, normalizePlanStructure } from "../lib/plan-structure.js";
+import { extractMethodologyContract, methodologyContractText, validateMethodologyStructure } from "../lib/methodology-contract.js";
 
 const OPENAI_URL="https://api.openai.com/v1/responses";
 const WORDS_PER_PAGE=320;
@@ -136,9 +137,10 @@ export default async function handler(req,res){
       buildDocumentInstructions(docs)
     ].join("\n\n");
 
+    const methodologyContract=extractMethodologyContract(docs?.methodologyText||"");
     const guideRules=docs?.methodologyText?.trim()
-      ? "GUIDE MÉTHODOLOGIQUE LOCAL DU PROJET :\n"+docs.methodologyText.trim()
-      : "";
+      ? methodologyContractText(methodologyContract)+"\n\nTEXTE INTÉGRAL DU GUIDE MÉTHODOLOGIQUE :\n"+docs.methodologyText.trim()
+      : methodologyContractText(methodologyContract);
 
     const contract={
       researchType:txt(p.typeDoc||p.typeDocument||p.type)||"Travail académique",
@@ -202,7 +204,7 @@ ${TRIMEMO_MASTER_ACADEMIC_RULES}`;
       "\n\nGénère exactement "+count+" plan(s). Volume indicatif : "+words+" mots."+
       "\nChaque plan doit expliciter une approche scientifique distincte dans le champ approach."+
       "\n\nARCHITECTURES STRUCTURELLES OBLIGATOIRES :\n- "+structureTargets.join("\n- ")+
-      "\nNe remplace pas les exigences du projet par une architecture standard de Trimémo. Les différences entre plans doivent porter sur la logique scientifique, tout en respectant le guide méthodologique fourni lorsqu'il existe.";
+      "\nNe remplace pas les exigences du projet par une architecture standard de Trimémo. Les différences entre plans doivent porter sur la logique scientifique, tout en respectant le contrat méthodologique local et le guide fourni. Les contraintes numériques détectées dans le contrat sont obligatoires.";
 
     const schema={
       ...SCHEMA,
@@ -228,6 +230,11 @@ ${TRIMEMO_MASTER_ACADEMIC_RULES}`;
 
     if(!Array.isArray(data?.plans)||data.plans.length<count){
       throw fail("La génération des plans n'a pas retourné les propositions attendues.",502);
+    }
+
+    for(let i=0;i<count;i++){
+      const guideCheck=validateMethodologyStructure(data.plans[i],methodologyContract);
+      if(!guideCheck.valid) throw fail("Le plan "+(i+1)+" ne respecte pas le guide méthodologique fourni : "+guideCheck.reason,422);
     }
 
     const validatedPlans=data.plans.slice(0,count).map((plan,i)=>normalizePlanStructure(plan,i,words));
