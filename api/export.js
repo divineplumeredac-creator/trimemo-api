@@ -17,7 +17,7 @@ import { requirePremiumOrOwner } from '../lib/premium-auth.js';
 
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
-function cors(res) {
+function cors(res, req) {
   res.setHeader('Access-Control-Allow-Origin', String(process.env.TRIMEMO_FRONTEND_URL || ''));
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Accept, Authorization, X-Trimemo-Premium-Token');
@@ -335,7 +335,7 @@ function makeFooter(formatting) {
 }
 
 export default async function handler(req, res) {
-  cors(res);
+  cors(res, req);
   if (req.method === 'OPTIONS') return res.status(204).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Méthode non autorisée.' });
 
