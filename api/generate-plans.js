@@ -154,43 +154,6 @@ Retourne uniquement le JSON.`;
 }
 
 
-function detectMethodologyProfile(docs){
-  const t=String(docs?.methodologyText||"").toLowerCase();
-  if(
-    t.includes("inted group") &&
-    t.includes("synthèse de la structure de la these professionnelle") &&
-    t.includes("présentation de l'entreprise") &&
-    t.includes("présentation de la méthodologie mise en œuvre") &&
-    t.includes("2, voire 3 parties maximum")
-  ){
-    return {
-      id:"inted-master2-professional-thesis",
-      label:"Guide INTED GROUP / Master 2 / thèse professionnelle",
-      rules:[
-        "Le développement principal comporte 2 grandes parties. Une troisième partie n'est admise que si le guide ou le projet la justifie explicitement.",
-        "Pour ce guide, privilégier une architecture de 4 chapitres : 2 chapitres en Partie I et 2 chapitres en Partie II.",
-        "Partie I : présenter l'entreprise et le terrain, analyser l'existant et faire émerger le problème étudié.",
-        "Partie II : développer le cadre théorique, la méthodologie, les résultats, leur discussion et les implications managériales.",
-        "La présentation de l'entreprise doit rester proportionnée et intégrer ses fonctions, son rayonnement et les enjeux environnementaux lorsque le guide l'exige.",
-        "La méthodologie ne doit jamais être isolée du raisonnement scientifique : elle doit conduire vers l'analyse des résultats, leur évaluation et les propositions d'amélioration.",
-        "La structure doit rester claire et équilibrée. Éviter les chapitres artificiellement multipliés.",
-        "Les sections et sous-sections sont créées selon la matière réelle. Leur nombre n'est pas une fin en soi.",
-        "La transition écologique doit apparaître lorsque le sujet, la spécialité ou les exigences du guide la rendent pertinente, sans invention de données.",
-        "La conclusion, la bibliographie et les annexes sont des éléments du document final, mais ne constituent pas des parties du développement."
-      ]
-    };
-  }
-  return null;
-}
-
-function guideContractText(profile){
-  if(!profile) return "";
-  return [
-    "GUIDE MÉTHODOLOGIQUE DÉTECTÉ : "+profile.label,
-    "RÈGLES STRUCTURELLES PRIORITAIRES DU GUIDE :",
-    ...profile.rules.map((r,i)=>(i+1)+". "+r)
-  ].join("\n");
-}
 
 function contractText(c){
   return [
@@ -278,8 +241,9 @@ export default async function handler(req,res){
       buildDocumentInstructions(docs)
     ].join("\n\n");
 
-    const methodologyProfile=detectMethodologyProfile(docs);
-    const guideRules=guideContractText(methodologyProfile);
+    const guideRules=docs?.methodologyText?.trim()
+      ? "GUIDE MÉTHODOLOGIQUE LOCAL DU PROJET :\\n"+docs.methodologyText.trim()
+      : "";
 
     // Les informations du client sont déjà structurées dans le dossier transmis.
     // Éviter un second appel LLM uniquement pour reformater les consignes réduit fortement
@@ -290,7 +254,7 @@ export default async function handler(req,res){
       academicLevel: txt(p.niveau || p.level) || "Non précisé",
       discipline: txt(p.domaine || p.domain) || "Non précisée",
       methodology: txt(p.methodologie || p.methodology) || "Selon les consignes et documents fournis",
-      mandatoryStructure: guideRules || txt(p.structure || p.structureObligatoire) || "Structure académique adaptée au sujet",
+      mandatoryStructure: txt(p.structure || p.structureObligatoire) || "Structure académique adaptée au sujet",
       mandatoryRequirements: [txt(p.consignes || p.instructions), guideRules].filter(Boolean),
       clientConstraints: [txt(p.contexte || p.context)].filter(Boolean),
       contextConstraints: [],
@@ -334,26 +298,21 @@ Retourne uniquement le JSON.
 
 ${TRIMEMO_MASTER_ACADEMIC_RULES}`;
 
-    const structureTargets = methodologyProfile?.id === "inted-master2-professional-thesis"
+    const structureTargets = count > 1
       ? [
-          "PLAN 1 : architecture conforme au guide : exactement 2 parties et 4 chapitres, avec 2 chapitres dans chaque partie. Partie I : entreprise/terrain/diagnostic/problème. Partie II : cadre théorique/méthodologie/résultats/discussion/implications.",
-          "PLAN 2 : conserver exactement 2 parties et 4 chapitres. Modifier la logique argumentative et la répartition des sections. Ne pas transformer le guide en structure à 3 parties.",
-          "PLAN 3 : conserver exactement 2 parties et 4 chapitres. Proposer une troisième stratégie scientifique distincte par l'ordre des axes, la densité des sections et la profondeur des sous-sections, sans quitter l'ossature du guide."
+          "PLAN 1 : produire une architecture scientifiquement cohérente avec les exigences du projet.",
+          "PLAN 2 : proposer une logique argumentative réellement distincte, tout en respectant exactement les contraintes méthodologiques du projet.",
+          "PLAN 3 : proposer une troisième architecture scientifiquement distincte, sans modifier les exigences imposées par le client."
         ].slice(0, count)
-      : count > 1
-        ? [
-            "PLAN 1 : architecture en 2 parties. La partie 1 comporte 2 chapitres et la partie 2 comporte 3 chapitres. Les chapitres doivent avoir 2 ou 3 sections selon la matière.",
-            "PLAN 2 : architecture en 3 parties. Chaque partie comporte 2 chapitres. Fais varier le nombre de sections entre les chapitres lorsque le contenu le justifie.",
-            "PLAN 3 : architecture en 2 parties. La partie 1 comporte 3 chapitres et la partie 2 comporte 2 chapitres. Fais varier le nombre de sections entre les chapitres lorsque le contenu le justifie."
-          ].slice(0, count)
-        : [
-            "PLAN UNIQUE : choisis librement 2 ou 3 parties selon la logique scientifique du sujet, sans architecture artificiellement symétrique."
-          ];
+      : [
+          "PLAN UNIQUE : choisir l'architecture la plus pertinente selon le sujet, la problématique et les exigences du projet."
+        ];
+
     const baseUser=contractText(contract)+"\n\nDOSSIER CLIENT COMPLET :\n"+context+
       "\n\nGénère exactement "+count+" plan(s). Volume indicatif : "+words+" mots."+
       "\nChaque plan doit expliciter une approche scientifique distincte dans le champ approach."+
       "\n\nARCHITECTURES STRUCTURELLES OBLIGATOIRES :\n- "+structureTargets.join("\n- ")+
-      (methodologyProfile ? "\n\nLe guide méthodologique est prioritaire sur toute architecture générale du moteur. Ne lui substitue aucune structure standard. Les trois plans doivent rester dans son ossature et varier par leur logique scientifique." : "\nNe remplace pas ces architectures par trois plans identiques. Les différences structurelles doivent être visibles dans le JSON.");
+      "\nNe remplace pas les exigences du projet par une architecture standard de Trimémo. Les différences entre plans doivent porter sur la logique scientifique, tout en respectant le guide méthodologique fourni lorsqu'il existe.");
 
     let validatedPlans=null;
     let lastReason="";
@@ -379,19 +338,8 @@ ${TRIMEMO_MASTER_ACADEMIC_RULES}`;
         requireNaturalVariation:false
       });
 
-      let guideShape={valid:true,reason:""};
-      if(methodologyProfile?.id === "inted-master2-professional-thesis"){
-        for(let i=0;i<candidate.length;i++){
-          const parts=Array.isArray(candidate[i]?.parts)?candidate[i].parts:[];
-          if(parts.length!==2){ guideShape={valid:false,reason:`Plan ${i+1} doit respecter le guide : exactement 2 grandes parties.`}; break; }
-          if(!parts.every(p=>Array.isArray(p?.chapters)&&p.chapters.length===2)){
-            guideShape={valid:false,reason:`Plan ${i+1} doit respecter le guide : exactement 2 chapitres par partie.`}; break;
-          }
-        }
-      }
-
       if(!structure.valid || !guideShape.valid){
-        lastReason=!structure.valid ? structure.reason : guideShape.reason;
+        lastReason=structure.reason;
       } else {
         validatedPlans=candidate.map((plan,i)=>normalizePlanStructure(plan,i,words));
       }
