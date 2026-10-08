@@ -166,8 +166,42 @@ export default async function handler(req,res){
           return category === "methodology" || category === "instructions" || /(methodolog|méthodolog|guide|consigne|instruction|norme|format|jury)/i.test(name);
         })
       : [];
+
+    // Certains navigateurs/projets arrivent avec un nom de fichier neutre
+    // ou une catégorie "reference". On ne doit pas perdre un guide normatif
+    // pour cette seule raison. On autorise donc une détection de secours
+    // uniquement lorsque le contenu contient plusieurs marqueurs méthodologiques
+    // forts. Cette détection reste locale au projet et ne crée aucune règle globale.
+    const strongGuideMarkers = [
+      /guide\s+m[ée]thodolog/i,
+      /propositions?\s+de\s+probl[ée]matiques?\s+et\s+de\s+plans?/i,
+      /ossature\s+exig[ée]e/i,
+      /structure\s+(?:impos[ée]e|exig[ée]e)/i,
+      /m[ée]moire\s+de\s+master/i,
+      /chapitres?\s+et\s+parties?/i
+    ];
+    const looksLikeMethodologyGuide = (text) => {
+      const value = String(text || "");
+      const hits = strongGuideMarkers.reduce((n, re) => n + (re.test(value) ? 1 : 0), 0);
+      return hits >= 2;
+    };
+
+    const fallbackGuideFiles = Array.isArray(files)
+      ? files.filter(file => {
+          if (methodologyDocs.includes(file)) return false;
+          const text = String(file?.content || "");
+          return false;
+        })
+      : [];
+
     const methodologyContext = methodologyDocs.length ? await buildProjectDocumentContext(methodologyDocs) : {};
-    const detectedGuideText = String(methodologyContext?.methodologyText || methodologyContext?.instructionsText || "").trim();
+    let detectedGuideText = String(methodologyContext?.methodologyText || methodologyContext?.instructionsText || "").trim();
+
+    // Si la classification est absente, on utilise le texte déjà extrait du dossier
+    // uniquement après vérification de marqueurs normatifs forts.
+    if (!detectedGuideText && looksLikeMethodologyGuide(docs?.allText)) {
+      detectedGuideText = String(docs.allText || "").trim();
+    }
     const methodologyContract=extractMethodologyContract(detectedGuideText);
     const guideRules=detectedGuideText
       ? methodologyContractText(methodologyContract)+"\n\nTEXTE INTÉGRAL DU GUIDE MÉTHODOLOGIQUE :\n"+detectedGuideText.trim()
