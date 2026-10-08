@@ -631,6 +631,45 @@ ${TRIMEMO_MASTER_ACADEMIC_RULES}`;
       }
     }
 
+    let separationReview=await reviewPlanSeparation({
+      key,
+      methodologyAuthority,
+      context,
+      plans:data?.plans || [],
+      count,
+      files:ids
+    });
+
+    if(!separationReview?.valid){
+      data=await repairPlanSet({
+        key,
+        system:generationSystem,
+        user:baseUser,
+        schema,
+        name:"trimemo_academic_toc_separation_repair",
+        files:ids,
+        plans:data?.plans || [],
+        reason:"Contrôle d'exclusivité inter-plans : "+(separationReview?.reason||"les plans se recouvrent dans leur raisonnement central.")+
+          "\nDiagnostic des plans : "+JSON.stringify(separationReview?.plans||[])+
+          "\nRecouvrements détectés : "+JSON.stringify(separationReview?.overlaps||[])
+      });
+      validation=validateGeneratedPlans(data?.plans);
+      if(!validation.valid){
+        throw fail("La réparation de séparation a rendu la structure incompatible avec le contrat méthodologique : "+validation.reason,422);
+      }
+      separationReview=await reviewPlanSeparation({
+        key,
+        methodologyAuthority,
+        context,
+        plans:data?.plans || [],
+        count,
+        files:ids
+      });
+      if(!separationReview?.valid){
+        throw fail("Les plans restent trop proches ou dépendants les uns des autres après réparation : "+(separationReview?.reason||"contrôle d'exclusivité inter-plans non validé."),422);
+      }
+    }
+
     const validatedPlans=data.plans.slice(0,count).map((plan,i)=>normalizePlanStructure(plan,i,words));
 
     await deleteOpenAIFiles(ids,key);
