@@ -3,7 +3,7 @@ import { setCors } from "../lib/http.js";
 import { TRIMEMO_MASTER_ACADEMIC_RULES } from "../lib/trimemo-academic-rules.js";
 import { requireOwner } from "../lib/owner-auth.js";
 import { requirePremiumOrOwner } from "../lib/premium-auth.js";
-import { buildProjectDocumentContext, buildDocumentInstructions, uploadProjectFiles, deleteOpenAIFiles, extractFileText } from "../lib/project-documents.js";
+import { buildProjectDocumentContext, buildDocumentInstructions, uploadProjectFiles, deleteOpenAIFiles, extractFileText, buildImageInputs } from "../lib/project-documents.js";
 import { clampPages, assertFilesSize } from "../lib/limits.js";
 import { PLAN_PARTS_SCHEMA, normalizePlanStructure } from "../lib/plan-structure.js";
 import { extractMethodologyContract, methodologyContractText, validateMethodologyStructure } from "../lib/methodology-contract.js";
@@ -51,7 +51,7 @@ const SCHEMA={
   required:["plans"]
 };
 
-async function callModel({key,system,user,schema,name,files=[],timeoutMs=45000}){
+async function callModel({key,system,user,schema,name,files=[],imageInputs=[],timeoutMs=45000}){
   const controller=new AbortController();
   const timer=setTimeout(()=>controller.abort(),timeoutMs);
   let response;
@@ -63,7 +63,7 @@ async function callModel({key,system,user,schema,name,files=[],timeoutMs=45000})
         model:getOpenAIModel(),
         input:[
           {role:"system",content:[{type:"input_text",text:system}]},
-          {role:"user",content:[{type:"input_text",text:user},...files.map(file_id=>({type:"input_file",file_id}))]}
+          {role:"user",content:[{type:"input_text",text:user},...files.map(file_id=>({type:"input_file",file_id})),...imageInputs]}
         ],
         max_output_tokens:12000,
         text:{format:{type:"json_schema",name,strict:true,schema}}
@@ -84,11 +84,11 @@ async function callModel({key,system,user,schema,name,files=[],timeoutMs=45000})
   return json(out(JSON.parse(raw)));
 }
 
-async function repairPlanSet({key,system,user,schema,name,files,plans,reason}) {
+async function repairPlanSet({key,system,user,schema,name,files,imageInputs,plans,reason}) {
   const repairUser = user + "\n\nRÉPARATION OBLIGATOIRE :\nLa première génération a été rejetée par le validateur serveur.\nMotif : " + reason +
     "\nVoici la génération rejetée :\n" + JSON.stringify(plans) +
     "\nRedessine les éléments nécessaires pour corriger le défaut détecté. Pour un recouvrement inter-plans, modifie réellement l’angle, les mécanismes ou la logique argumentative du ou des plans concernés. Ne te contente jamais de changer les titres. Conserve le sujet, la problématique, les consignes et toutes les contraintes du guide client. Respecte exactement le schéma et les contraintes numériques du contrat méthodologique local. Retourne exactement le nombre de plans demandé.";
-  return callModel({key,system,user:repairUser,schema,name,files,timeoutMs:75000});
+  return callModel({key,system,user:repairUser,schema,name,files,imageInputs,timeoutMs:75000});
 }
 
 // Inter-plan exclusivity is validated separately after angle coherence.
@@ -147,7 +147,7 @@ const ANGLE_REVIEW_SCHEMA={
   required:["valid","reason","planAngles"]
 };
 
-async function reviewPlanAngles({key,methodologyAuthority,context,plans,count,files}) {
+async function reviewPlanAngles({key,methodologyAuthority,context,plans,count,files,imageInputs}) {
   const system =
     "Tu es le contrôleur scientifique de Trimémo.\n" +
     methodologyAuthority + "\n\n" +
@@ -170,10 +170,10 @@ async function reviewPlanAngles({key,methodologyAuthority,context,plans,count,fi
     "PLANS À CONTRÔLER :\n" + JSON.stringify(plans) + "\n\n" +
     "Pour chaque plan, formule son angle directeur en une phrase. Vérifie son unité sur toute la structure et la différence réelle entre les angles. " +
     "Si un défaut existe, reason doit expliquer précisément quel plan mélange quels angles ou pourquoi deux plans ne sont pas réellement distincts.";
-  return callModel({key,system,user,schema:ANGLE_REVIEW_SCHEMA,name:"trimemo_plan_angle_review",files,timeoutMs:50000});
+  return callModel({key,system,user,schema:ANGLE_REVIEW_SCHEMA,name:"trimemo_plan_angle_review",files,imageInputs,timeoutMs:50000});
 }
 
-async function reviewPlanSeparation({key,methodologyAuthority,context,plans,count,files}) {
+async function reviewPlanSeparation({key,methodologyAuthority,context,plans,count,files,imageInputs}) {
   const system =
     "Tu es le contrôleur d'exclusivité scientifique de Trimémo.\n" +
     methodologyAuthority + "\n\n" +
@@ -195,7 +195,7 @@ async function reviewPlanSeparation({key,methodologyAuthority,context,plans,coun
     "Compare Plan 1/2, Plan 1/3 et Plan 2/3. " +
     "Rejette tout transfert d'angle, notamment lorsqu'un plan reprend le cœur du Plan 1 comme introduction ou cadre du Plan 2 ou 3. " +
     "Un simple changement de vocabulaire ne constitue pas une séparation.";
-  return callModel({key,system,user,schema:PLAN_SEPARATION_SCHEMA,name:"trimemo_plan_separation_review",files,timeoutMs:50000});
+  return callModel({key,system,user,schema:PLAN_SEPARATION_SCHEMA,name:"trimemo_plan_separation_review",files,imageInputs,timeoutMs:50000});
 }
 
 function contractText(c){
@@ -247,6 +247,7 @@ export default async function handler(req,res){
     if(!subject)return res.status(400).json({error:"Le sujet est obligatoire."});
 
     const files=Array.isArray(p.files)?p.files:[];
+    const imageInputs=buildImageInputs(files);
     const count=1;
     const requestedPages=clampPages(p);
     const words=requestedPages*WORDS_PER_PAGE;
@@ -609,6 +610,7 @@ ${TRIMEMO_MASTER_ACADEMIC_RULES}`;
         schema,
         name:"trimemo_academic_toc_repair",
         files:ids,
+       imageInputs,
         plans:data?.plans || [],
         reason:validation.reason
       });
