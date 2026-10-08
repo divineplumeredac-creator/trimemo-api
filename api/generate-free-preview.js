@@ -126,7 +126,7 @@ export default async function handler(req, res) {
         model:getOpenAIModel(),
         input:[
           {role:"system",content:[{type:"input_text",text:TRIMEMO_MASTER_ACADEMIC_RULES+"\n\nEXCEPTION APERÇU GRATUIT : le SUJET est la seule information obligatoire. Ne bloque jamais la génération pour une donnée facultative. Génère à partir du sujet seul si nécessaire. Les sous-sections sont facultatives et doivent être justifiées par la densité du contenu. Toute numérotation est ajoutée par Trimémo après validation. Ne mets aucun numéro dans les titres. N'ajoute aucun niveau pour créer une symétrie artificielle. Retourne uniquement le JSON."+correction}]},
-          {role:"user",content:[{type:"input_text",text:context+"\n\nGénère une problématique précise, un plan structuré et une introduction d'aperçu d'environ 320 mots."+correction}]}
+           {role:"user",content:[{type:"input_text",text:context+"\n\nGénère une problématique précise, un plan structuré et une introduction d’aperçu d’environ 320 mots."+correction},...fileIds.map(file_id=>({type:"input_file",file_id})),...imageInputs]}
         ],
         max_output_tokens:8000,
         text:{format:{type:"json_schema",name:"trimemo_free_preview",strict:true,schema}}
