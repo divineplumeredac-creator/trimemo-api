@@ -9,8 +9,11 @@ import { PLAN_PARTS_SCHEMA, normalizePlanStructure, validatePlanSet } from "../l
 const OPENAI_URL="https://api.openai.com/v1/responses";
 const WORDS_PER_PAGE=320;
 
-function cors(res){
-  res.setHeader("Access-Control-Allow-Origin",String(process.env.TRIMEMO_FRONTEND_URL || ""));
+function cors(res,req){
+  const origin=String(req?.headers?.origin || "");
+  const allowed = origin === "https://trimemo-frontend.vercel.app" || /^https:\/\/trimemo-frontend-[a-z0-9-]+\\.vercel\\.app$/i.test(origin);
+  res.setHeader("Access-Control-Allow-Origin", allowed ? origin : "https://trimemo-frontend.vercel.app");
+  res.setHeader("Vary","Origin");
   res.setHeader("Access-Control-Allow-Methods","POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers","Content-Type, Accept, Authorization, X-Trimemo-Premium-Token");
 }
