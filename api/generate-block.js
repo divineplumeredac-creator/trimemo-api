@@ -178,8 +178,8 @@ Ordre de priorité : cohérence scientifique > structure du plan > continuité a
 17. Évite les clichés rédactionnels et les formulations artificielles.
 18. Évite les répétitions de connecteurs.
 16. Évite les phrases trop longues et les constructions complexes.
-17. La limite recommandée est de 20 mots par phrase.
-18. Une phrase légèrement plus longue ne doit pas bloquer la génération.
+17. Chaque phrase doit contenir au maximum 20 mots, sauf exception strictement nécessaire à la précision.
+18. Contrôle et reformule avant retour chaque phrase dépassant cette limite.
 19. N'utilise pas systématiquement « en effet », « de plus » ou « cependant ».
 20. Évite l'utilisation excessive des adverbes en « -ment ».
 21. Évite les pronoms « ceci » et « cela » lorsqu'ils sont inutiles.
