@@ -4,6 +4,7 @@ import { requireOwner } from "../lib/owner-auth.js";
 import { requirePremiumOrOwner } from "../lib/premium-auth.js";
 import { buildProjectDocumentContext, buildDocumentInstructions, uploadProjectFiles, deleteOpenAIFiles, buildImageInputs } from "../lib/project-documents.js";
 import { assertFilesSize } from "../lib/limits.js";
+import { enforceAcademicStyle } from "../lib/style-control.js";
 const OPENAI_URL = "https://api.openai.com/v1/responses";
 
 function cors(res, req) {
@@ -517,7 +518,15 @@ export default async function handler(req, res) {
         count,
       });
       const generated = validateProblematiques(rawResponse, count);
-      return res.status(200).json({ problematiques: generated });
+      const styleResult = await enforceAcademicStyle({ problematiques: generated }, { apiKey, timeoutMs: 25000 });
+      return res.status(200).json({
+        problematiques: styleResult.value.problematiques,
+        styleControl: {
+          status: "passed",
+          correctedFields: styleResult.correctedFields,
+          checkedFields: styleResult.checkedFields
+        }
+      });
     } finally {
       await deleteOpenAIFiles(fileIds, apiKey);
     }
