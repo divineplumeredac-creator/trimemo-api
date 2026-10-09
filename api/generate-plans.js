@@ -8,6 +8,7 @@ import { clampPages, assertFilesSize } from "../lib/limits.js";
 import { PLAN_PARTS_SCHEMA, normalizePlanStructure } from "../lib/plan-structure.js";
 import { extractMethodologyContract, methodologyContractText, validateMethodologyStructure } from "../lib/methodology-contract.js";
 import { enforceAcademicStyle } from "../lib/style-control.js";
+import { TRIMEMO_PLAN_WRITING_CONTRACT, TRIMEMO_STRICT_STYLE_CONTRACT } from "../lib/strict-writing-contract.js";
 
 const OPENAI_URL="https://api.openai.com/v1/responses";
 const WORDS_PER_PAGE=320;
@@ -401,7 +402,7 @@ Chaque plan doit retenir un seul angle scientifique directeur, directement reli�
 Le plan doit rester complet sur cet angle du début à la fin.
 Il est interdit de découper un même angle en commençant son traitement dans une partie puis en le poursuivant sous une autre logique dans une autre partie.
 Chaque partie, chaque chapitre et chaque section doivent servir le même angle directeur.
-Les trois plans doivent proposer trois angles directeurs réellement différents.
+${count > 1 ? "Les plans demandés doivent proposer des angles directeurs réellement différents." : "Le plan unique doit retenir un angle directeur clair et cohérent."}
 La différence ne doit pas être une simple reformulation des titres.
 Un plan peut mobiliser plusieurs dimensions secondaires, mais elles doivent rester subordonnées à son angle directeur.
 Les plans sont mutuellement exclusifs sur leur raisonnement central : aucun plan ne peut reprendre comme introduction, prémisse, cadre argumentatif ou axe développé le cœur scientifique d'un autre plan.
@@ -421,7 +422,7 @@ Un même nombre de parties est autorisé si les logiques sont réellement diffé
 La numérotation sera ajoutée par Trimémo. Ne numérote aucun titre.
 Retourne uniquement le JSON.
 
-${TRIMEMO_MASTER_ACADEMIC_RULES}`;
+${TRIMEMO_MASTER_ACADEMIC_RULES}\n\n${TRIMEMO_PLAN_WRITING_CONTRACT}\n\n${TRIMEMO_STRICT_STYLE_CONTRACT}`;
 
     const structureTargets=count>1
       ?[
@@ -450,7 +451,7 @@ ${TRIMEMO_MASTER_ACADEMIC_RULES}`;
       "Chaque plan doit aussi renseigner angle et coverage. angle = un seul angle scientifique directeur. coverage = ce que ce plan couvre intégralement sous cet angle.",
       "Aucun plan ne doit mélanger deux angles directeurs. Ne commence jamais un raisonnement sous un angle pour le poursuivre sous un autre angle non subordonné.",
       "Les parties, chapitres et sections d'un même plan doivent rester subordonnés au même angle directeur.",
-      "Les trois plans doivent avoir des angles directeurs différents. Une simple reformulation lexicale ne suffit pas.",
+      count>1 ? "Les plans demandés doivent avoir des angles directeurs différents. Une simple reformulation lexicale ne suffit pas." : "Le plan unique doit conserver un angle directeur cohérent du début à la fin.",
       "Les plans sont mutuellement exclusifs sur leur raisonnement central : aucun plan ne peut reprendre comme introduction, prémisse, cadre argumentatif ou axe développé le cœur scientifique d'un autre plan.",
       "Les éléments communs indispensables peuvent être rappelés, mais aucun mécanisme, relation causale, déterminant, effet central ou progression argumentative propre à un plan ne doit être réutilisé comme cœur d'un autre plan.",
       "Chaque plan doit rester autonome si les deux autres sont supprimés.",
