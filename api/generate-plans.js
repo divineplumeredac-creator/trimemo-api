@@ -672,6 +672,14 @@ ${TRIMEMO_MASTER_ACADEMIC_RULES}`;
       throw fail("La correction stylistique a modifié un élément structurel du plan : " + postStyleValidation.reason, 422);
     }
 
+    stage="contrôle stylistique automatique";
+    const styleResult = await enforceAcademicStyle(responsePlans, { apiKey: key, timeoutMs: 25000 });
+    const styledPlans = styleResult.value;
+    const postStyleValidation = validateGeneratedPlans(styledPlans);
+    if (!postStyleValidation.valid) {
+      throw fail("La correction stylistique a modifié un élément structurel du plan : " + postStyleValidation.reason, 422);
+    }
+
     stage="nettoyage des fichiers temporaires";
     await safeCleanup();
 
