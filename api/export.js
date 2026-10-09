@@ -346,11 +346,19 @@ export default async function handler(req, res) {
     if (body.format && body.format !== 'docx') return res.status(400).json({ error: 'Format non pris en charge. Utilisez docx.' });
 
     const compiled = compileDocument(body);
-    const styleResult = await enforceAcademicStyle(compiled.blocks, {
+    const styleResult = await enforceAcademicStyle({
+      blocks: compiled.blocks,
+      planIntro: compiled.plan?.introductionGeneral || compiled.plan?.introduction || {},
+      planConclusion: compiled.plan?.conclusionGeneral || compiled.plan?.conclusion || {}
+    }, {
       apiKey: process.env.OPENAI_API_KEY,
       timeoutMs: 25000
     });
-    compiled.blocks = styleResult.value;
+    compiled.blocks = styleResult.value.blocks;
+    if (compiled.plan?.introductionGeneral) compiled.plan.introductionGeneral = styleResult.value.planIntro;
+    else if (compiled.plan?.introduction) compiled.plan.introduction = styleResult.value.planIntro;
+    if (compiled.plan?.conclusionGeneral) compiled.plan.conclusionGeneral = styleResult.value.planConclusion;
+    else if (compiled.plan?.conclusion) compiled.plan.conclusion = styleResult.value.planConclusion;
     res.setHeader('X-Trimemo-Style-Control', 'passed');
     res.setHeader('X-Trimemo-Style-Corrected-Fields', String(styleResult.correctedFields));
     const uniqueSources = Array.isArray(compiled.bibliography?.sources) ? compiled.bibliography.sources : [];
