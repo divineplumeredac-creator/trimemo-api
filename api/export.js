@@ -14,6 +14,7 @@ import {
 import compileDocument from '../lib/compile-document.js';
 import { resolveFormatting } from '../lib/academic-format.js';
 import { requirePremiumOrOwner } from '../lib/premium-auth.js';
+import { enforceAcademicStyle } from '../lib/style-control.js';
 
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
@@ -345,6 +346,13 @@ export default async function handler(req, res) {
     if (body.format && body.format !== 'docx') return res.status(400).json({ error: 'Format non pris en charge. Utilisez docx.' });
 
     const compiled = compileDocument(body);
+    const styleResult = await enforceAcademicStyle(compiled.blocks, {
+      apiKey: process.env.OPENAI_API_KEY,
+      timeoutMs: 25000
+    });
+    compiled.blocks = styleResult.value;
+    res.setHeader('X-Trimemo-Style-Control', 'passed');
+    res.setHeader('X-Trimemo-Style-Corrected-Fields', String(styleResult.correctedFields));
     const uniqueSources = Array.isArray(compiled.bibliography?.sources) ? compiled.bibliography.sources : [];
     const missingLinks = uniqueSources.filter((source) => !source.doi && !source.url).length;
     const bibliographyWarning = uniqueSources.length < 10 || missingLinks > 0;
