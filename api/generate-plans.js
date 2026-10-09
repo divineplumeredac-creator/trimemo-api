@@ -7,6 +7,7 @@ import { buildProjectDocumentContext, buildDocumentInstructions, uploadProjectFi
 import { clampPages, assertFilesSize } from "../lib/limits.js";
 import { PLAN_PARTS_SCHEMA, normalizePlanStructure } from "../lib/plan-structure.js";
 import { extractMethodologyContract, methodologyContractText, validateMethodologyStructure } from "../lib/methodology-contract.js";
+import { enforceAcademicStyle } from "../lib/style-control.js";
 
 const OPENAI_URL="https://api.openai.com/v1/responses";
 const WORDS_PER_PAGE=320;
@@ -663,12 +664,25 @@ ${TRIMEMO_MASTER_ACADEMIC_RULES}`;
 
     const responsePlans = data.plans.slice(0, count).map((plan, i) => normalizePlanStructure(plan, i, words));
 
+    stage="contrôle stylistique automatique";
+    const styleResult = await enforceAcademicStyle(responsePlans, { apiKey: key, timeoutMs: 25000 });
+    const styledPlans = styleResult.value;
+    const postStyleValidation = validateGeneratedPlans(styledPlans);
+    if (!postStyleValidation.valid) {
+      throw fail("La correction stylistique a modifié un élément structurel du plan : " + postStyleValidation.reason, 422);
+    }
+
     stage="nettoyage des fichiers temporaires";
     await safeCleanup();
 
     return res.status(200).json({
-      plan:responsePlans[0],
-      plans:responsePlans,
+      plan:styledPlans[0],
+      plans:styledPlans,
+      styleControl:{
+        status:"passed",
+        correctedFields:styleResult.correctedFields,
+        checkedFields:styleResult.checkedFields
+      },
       academicControl:{
         score:null,
         matchedRequirements:[],
