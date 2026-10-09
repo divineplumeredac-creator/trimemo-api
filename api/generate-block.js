@@ -1,5 +1,6 @@
 import { getOpenAIModel } from "../lib/openai-model.js";import { TRIMEMO_MASTER_ACADEMIC_RULES } from "../lib/trimemo-academic-rules.js";
 import { enforceAcademicStyle } from "../lib/style-control.js";
+import { TRIMEMO_BLOCK_WRITING_CONTRACT, TRIMEMO_STRICT_STYLE_CONTRACT } from "../lib/strict-writing-contract.js";
 import { requireOwner } from "../lib/owner-auth.js";
 import { requirePremiumOrOwner } from "../lib/premium-auth.js";
 import { buildProjectDocumentContext, buildDocumentInstructions, buildImageInputs } from "../lib/project-documents.js";
@@ -195,7 +196,7 @@ Le bloc doit être original, cohérent et directement exploitable
 dans un travail académique.
 `;
 
-    const fullSystemPrompt = systemPrompt + "\n\n" + TRIMEMO_MASTER_ACADEMIC_RULES + "\n\n" + `
+    const fullSystemPrompt = systemPrompt + "\n\n" + TRIMEMO_MASTER_ACADEMIC_RULES + "\n\n" + TRIMEMO_BLOCK_WRITING_CONTRACT + "\n\n" + TRIMEMO_STRICT_STYLE_CONTRACT + "\n\n" + `
 EXCEPTION ABSOLUE POUR LA RÉDACTION D’UN BLOC :
 Le bloc doit être rédigé dès que le SUJET est disponible.
 Le niveau académique, la discipline, le contexte, les consignes, le guide méthodologique et l’état d’avancement sont facultatifs pour lancer la rédaction du bloc.
@@ -207,6 +208,8 @@ Cette exception prévaut sur toute règle générale de vérification préalable
 `;
 
     const userPrompt = `${buildDocumentInstructions(documentContext)}\n\n` + `
+PRIORITÉ DES CONSIGNES DU PROJET : le guide méthodologique et les instructions explicites du client priment sur les règles génériques. Applique-les à la rédaction de ce bloc, pas seulement au plan. Ne transforme jamais ces consignes en commentaires visibles dans le texte final.
+
 DONNÉES DU PROJET
 
 Sujet :
