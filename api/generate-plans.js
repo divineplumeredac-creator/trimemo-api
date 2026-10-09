@@ -159,7 +159,7 @@ async function reviewPlanAngles({key,methodologyAuthority,context,plans,count,fi
     "2. Cet angle doit couvrir l'ensemble du plan sans devenir un assemblage de thèmes.\n" +
     "3. Un plan ne doit pas commencer par un angle A puis poursuivre sous un angle B non subordonné.\n" +
     "4. Toutes les parties et tous les chapitres d'un même plan doivent servir le même angle directeur.\n" +
-    "5. Les trois plans doivent proposer des angles directeurs réellement différents.\n" +
+    (count > 1 ? "5. Les plans demandés doivent proposer des angles directeurs réellement différents.\\n" : "5. Le plan unique doit conserver un angle directeur clair et cohérent.\\n") +
     "6. Les dimensions secondaires doivent rester subordonnées à l'angle principal.\n" +
     "7. La structure imposée par le guide client ne doit jamais être modifiée pour créer cette différence.\n" +
     "8. Ne juge pas la diversité sur les seuls titres : examine descriptions et enchaînement scientifique.\n" +
