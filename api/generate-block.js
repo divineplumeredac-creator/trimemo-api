@@ -1,4 +1,5 @@
 import { getOpenAIModel } from "../lib/openai-model.js";import { TRIMEMO_MASTER_ACADEMIC_RULES } from "../lib/trimemo-academic-rules.js";
+import { enforceAcademicStyle } from "../lib/style-control.js";
 import { requireOwner } from "../lib/owner-auth.js";
 import { requirePremiumOrOwner } from "../lib/premium-auth.js";
 import { buildProjectDocumentContext, buildDocumentInstructions, buildImageInputs } from "../lib/project-documents.js";
@@ -447,21 +448,32 @@ Utilise des références vérifiables si elles sont nécessaires.
       });
     }
 
-    const wordCount = content
-      .split(/\s+/)
+    const styleResult = await enforceAcademicStyle({
+      title: result.title || blockTitle,
+      content
+    }, { apiKey, timeoutMs: 25000 });
+    const correctedContent = styleResult.value.content;
+    const correctedTitle = styleResult.value.title;
+    const wordCount = correctedContent
+      .split(/\\s+/)
       .filter(Boolean)
       .length;
     const verifiedSources = await verifySources(Array.isArray(result.sources) ? result.sources : []);
 
     return res.status(200).json({
       id: result.id || `block-${Date.now()}`,
-      title: result.title || blockTitle,
-      content,
+      title: correctedTitle,
+      content: correctedContent,
       wordCount,
       sources: verifiedSources,
       footnotes: Array.isArray(result.footnotes)
         ? result.footnotes
-        : []
+        : [],
+      styleControl: {
+        status: "passed",
+        correctedFields: styleResult.correctedFields,
+        checkedFields: styleResult.checkedFields
+      }
     });
   } catch (error) {
     console.error("[Trimémo] generate-block error", error);
