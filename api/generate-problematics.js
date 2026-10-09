@@ -221,8 +221,8 @@ STYLE :
 - Pas de répétitions inutiles.
 - Pas de clichés rédactionnels.
 - Pas de phrases artificielles.
-- Les phrases doivent généralement rester à 20 mots ou moins.
-- Une phrase légèrement plus longue peut être conservée si elle est nécessaire à la clarté.
+- Chaque phrase doit contenir au maximum 20 mots, sauf exception strictement nécessaire à la précision.
+- Compte les mots de chaque phrase et reformule celles qui dépassent la limite avant de retourner le JSON.
 - N'impose pas une citation dans chaque élément.
 - N'invente aucune référence.
 - Développe les sigles lors de leur première utilisation.
