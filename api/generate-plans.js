@@ -421,7 +421,11 @@ Un même nombre de parties est autorisé si les logiques sont réellement diffé
 La numérotation sera ajoutée par Trimémo. Ne numérote aucun titre.
 Retourne uniquement le JSON.
 
-${TRIMEMO_MASTER_ACADEMIC_RULES}\n\n${TRIMEMO_PLAN_WRITING_CONTRACT}\n\n${TRIMEMO_STRICT_STYLE_CONTRACT}`;
+${TRIMEMO_MASTER_ACADEMIC_RULES}
+
+${TRIMEMO_PLAN_WRITING_CONTRACT}
+
+${TRIMEMO_STRICT_STYLE_CONTRACT}`;
 
     const structureTargets=count>1
       ?[
