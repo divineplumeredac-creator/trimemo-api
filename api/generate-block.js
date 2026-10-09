@@ -199,8 +199,9 @@ dans un travail académique.
     const fullSystemPrompt = systemPrompt + "\n\n" + TRIMEMO_MASTER_ACADEMIC_RULES + "\n\n" + TRIMEMO_BLOCK_WRITING_CONTRACT + "\n\n" + TRIMEMO_STRICT_STYLE_CONTRACT + "\n\n" + `
 EXCEPTION ABSOLUE POUR LA RÉDACTION D’UN BLOC :
 Le bloc doit être rédigé dès que le SUJET est disponible.
-Le niveau académique, la discipline, le contexte, les consignes, le guide méthodologique et l’état d’avancement sont facultatifs pour lancer la rédaction du bloc.
-Ne demande jamais ces informations avant de rédiger.
+Le niveau académique, la discipline, le contexte, les consignes, le guide méthodologique et l’état d’avancement ne sont pas obligatoires lorsqu'ils sont absents.
+Lorsqu'ils sont fournis, lis et applique les consignes, le guide méthodologique, le plan validé et le contexte pertinent avant de rédiger.
+Ne demande jamais une information absente avant de rédiger.
 Ne transforme jamais une information manquante en message de blocage.
 Lorsque le niveau ou la discipline n’est pas précisé, adapte le vocabulaire au sujet et au plan effectivement fournis.
 Lorsque le contexte ou les consignes manquent, rédige à partir des informations disponibles sans inventer de terrain, de données ou de résultats.
