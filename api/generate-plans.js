@@ -415,8 +415,7 @@ N'invente jamais un terrain, une enquête, des données, une organisation, une p
 Ne transforme pas une recherche documentaire en étude empirique.
 Si une donnée manque, construis autour de ce qui est réellement fourni.
 
-Pour trois plans, produis trois architectures argumentatives réellement différentes.
-La différence doit porter sur le raisonnement scientifique, pas seulement sur les titres.
+${count > 1 ? "Pour plusieurs plans, produis des architectures argumentatives réellement différentes. La différence doit porter sur le raisonnement scientifique, pas seulement sur les titres." : "Pour un plan unique, choisis l’architecture argumentative la plus pertinente selon le sujet et les consignes du client."}
 Un même nombre de parties est autorisé si les logiques sont réellement différentes.
 
 La numérotation sera ajoutée par Trimémo. Ne numérote aucun titre.
