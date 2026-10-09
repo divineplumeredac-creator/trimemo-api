@@ -159,7 +159,7 @@ async function reviewPlanAngles({key,methodologyAuthority,context,plans,count,fi
     "2. Cet angle doit couvrir l'ensemble du plan sans devenir un assemblage de thèmes.\n" +
     "3. Un plan ne doit pas commencer par un angle A puis poursuivre sous un angle B non subordonné.\n" +
     "4. Toutes les parties et tous les chapitres d'un même plan doivent servir le même angle directeur.\n" +
-    (count > 1 ? "5. Les plans demandés doivent proposer des angles directeurs réellement différents.\\n" : "5. Le plan unique doit conserver un angle directeur clair et cohérent.\\n") +
+    (count > 1 ? "5. Les plans demandés doivent proposer des angles directeurs réellement différents.\n" : "5. Le plan unique doit conserver un angle directeur clair et cohérent.\n") +
     "6. Les dimensions secondaires doivent rester subordonnées à l'angle principal.\n" +
     "7. La structure imposée par le guide client ne doit jamais être modifiée pour créer cette différence.\n" +
     "8. Ne juge pas la diversité sur les seuls titres : examine descriptions et enchaînement scientifique.\n" +
@@ -663,14 +663,6 @@ ${TRIMEMO_MASTER_ACADEMIC_RULES}\n\n${TRIMEMO_PLAN_WRITING_CONTRACT}\n\n${TRIMEM
     }
 
     const responsePlans = data.plans.slice(0, count).map((plan, i) => normalizePlanStructure(plan, i, words));
-
-    stage="contrôle stylistique automatique";
-    const styleResult = await enforceAcademicStyle(responsePlans, { apiKey: key, timeoutMs: 25000 });
-    const styledPlans = styleResult.value;
-    const postStyleValidation = validateGeneratedPlans(styledPlans);
-    if (!postStyleValidation.valid) {
-      throw fail("La correction stylistique a modifié un élément structurel du plan : " + postStyleValidation.reason, 422);
-    }
 
     stage="contrôle stylistique automatique";
     const styleResult = await enforceAcademicStyle(responsePlans, { apiKey: key, timeoutMs: 25000 });
