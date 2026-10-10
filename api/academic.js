@@ -27,7 +27,14 @@ function priceForFormula(formula) {
 }
 
 function priceForProject(project = {}) {
-  return priceForFormula(formulaOf(project));
+  const quote = verifyPricingQuote(project.pricingQuoteToken, project);
+  if (!quote) throw new Error("L'estimation du projet est absente ou expirée. Relancez l'analyse du projet avant le paiement.");
+  return {
+    value: String(quote.checkoutAmount),
+    currency: String(quote.checkoutCurrency || "EUR"),
+    label: String(project.typeDoc || "Projet académique") + " Trimémo",
+    quote,
+  };
 }
 
 async function paypalAccessToken() {
@@ -77,7 +84,7 @@ async function createPaypalOrder(project) {
         custom_id: `${formulaOf(project)}|${paymentBinding(project)}`,
         description: "Accès premium Trimémo",
         amount: {
-          currency_code: "EUR",
+          currency_code: price.currency,
           value: price.value,
         },
       }],
@@ -113,7 +120,7 @@ async function createPaypalOrder(project) {
     id: data.id,
     url: approval.href,
     amount: price.value,
-    currency: "EUR",
+    currency: price.currency,
     label: price.label,
   };
 }
@@ -156,6 +163,7 @@ async function getPaypalOrder(orderId) {
 
 import crypto from "node:crypto";
 import { createPremiumToken, paymentBinding } from "../lib/premium-auth.js";
+import { verifyPricingQuote } from "../lib/pricing.js";
 
 export default async function handler(req, res) {
   cors(res);
@@ -195,6 +203,9 @@ export default async function handler(req, res) {
         });
       }
 
+      // Valider le devis signé AVANT toute capture : une estimation expirée ne doit jamais entraîner un débit.
+      const expectedPriceQuote = priceForProject(project);
+
       // 1) Lire la commande ; ne capturer que si elle est approuvée (évite l'erreur ORDER_ALREADY_CAPTURED au rechargement).
       let order = await getPaypalOrder(orderId);
       if (String(order.status).toUpperCase() === "APPROVED") {
@@ -228,10 +239,11 @@ export default async function handler(req, res) {
       if (paidBuffer.length !== expectedBuffer.length || !crypto.timingSafeEqual(paidBuffer, expectedBuffer)) {
         return res.status(403).json({ status: "PAYMENT_PROJECT_MISMATCH", error: "Cette commande PayPal n’est pas associée à ce projet." });
       }
-      const expectedPrice = priceForFormula(formula).value;
+      const expectedPrice = expectedPriceQuote.value;
+      const expectedCurrency = expectedPriceQuote.currency;
       const paidPrice = String(capture.amount?.value || "");
-      if (!paidPrice || paidPrice !== expectedPrice || String(capture.amount?.currency_code || "EUR") !== "EUR") {
-        console.error("PayPal AMOUNT_MISMATCH", { orderId, paidPrice, expectedPrice, formula });
+      if (!paidPrice || paidPrice !== expectedPrice || String(capture.amount?.currency_code || "") !== expectedCurrency) {
+        console.error("PayPal AMOUNT_MISMATCH", { orderId, paidPrice, expectedPrice, expectedCurrency, formula });
         return res.status(402).json({
           status: "AMOUNT_MISMATCH",
           error: "Le montant payé ne correspond pas à la formule. Contactez le support avec la référence " + orderId + ".",
