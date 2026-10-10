@@ -103,7 +103,7 @@ export default async function handler(req, res) {
     const project = req.body?.project || req.body || {};
     const sujet = text(project.sujet || project.subject);
     if (!sujet) return res.status(400).json({error:"Le sujet est obligatoire."});
-    await rateLimit(req, "free-preview", 5, 60 * 60 * 1000);
+    await rateLimit(req, "prepayment-preview", 3, 60 * 60 * 1000);
     const files = Array.isArray(project.files) ? project.files : [];
     if (files.length) assertFilesSize(files);
     const pages = clampPages(project);
