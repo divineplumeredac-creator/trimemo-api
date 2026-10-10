@@ -141,6 +141,11 @@ export default async function handler(req, res) {
       const raw=await response.text();
       if(!response.ok){let detail="Le service de génération a refusé la requête.";try{const e=JSON.parse(raw);detail=e?.error?.message||detail}catch{}throw fail("OpenAI a refusé l'aperçu : "+detail,502);}
       const candidate=parseJson(extractOutputText(JSON.parse(raw)));
+      const chapterOneWords = String(candidate?.chapterOne?.content || "").trim().split(/\s+/u).filter(Boolean).length;
+      if (chapterOneWords < 800) {
+        lastValidationReason = "Le premier chapitre doit contenir au moins 800 mots pour permettre une véritable évaluation de la qualité.";
+        continue;
+      }
       const plan=candidate?.plan;
       const parts=Array.isArray(plan?.parts)?plan.parts:[];
       const validStructure=parts.length>=2 && parts.length<=3 && parts.every(part=>{
