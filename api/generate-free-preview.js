@@ -79,9 +79,16 @@ const schema = {
         title:{type:"string",minLength:1},content:{type:"string",minLength:1},wordCount:{type:"integer"},incomplete:{type:"boolean"}
       },
       required:["title","content","wordCount","incomplete"]
+    },
+    chapterOne:{
+      type:"object",additionalProperties:false,
+      properties:{
+        title:{type:"string",minLength:1},content:{type:"string",minLength:1},wordCount:{type:"integer"}
+      },
+      required:["title","content","wordCount"]
     }
   },
-  required:["problematic","plan","introduction"]
+  required:["problematic","plan","introduction","chapterOne"]
 };
 
 export default async function handler(req, res) {
@@ -126,9 +133,9 @@ export default async function handler(req, res) {
         model:getOpenAIModel(),
         input:[
           {role:"system",content:[{type:"input_text",text:TRIMEMO_MASTER_ACADEMIC_RULES+"\n\nEXCEPTION APERÇU GRATUIT : le SUJET est la seule information obligatoire. Ne bloque jamais la génération pour une donnée facultative. Génère à partir du sujet seul si nécessaire. Les sous-sections sont facultatives et doivent être justifiées par la densité du contenu. Toute numérotation est ajoutée par Trimémo après validation. Ne mets aucun numéro dans les titres. N'ajoute aucun niveau pour créer une symétrie artificielle. Retourne uniquement le JSON."+correction}]},
-           {role:"user",content:[{type:"input_text",text:context+"\n\nGénère une problématique précise, un plan structuré et une introduction d’aperçu d’environ 320 mots."+correction},...fileIds.map(file_id=>({type:"input_file",file_id})),...imageInputs]}
+           {role:"user",content:[{type:"input_text",text:context+"\n\nGénère une problématique précise, un plan structuré, un extrait d'environ 320 mots de l'introduction générale et le premier chapitre complet de la première partie. Le chapitre doit suivre exactement les sections du plan, comporter des titres de section explicites et développer environ 1 200 à 1 600 mots de prose académique utile. N'ajoute aucun résultat empirique inventé."+correction},...fileIds.map(file_id=>({type:"input_file",file_id})),...imageInputs]}
         ],
-        max_output_tokens:8000,
+        max_output_tokens:12000,
         text:{format:{type:"json_schema",name:"trimemo_free_preview",strict:true,schema}}
       })});
       const raw=await response.text();
@@ -153,12 +160,16 @@ export default async function handler(req, res) {
     if(!result) throw fail("L’aperçu gratuit n’a pas produit une structure académique conforme après trois tentatives : "+lastValidationReason,502);
     await deleteOpenAIFiles(fileIds, apiKey);
     fileIds = [];
-    if (!result.problematic?.question || !result.plan?.parts?.length || !result.introduction?.content) throw fail("L'aperçu retourné est incomplet.",502);
+    if (!result.problematic?.question || !result.plan?.parts?.length || !result.introduction?.content || !result.chapterOne?.content) throw fail("L'aperçu retourné est incomplet.",502);
+    const firstPart = result.plan.parts[0];
+    const firstChapter = firstPart?.chapters?.[0];
+    if (!firstChapter) throw fail("Le premier chapitre est absent du plan.",502);
     return res.status(200).json({
       success:true,
       problematic:result.problematic,
       plan:normalizePlanStructure(result.plan,0,targetWords),
-      introduction:{...result.introduction,content:trimToWords(result.introduction.content, FREE_PREVIEW_WORDS),wordCount:Math.min(FREE_PREVIEW_WORDS, trimToWords(result.introduction.content, FREE_PREVIEW_WORDS).split(/\s+/).filter(Boolean).length),incomplete:true,previewWords:FREE_PREVIEW_WORDS,targetWords:introductionWords}
+      introduction:{...result.introduction,content:trimToWords(result.introduction.content, FREE_PREVIEW_WORDS),wordCount:Math.min(FREE_PREVIEW_WORDS, trimToWords(result.introduction.content, FREE_PREVIEW_WORDS).split(/\\s+/).filter(Boolean).length),incomplete:true,previewWords:FREE_PREVIEW_WORDS,targetWords:introductionWords},
+      chapterOne:{...result.chapterOne,title:firstChapter.title || result.chapterOne.title,content:String(result.chapterOne.content).trim(),wordCount:Number(result.chapterOne.wordCount || String(result.chapterOne.content).trim().split(/\\s+/).filter(Boolean).length),partTitle:firstPart.title || "",chapterNumber:firstChapter.number || 1,sectionTitles:(firstChapter.sections || []).map(section=>section.title)}
     });
   } catch(error) {
     await deleteOpenAIFiles(fileIds, apiKey);
