@@ -36,7 +36,7 @@ export default async function handler(req, res) {
   const pages = Number(project.pages);
   if (!Number.isInteger(pages) || pages < 1 || pages > 300) return fail(res, 400, "Le volume doit être un nombre entier compris entre 1 et 300 pages.");
   try {
-    await rateLimit(req, "project-estimate", 8, 60 * 60 * 1000);
+    await rateLimit(req, "project-estimate", 5, 60 * 60 * 1000);
     const files = Array.isArray(project.files) ? project.files : [];
     if (files.length) assertFilesSize(files);
     const documents = files.length ? await buildProjectDocumentContext(files) : {};
