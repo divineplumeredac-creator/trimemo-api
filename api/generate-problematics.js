@@ -2,6 +2,7 @@ import { getOpenAIModel } from "../lib/openai-model.js";
 import { TRIMEMO_MASTER_ACADEMIC_RULES } from "../lib/trimemo-academic-rules.js";
 import { requireOwner } from "../lib/owner-auth.js";
 import { requirePremiumOrOwner } from "../lib/premium-auth.js";
+import { verifyPricingQuote } from "../lib/pricing.js";
 import { buildProjectDocumentContext, buildDocumentInstructions, uploadProjectFiles, deleteOpenAIFiles, buildImageInputs } from "../lib/project-documents.js";
 import { assertFilesSize } from "../lib/limits.js";
 import { enforceAcademicStyle } from "../lib/style-control.js";
@@ -464,9 +465,12 @@ export default async function handler(req, res) {
 
   try {
     const body = req.body || {};
-    if (body.ownerMode === true) requireOwner(req);
-    else requirePremiumOrOwner(req, body);
     const project = body.project || body;
+    if (body.ownerMode === true) requireOwner(req);
+    else {
+      const quote = verifyPricingQuote(project.pricingQuoteToken, project);
+      if (!quote) requirePremiumOrOwner(req, body);
+    }
 
     const count = Number(body.count) === 1
       ? 1
