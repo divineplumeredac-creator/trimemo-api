@@ -7,7 +7,8 @@ import { buildProjectDocumentContext, buildDocumentInstructions, uploadProjectFi
 import { PLAN_PARTS_SCHEMA, normalizePlanStructure } from "../lib/plan-structure.js";
 const OPENAI_URL = "https://api.openai.com/v1/responses";
 const WORDS_PER_PAGE = 320;
-const FREE_PREVIEW_WORDS = 320;
+const FREE_PREVIEW_WORDS = 2500;
+const PREVIEW_INTRO_WORDS = 500;
 
 function trimToWords(value, limit) {
   const words = String(value || "").trim().split(/\s+/).filter(Boolean);
@@ -133,7 +134,7 @@ export default async function handler(req, res) {
         model:getOpenAIModel(),
         input:[
           {role:"system",content:[{type:"input_text",text:TRIMEMO_MASTER_ACADEMIC_RULES+"\n\nEXCEPTION APERÇU GRATUIT : le SUJET est la seule information obligatoire. Ne bloque jamais la génération pour une donnée facultative. Génère à partir du sujet seul si nécessaire. Les sous-sections sont facultatives et doivent être justifiées par la densité du contenu. Toute numérotation est ajoutée par Trimémo après validation. Ne mets aucun numéro dans les titres. N'ajoute aucun niveau pour créer une symétrie artificielle. Retourne uniquement le JSON."+correction}]},
-           {role:"user",content:[{type:"input_text",text:context+"\n\nGénère une problématique précise, un plan structuré, un extrait d'environ 320 mots de l'introduction générale et le premier chapitre complet de la première partie. Le chapitre doit suivre exactement les sections du plan, comporter des titres de section explicites et développer environ 1 200 à 1 600 mots de prose académique utile. N'ajoute aucun résultat empirique inventé."+correction},...fileIds.map(file_id=>({type:"input_file",file_id})),...imageInputs]}
+           {role:"user",content:[{type:"input_text",text:context+"\n\nGénère une problématique précise, un plan structuré, puis un aperçu rédactionnel total de 2 500 mots maximum allant de l'introduction générale au premier chapitre de la première partie. Vise environ 500 mots pour l'introduction et utilise le volume restant pour le premier chapitre, sans dépasser 2 500 mots au total. Le chapitre doit suivre exactement les sections du plan et comporter des titres de section explicites. Le texte doit permettre au client d'évaluer la qualité avant paiement. N'ajoute aucun résultat empirique inventé."+correction},...fileIds.map(file_id=>({type:"input_file",file_id})),...imageInputs]}
         ],
         max_output_tokens:12000,
         text:{format:{type:"json_schema",name:"trimemo_free_preview",strict:true,schema}}
@@ -169,12 +170,16 @@ export default async function handler(req, res) {
     const firstPart = result.plan.parts[0];
     const firstChapter = firstPart?.chapters?.[0];
     if (!firstChapter) throw fail("Le premier chapitre est absent du plan.",502);
+    const introductionContent = trimToWords(result.introduction.content, PREVIEW_INTRO_WORDS);
+    const remainingPreviewWords = Math.max(0, FREE_PREVIEW_WORDS - introductionContent.split(/\\s+/u).filter(Boolean).length);
+    const chapterContent = trimToWords(String(result.chapterOne.content).trim(), remainingPreviewWords);
     return res.status(200).json({
       success:true,
+      previewWordLimit:FREE_PREVIEW_WORDS,
       problematic:result.problematic,
       plan:normalizePlanStructure(result.plan,0,targetWords),
-      introduction:{...result.introduction,content:trimToWords(result.introduction.content, FREE_PREVIEW_WORDS),wordCount:Math.min(FREE_PREVIEW_WORDS, trimToWords(result.introduction.content, FREE_PREVIEW_WORDS).split(/\\s+/).filter(Boolean).length),incomplete:true,previewWords:FREE_PREVIEW_WORDS,targetWords:introductionWords},
-      chapterOne:{...result.chapterOne,title:firstChapter.title || result.chapterOne.title,content:String(result.chapterOne.content).trim(),wordCount:Number(result.chapterOne.wordCount || String(result.chapterOne.content).trim().split(/\\s+/).filter(Boolean).length),partTitle:firstPart.title || "",chapterNumber:firstChapter.number || 1,sectionTitles:(firstChapter.sections || []).map(section=>section.title)}
+      introduction:{...result.introduction,content:introductionContent,wordCount:introductionContent.split(/\\s+/u).filter(Boolean).length,incomplete:true,previewWords:FREE_PREVIEW_WORDS,targetWords:introductionWords},
+      chapterOne:{...result.chapterOne,title:firstChapter.title || result.chapterOne.title,content:chapterContent,wordCount:chapterContent.split(/\\s+/u).filter(Boolean).length,partTitle:firstPart.title || "",chapterNumber:firstChapter.number || 1,sectionTitles:(firstChapter.sections || []).map(section=>section.title)}
     });
   } catch(error) {
     await deleteOpenAIFiles(fileIds, apiKey);
