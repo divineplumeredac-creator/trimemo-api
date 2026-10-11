@@ -3,6 +3,7 @@ import { setCors } from "../lib/http.js";
 import { TRIMEMO_MASTER_ACADEMIC_RULES } from "../lib/trimemo-academic-rules.js";
 import { requireOwner } from "../lib/owner-auth.js";
 import { requirePremiumOrOwner } from "../lib/premium-auth.js";
+import { verifyPricingQuote } from "../lib/pricing.js";
 import { buildProjectDocumentContext, buildDocumentInstructions, uploadProjectFiles, deleteOpenAIFiles, extractFileText, buildImageInputs } from "../lib/project-documents.js";
 import { clampPages, assertFilesSize } from "../lib/limits.js";
 import { PLAN_PARTS_SCHEMA, normalizePlanStructure } from "../lib/plan-structure.js";
@@ -241,10 +242,14 @@ export default async function handler(req,res){
   try{
     stage="authentification";
     const b=req.body||{};
-    if(b.ownerMode===true) requireOwner(req); else requirePremiumOrOwner(req,b);
+    const p=b.project||b.projet||b;
+    if(b.ownerMode===true) requireOwner(req);
+    else {
+      const quote=verifyPricingQuote(p.pricingQuoteToken,p);
+      if(!quote) requirePremiumOrOwner(req,b);
+    }
 
     stage="lecture du dossier";
-    const p=b.project||b.projet||b;
     const subject=txt(p.sujet||p.subject);
     if(!subject)return res.status(400).json({error:"Le sujet est obligatoire."});
 
