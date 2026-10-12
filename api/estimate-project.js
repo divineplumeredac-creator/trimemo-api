@@ -2,7 +2,7 @@ import { getOpenAIModel } from "../lib/openai-model.js";
 import { buildProjectDocumentContext, buildImageInputs } from "../lib/project-documents.js";
 import { assertFilesSize } from "../lib/limits.js";
 import { rateLimit } from "../lib/rate-limit.js";
-import { calculateQuote, marketForCountry, signPricingQuote, verifyPricingQuoteIdentity } from "../lib/pricing.js";
+import { calculateQuote, marketForCountry, signPricingQuote, verifyPricingQuote } from "../lib/pricing.js";
 import { setCors } from "../lib/http.js";
 import { storeProjectBundle, hydrateProjectFiles } from "../lib/project-file-store.js";
 
@@ -26,7 +26,7 @@ export default async function handler(req, res) {
   try {
     await rateLimit(req, "project-estimate", 5, 60 * 60 * 1000);
     if (Array.isArray(project.files) && project.files.length && project.files.some((file) => !String(file?.content || "").length)) {
-      if (!verifyPricingQuoteIdentity(project.pricingQuoteToken, project)) return fail(res, 403, "Pour réutiliser les documents déjà joints, reprenez le projet estimé. Pour un nouveau sujet, joignez à nouveau les fichiers.");
+      if (!verifyPricingQuote(project.pricingQuoteToken, project)) return fail(res, 403, "Pour réutiliser les documents déjà joints, reprenez le projet estimé. Pour un nouveau sujet, joignez à nouveau les fichiers.");
       project = await hydrateProjectFiles(project);
     }
     const files = Array.isArray(project.files) ? project.files : [];
