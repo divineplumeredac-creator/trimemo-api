@@ -9,6 +9,21 @@ import { storeProjectBundle, hydrateProjectFiles } from "../lib/project-file-sto
 const OPENAI_URL = "https://api.openai.com/v1/responses";
 function cors(res, req) { setCors(res, req, "POST, OPTIONS"); }
 function fail(res, status, error, details) { return res.status(status).json({ error, ...(details ? { details } : {}) });}
+
+function extractText(data) {
+  if (typeof data?.output_text === "string" && data.output_text.trim()) return data.output_text.trim();
+  if (data?.status === "incomplete") {
+    const reason = String(data?.incomplete_details?.reason || "raison inconnue");
+    throw new Error("La réponse OpenAI est incomplète : " + reason + ".");
+  }
+  const output = Array.isArray(data?.output) ? data.output : [];
+  const texts = output.flatMap((item) => Array.isArray(item?.content) ? item.content : [])
+    .filter((part) => part?.type === "output_text" && typeof part.text === "string")
+    .map((part) => part.text);
+  const result = texts.join("\\n").trim();
+  if (!result) throw new Error("OpenAI n'a retourné aucun texte exploitable.");
+  return result;
+}
 function countryFromRequest(req, project) {
   const header = req.headers?.["x-vercel-ip-country"];
   const candidate = String(header || "").trim().toUpperCase();
