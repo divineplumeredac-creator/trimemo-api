@@ -684,12 +684,41 @@ ${TRIMEMO_STRICT_STYLE_CONTRACT}`;
     const responsePlans = data.plans.slice(0, count).map((plan, i) => normalizePlanStructure(plan, i, words));
 
     stage="contrôle stylistique automatique";
-    const styleResult = await enforceAcademicStyle(responsePlans, { apiKey: key, timeoutMs: 25000 });
-    const styledPlans = styleResult.value;
-    const postStyleValidation = validateGeneratedPlans(styledPlans);
-    if (!postStyleValidation.valid) {
-      throw fail("La correction stylistique a modifié un élément structurel du plan : " + postStyleValidation.reason, 422);
+    // Le contrôle stylistique est secondaire : il ne doit pas faire échouer un plan
+    // dont la structure a déjà été validée selon le contrat méthodologique.
+    let styleResult = {
+      value: responsePlans,
+      correctedFields: 0,
+      checkedFields: 0,
+      status: "skipped",
+      reason: ""
+    };
+    try {
+      const candidateStyleResult = await enforceAcademicStyle(responsePlans, { apiKey: key, timeoutMs: 25000 });
+      const styledPlansCandidate = candidateStyleResult?.value;
+      const postStyleValidation = validateGeneratedPlans(styledPlansCandidate);
+      if (postStyleValidation.valid) {
+        styleResult = {
+          ...candidateStyleResult,
+          status: "passed",
+          reason: ""
+        };
+      } else {
+        styleResult.reason = "La correction stylistique a modifié la structure : " + postStyleValidation.reason;
+        console.warn("GENERATE_PLANS_STYLE_FALLBACK", {
+          reason: styleResult.reason,
+          fallback: "validated_original_plan"
+        });
+      }
+    } catch (styleError) {
+      styleResult.reason = String(styleError?.message || "Contrôle stylistique indisponible.").slice(0, 500);
+      console.warn("GENERATE_PLANS_STYLE_FALLBACK", {
+        status: Number(styleError?.status) || 500,
+        reason: styleResult.reason,
+        fallback: "validated_original_plan"
+      });
     }
+    const styledPlans = styleResult.value;
 
     stage="nettoyage des fichiers temporaires";
     await safeCleanup();
@@ -698,9 +727,10 @@ ${TRIMEMO_STRICT_STYLE_CONTRACT}`;
       plan:styledPlans[0],
       plans:styledPlans,
       styleControl:{
-        status:"passed",
+        status:styleResult.status || "passed",
         correctedFields:styleResult.correctedFields,
-        checkedFields:styleResult.checkedFields
+        checkedFields:styleResult.checkedFields,
+        ...(styleResult.reason ? { reason: styleResult.reason } : {})
       },
       academicControl:{
         score:null,
