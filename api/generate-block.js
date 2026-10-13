@@ -172,6 +172,8 @@ INSTRUCTIONS SPÉCIFIQUES DU BLOC :
 11. Les blocs précédents sont une mémoire de continuité, pas une matière à recopier.
 12. N’introduis pas de nouvelle introduction, de nouvelle problématique ou de nouvelle annonce du plan si ces éléments ont déjà été traités.
 12 bis. Lorsque tu utilises une source, cite-la dans le texte avec une citation auteur-date correspondant à la référence retournée dans SOURCES, par exemple (Organisation internationale du Travail, 2022). N’utilise pas les seuls domaines tels que (ilo.org), (osha.gov) ou (cdc.gov) comme citations académiques finales.
+12 quater. N’insère jamais d’URL, de lien cliquable, de domaine web brut ni de lien OpenAI dans le corps académique. Les URL vérifiées doivent rester dans les métadonnées des sources ou dans la bibliographie, jamais remplacer une citation auteur-date.
+12 quinquies. Présente les sources dans SOURCES avec auteur ou organisme, année, titre, publication et DOI/URL vérifié si disponible. Dans le corps du texte, utilise uniquement les citations auteur-date.
 12 ter. Chaque citation auteur-date du texte doit correspondre à une source retournée. N’invente jamais une correspondance bibliographique.
 13. Le découpage en blocs est subordonné à la cohérence scientifique, jamais à un quota mécanique de mots.
 14. Un bloc peut couvrir une section entière et toutes ses sous-sections, ou plusieurs sections consécutives lorsqu'elles forment une même unité argumentative.
