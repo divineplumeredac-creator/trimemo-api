@@ -471,32 +471,32 @@ Utilise des références vérifiables si elles sont nécessaires.
       });
     }
 
-    const styleResult = await enforceAcademicStyle({
-      title: result.title || blockTitle,
-      content
-    }, { apiKey, timeoutMs: 25000 });
-    const correctedContent = styleResult.value.content;
-    const correctedTitle = styleResult.value.title;
-    const wordCount = correctedContent
-      .split(/\s+/)
-      .filter(Boolean)
-      .length;
-    const verifiedSources = await verifySources(Array.isArray(result.sources) ? result.sources : []);
-
+    let correctedContent = content;
+    let correctedTitle = String(result.title || blockTitle);
+    let styleControl = { status: "warning", correctedFields: 0, checkedFields: 0 };
+    try {
+      const styleResult = await enforceAcademicStyle({ title: correctedTitle, content: correctedContent }, { apiKey, timeoutMs: 25000 });
+      correctedContent = styleResult?.value?.content || correctedContent;
+      correctedTitle = styleResult?.value?.title || correctedTitle;
+      styleControl = { status: "passed", correctedFields: styleResult?.correctedFields || 0, checkedFields: styleResult?.checkedFields || 0 };
+    } catch (styleError) {
+      console.error("BLOCK_STYLE_CONTROL_FAILED", { name: String(styleError?.name || "Error"), code: String(styleError?.code || ""), message: String(styleError?.message || "unknown").slice(0, 300) });
+    }
+    const wordCount = correctedContent.split(/\s+/).filter(Boolean).length;
+    let verifiedSources = [];
+    try {
+      verifiedSources = await verifySources(Array.isArray(result.sources) ? result.sources : []);
+    } catch (sourceError) {
+      console.error("BLOCK_SOURCE_VERIFICATION_FAILED", { name: String(sourceError?.name || "Error"), code: String(sourceError?.code || ""), message: String(sourceError?.message || "unknown").slice(0, 300) });
+    }
     return res.status(200).json({
       id: String(body.block?.id || body.blockId || `block-${Date.now()}`),
       title: correctedTitle,
       content: correctedContent,
       wordCount,
       sources: verifiedSources.filter((source) => source?.verified === true),
-      footnotes: Array.isArray(result.footnotes)
-        ? result.footnotes
-        : [],
-      styleControl: {
-        status: "passed",
-        correctedFields: styleResult.correctedFields,
-        checkedFields: styleResult.checkedFields
-      }
+      footnotes: Array.isArray(result.footnotes) ? result.footnotes : [],
+      styleControl
     });
   } catch (error) {
     console.error("GENERATE_BLOCK_FAILED", { status: Number(error?.status) || 500, code: String(error?.code || "BLOCK_GENERATION_ERROR") });
