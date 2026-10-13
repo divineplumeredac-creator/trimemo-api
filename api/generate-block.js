@@ -143,7 +143,7 @@ export default async function handler(req, res) {
 
     const safeWordTarget =
       Number.isFinite(targetWords) && targetWords > 0
-        ? Math.min(Math.max(targetWords, 300), 1500)
+        ? (previewMode ? Math.min(Math.max(targetWords, 1), 1000) : Math.min(Math.max(targetWords, 300), 1500))
         : 900;
 
     const systemPrompt = `
