@@ -40,7 +40,7 @@ export default async function handler(req, res) {
     else if (previewMode) {
       // Aperçu public : rédaction progressive bloc par bloc, limitée à 2 500 mots cumulés.
       const previewBlocks = Array.isArray(body.previewBlocks) ? body.previewBlocks : [];
-      const previewWords = previewBlocks.reduce((sum, item) => sum + String(item?.content || "").trim().split(/\\s+/u).filter(Boolean).length, 0);
+      const previewWords = previewBlocks.reduce((sum, item) => sum + String(item?.content || "").trim().split(/\s+/u).filter(Boolean).length, 0);
       if (previewWords >= 2500) {
         const e = new Error("L’aperçu de 2 500 mots est atteint. Consultez l’aperçu et payez pour poursuivre la rédaction."); e.status = 402; throw e;
       }
