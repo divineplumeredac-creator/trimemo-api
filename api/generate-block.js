@@ -35,8 +35,18 @@ export default async function handler(req, res) {
     const body = req.body || {};
     let project = body.project || body;
     await rateLimit(req, "generate-block", 30, 60 * 60 * 1000);
+    const previewMode = body.previewMode === true;
     if (body.ownerMode === true) requireOwner(req);
-    else {
+    else if (previewMode) {
+      // Aperçu public : rédaction progressive bloc par bloc, limitée à 2 500 mots cumulés.
+      const previewBlocks = Array.isArray(body.previewBlocks) ? body.previewBlocks : [];
+      const previewWords = previewBlocks.reduce((sum, item) => sum + String(item?.content || "").trim().split(/\\s+/u).filter(Boolean).length, 0);
+      if (previewWords >= 2500) {
+        const e = new Error("L’aperçu de 2 500 mots est atteint. Consultez l’aperçu et payez pour poursuivre la rédaction."); e.status = 402; throw e;
+      }
+      body.targetWords = Math.min(Number(body.targetWords) || 900, 2500 - previewWords, 1000);
+      if (body.targetWords < 250) body.targetWords = 250;
+    } else {
       const access = requirePremiumOrOwner(req, body);
       if (access.mode === "premium") {
         await assertOrderUsable(access.token, project);
