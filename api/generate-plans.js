@@ -636,18 +636,21 @@ ${TRIMEMO_STRICT_STYLE_CONTRACT}`;
       }
     }
 
-    // Contrôle scientifique séparé : une structure correcte peut malgré tout mélanger plusieurs angles.
-    stage="contrôle de cohérence du plan";
-    let angleReview=await reviewPlanAngles({
-      key,
-      methodologyAuthority,
-      context,
-      plans:data?.plans || [],
-      count,
-      files:ids
-    });
+    // Le contrôle comparatif des angles n'est utile que lorsque plusieurs plans sont proposés.
+    // Ici, count vaut 1 : éviter un appel OpenAI supplémentaire qui ralentit la génération
+    // et peut bloquer un plan pourtant structurellement valide.
+    if (count > 1) {
+      stage="contrôle de cohérence des angles";
+      let angleReview=await reviewPlanAngles({
+        key,
+        methodologyAuthority,
+        context,
+        plans:data?.plans || [],
+        count,
+        files:ids
+      });
 
-    if(count>1 && !angleReview?.valid){
+      if(!angleReview?.valid){
       stage="réparation des angles";
       data=await repairPlanSet({
         key,
@@ -674,6 +677,7 @@ ${TRIMEMO_STRICT_STYLE_CONTRACT}`;
       });
       if(!angleReview?.valid){
         throw fail("Les plans générés restent incohérents ou trop proches dans leurs angles scientifiques après réparation : "+(angleReview?.reason||"contrôle des angles non validé."),422);
+      }
       }
     }
 
@@ -711,7 +715,7 @@ ${TRIMEMO_STRICT_STYLE_CONTRACT}`;
     const status=Number.isInteger(e?.status)?e.status:500;
     return res.status(status).json({
       error: status >= 500 ? "La génération du plan a échoué. Réessayez dans quelques instants." : (e?.message || "Requête invalide."),
-      stage: status >= 500 ? undefined : stage,
+      stage,
       code:e?.code||"PLAN_GENERATION_ERROR"
     });
   }
