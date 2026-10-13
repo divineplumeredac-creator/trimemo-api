@@ -10,6 +10,23 @@ import { hydrateProjectFiles } from "../lib/project-file-store.js";
 import { buildProjectDocumentContext, buildDocumentInstructions, buildImageInputs } from "../lib/project-documents.js";
 import { assertFilesSize } from "../lib/limits.js";
 import { verifySources } from "../lib/verify-sources.js";
+function normalizeGeneratedAcademicContent(input) {
+  let text = String(input || "").replace(/\r\n?/gu, "\n").trim();
+  // Enlève les liens Markdown de recherche sans toucher aux métadonnées de sources.
+  text = text.replace(/\[\s*(?:https?:\/\/)?(?:www\.)?[a-z0-9.-]+\.[a-z]{2,}\s*\]\(https?:\/\/[^)]+\)/giu, "");
+  text = text.replace(/\[([^\]]+)\]\(https?:\/\/[^)]+\)/giu, "$1");
+  // Enlève les domaines/URL bruts qui polluent le corps du texte.
+  text = text.replace(/\(?\s*\[?(?:www\.)?[a-z0-9.-]+\.[a-z]{2,}\]?\s*\)?\s*https?:\/\/\S+/giu, "");
+  text = text.replace(/https?:\/\/\S+/giu, "");
+  text = text.replace(/\bwww\.[a-z0-9.-]+\.[a-z]{2,}\S*/giu, "");
+  text = text.replace(/[ \t]+\n/gu, "\n").replace(/\n[ \t]+/gu, "\n");
+  // Les titres Markdown doivent commencer sur une ligne autonome.
+  text = text.replace(/[ \t]+(?=#{1,6}\s+)/gu, "\n\n");
+  text = text.replace(/^(#{1,6})[ \t]+(.+)$/gmu, (_, marks, title) => String(marks) + " " + String(title).trim());
+  text = text.replace(/[ \t]{2,}/gu, " ").replace(/\n{3,}/gu, "\n\n");
+  return text.trim();
+}
+
 export default async function handler(req, res) {
   setCors(res, req, "POST, OPTIONS");
 
@@ -465,7 +482,7 @@ Utilise des références vérifiables si elles sont nécessaires.
       });
     }
 
-    const content = String(result.content || "").trim();
+    const content = normalizeGeneratedAcademicContent(result.content);
 
     if (!content) {
       return res.status(502).json({
