@@ -23,7 +23,8 @@ async function db(path, init = {}) {
   });
   const raw = await response.text();
   if (!response.ok) {
-    const error = new Error("La base Supabase a refusé l'opération.");
+    const diagnostic = raw.replace(/(eyJ[a-zA-Z0-9_-]{20,}\.[a-zA-Z0-9_-]{20,}\.[a-zA-Z0-9_-]{10,})/g, "[token]").slice(0, 220);
+    const error = new Error("Supabase REST HTTP " + response.status + ": " + diagnostic);
     error.status = response.status === 404 ? 503 : 502;
     throw error;
   }
@@ -65,7 +66,7 @@ export default async function handler(req, res) {
     });
     return res.status(200).json({ success: true, savedAt: now.toISOString() });
   } catch (error) {
-    console.error("TRIMEMO_PROJECT_STATE_FAILED", { method: req.method, status: Number(error?.status) || 500, message: String(error?.message || "unknown").slice(0, 180) });
+    console.error("TRIMEMO_PROJECT_STATE_FAILED", { method: req.method, status: Number(error?.status) || 500, message: String(error?.message || "unknown").slice(0, 260) });
     return fail(res, Number(error?.status) || 500, Number(error?.status) === 503 ? "Le stockage Supabase n'est pas configuré ou la table est absente." : "Impossible de sauvegarder le projet sur le serveur.");
   }
 }
