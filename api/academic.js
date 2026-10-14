@@ -9,6 +9,42 @@ function fail(res, status, error, details) {
   return res.status(status).json({ error, ...(details ? { details } : {}) });
 }
 
+
+function countWords(value) {
+  return String(value || "").trim().split(/\\s+/u).filter(Boolean).length;
+}
+
+// Limite le texte sans couper un paragraphe en plein milieu.
+function limitByParagraphs(value, limit) {
+  const source = String(value || "").trim();
+  if (!source || limit <= 0) return "";
+  if (countWords(source) <= limit) return source;
+  const paragraphs = source.split(/\\n\\s*\\n/u).map((part) => part.trim()).filter(Boolean);
+  const kept = [];
+  let used = 0;
+  for (const paragraph of paragraphs) {
+    const words = countWords(paragraph);
+    if (used + words > limit) break;
+    kept.push(paragraph);
+    used += words;
+  }
+  return kept.join("\\n\\n");
+}
+
+function normalizePreviewWordLimit(preview) {
+  const limitedIntroduction = limitByParagraphs(preview?.introduction?.content, 2500);
+  const remaining = Math.max(0, 2500 - countWords(limitedIntroduction));
+  const limitedChapter = limitByParagraphs(preview?.chapterOne?.content, remaining);
+  if (!limitedIntroduction || !limitedChapter) {
+    throw new Error("L’aperçu dépasse 2 500 mots et ne peut pas être ajusté sans couper un paragraphe. Régénérez l’aperçu avant le paiement.");
+  }
+  return {
+    ...preview,
+    introduction: { ...preview.introduction, content: limitedIntroduction, wordCount: countWords(limitedIntroduction) },
+    chapterOne: { ...preview.chapterOne, content: limitedChapter, wordCount: countWords(limitedChapter) },
+  };
+}
+
 function paypalBaseUrl() {
   return String(process.env.PAYPAL_ENV || "sandbox").toLowerCase() === "live"
     ? "https://api-m.paypal.com"
@@ -199,9 +235,13 @@ export default async function handler(req, res) {
       if (!preview?.problematic?.question || preview.problematic.id !== project.paymentProblematicId || !Array.isArray(preview.plan?.parts) || !preview.plan.parts.length || preview.plan.id !== project.paymentPlanId || !String(preview.introduction?.content || "").trim() || !String(preview.chapterOne?.content || "").trim()) {
         return fail(res, 400, "L'aperçu de 2 500 mots doit être généré à partir de la problématique et du plan retenus avant le paiement.");
       }
-      const previewWords = `${preview.introduction.content} ${preview.chapterOne.content}`.trim().split(/\s+/u).filter(Boolean).length;
-      if (previewWords > 2500) return fail(res, 400, "L'aperçu rédactionnel dépasse la limite de 2 500 mots.");
-      project = { ...project, formula: formulaOf(project) };
+      let normalizedPreview;
+      try {
+        normalizedPreview = normalizePreviewWordLimit(preview);
+      } catch (error) {
+        return fail(res, 400, error instanceof Error ? error.message : "Régénérez l’aperçu avant le paiement.");
+      }
+      project = { ...project, formula: formulaOf(project), paidPreviewSnapshot: normalizedPreview };
       const order = await createPaypalOrder(project);
       await recordPendingOrder({ orderId: order.id, project, amount: order.amount, currency: order.currency });
       return res.status(200).json(order);
