@@ -11,7 +11,7 @@ function fail(res, status, error, details) {
 
 
 function countWords(value) {
-  return String(value || "").trim().split(/\\s+/u).filter(Boolean).length;
+  return String(value || "").trim().split(/\s+/u).filter(Boolean).length;
 }
 
 // Limite le texte sans couper un paragraphe en plein milieu.
@@ -20,11 +20,11 @@ function limitByParagraphs(value, limit) {
   if (!source || limit <= 0) return "";
   if (countWords(source) <= limit) return source;
 
-  let paragraphs = source.split(/\\n\\s*\\n/u).map((part) => part.trim()).filter(Boolean);
+  let paragraphs = source.split(/\n\s*\n/u).map((part) => part.trim()).filter(Boolean);
   if (paragraphs.length === 1) {
     // Certains anciens aperçus ont perdu leurs sauts de paragraphe.
     // Dans ce cas, garder des phrases complètes plutôt que couper au milieu d'une phrase.
-    const sentences = paragraphs[0].match(/[^.!?]+[.!?]+(?:["’”')\\]]*)|[^.!?]+$/gu) || [];
+    const sentences = paragraphs[0].match(/[^.!?]+[.!?]+(?:["’”')]*]*)|[^.!?]+$/gu) || [];
     paragraphs = sentences.map((part) => part.trim()).filter(Boolean);
   }
 
@@ -36,7 +36,7 @@ function limitByParagraphs(value, limit) {
     kept.push(paragraph);
     used += words;
   }
-  return kept.join(paragraphs.length > 1 ? " " : "\\n\\n");
+  return kept.join(paragraphs.length > 1 ? " " : "\n\n");
 }
 
 function normalizePreviewWordLimit(preview) {
