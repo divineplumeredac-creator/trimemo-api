@@ -68,7 +68,9 @@ function heading(value, level, formatting) {
   return new Paragraph({
     heading: headingLevels[level] || HeadingLevel.HEADING_3,
     keepNext: true,
-    pageBreakBefore: level === 1,
+    // Une nouvelle page est réservée aux grandes parties, pas à chaque titre de niveau 1.
+    // Cela évite les pages blanches entre la couverture, le sommaire et l'introduction.
+    pageBreakBefore: level === 1 && /^PARTIE\\s+/i.test(text(value).trim()),
     spacing: {
       before: level === 1 ? 360 : level === 2 ? 280 : 200,
       after: 120,
@@ -276,6 +278,7 @@ function buildChildren(compiled, formatting) {
   const children = [];
   addTitlePage(children, compiled, formatting);
 
+  children.push(heading('Table des matières', 1, formatting));
   children.push(new TableOfContents('', {
     hyperlink: true,
     headingStyleRange: '1-4',
