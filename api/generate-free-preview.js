@@ -14,7 +14,7 @@ const FREE_PREVIEW_WORDS = 2500;
 const PREVIEW_INTRO_WORDS = 500;
 
 function countWords(value) {
-  return String(value || "").trim().split(/\\s+/u).filter(Boolean).length;
+  return String(value || "").trim().split(/\s+/u).filter(Boolean).length;
 }
 
 // Conserve les paragraphes entiers. Si un paragraphe dépasse le quota restant,
@@ -24,7 +24,7 @@ function trimToWords(value, limit) {
   if (!source || limit <= 0) return "";
   if (countWords(source) <= limit) return source;
 
-  const paragraphs = source.split(/\\n\\s*\\n/u).map((part) => part.trim()).filter(Boolean);
+  const paragraphs = source.split(/\n\s*\n/u).map((part) => part.trim()).filter(Boolean);
   const kept = [];
   let used = 0;
   for (const paragraph of paragraphs) {
@@ -37,7 +37,7 @@ function trimToWords(value, limit) {
 
     const remaining = limit - used;
     if (remaining > 0) {
-      const sentences = paragraph.match(/[^.!?]+[.!?]+(?:["’”')\\]]*)|[^.!?]+$/gu) || [];
+      const sentences = paragraph.match(/[^.!?]+[.!?]+(?:["’”')]*]*)|[^.!?]+$/gu) || [];
       const completeSentences = [];
       let sentenceWords = 0;
       for (const sentence of sentences) {
@@ -50,7 +50,7 @@ function trimToWords(value, limit) {
     }
     break;
   }
-  return kept.join("\\n\\n");
+  return kept.join("\n\n");
 }
 
 function cors(res, req) { setCors(res, req, "POST, OPTIONS"); }
