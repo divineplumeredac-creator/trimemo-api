@@ -1,4 +1,5 @@
 import { setCors } from "../lib/http.js";
+import { createPremiumToken } from "../lib/premium-auth.js";
 
 function cors(res, req) { setCors(res, req, "POST, OPTIONS"); }
 function fail(res, status, error) { return res.status(status).json({ error }); }
@@ -122,6 +123,42 @@ export default async function handler(req, res) {
     const user = await authenticate(token);
     if (action === "list") {
       return res.status(200).json({ success: true, projects: await listProjects(user.id), user: { id: user.id, email: user.email } });
+    }
+    if (action === "resume") {
+      const projectId = validProjectId(body.projectId);
+      if (!projectId) return fail(res, 400, "Identifiant de projet invalide.");
+      const { url, key } = config();
+      const membershipQuery = new URLSearchParams({
+        select: "project_id,subject,payment_status",
+        user_id: "eq." + user.id,
+        project_id: "eq." + projectId,
+        limit: "1",
+      });
+      const membershipResponse = await fetch(url + "/rest/v1/trimemo_client_projects?" + membershipQuery, {
+        headers: { apikey: key, Authorization: "Bearer " + key },
+        signal: AbortSignal.timeout(8000),
+      });
+      const memberships = await membershipResponse.json().catch(() => []);
+      const membership = Array.isArray(memberships) ? memberships[0] : null;
+      if (!membership) return fail(res, 404, "Ce projet n'est pas rattaché à votre compte client.");
+      const stateRows = await supabase("/rest/v1/trimemo_project_state?project_id=eq." + encodeURIComponent(projectId) + "&select=project_id,state,updated_at&limit=1");
+      const stateRow = Array.isArray(stateRows) ? stateRows[0] : null;
+      if (!stateRow?.state) return fail(res, 404, "Le contenu sauvegardé de ce projet est introuvable. Contactez le support avant de créer un nouveau projet.");
+      let premiumToken = "";
+      if (membership.payment_status === "paid") {
+        const orders = await supabase("/rest/v1/trimemo_orders?project_id=eq." + encodeURIComponent(projectId) + "&status=in.(paid,consumed)&select=order_id,project_id,project_snapshot,status&order=paid_at.desc&limit=1");
+        const order = Array.isArray(orders) ? orders[0] : null;
+        if (order?.order_id && order.project_snapshot) {
+          premiumToken = createPremiumToken(order.project_snapshot, order.order_id);
+        }
+      }
+      return res.status(200).json({
+        success: true,
+        project: { project_id: membership.project_id, subject: membership.subject, payment_status: membership.payment_status },
+        state: stateRow.state,
+        premium_token: premiumToken || null,
+        updatedAt: stateRow.updated_at,
+      });
     }
     if (action === "link") {
       const projectId = validProjectId(body.projectId);
