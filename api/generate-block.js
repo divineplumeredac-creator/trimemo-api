@@ -158,9 +158,16 @@ export default async function handler(req, res) {
       });
     }
 
+    const isIntroductionBlock =
+      blockKind.includes("introduction") ||
+      /^(?:introduction générale|introduction)$/iu.test(blockTitle.trim());
     const safeWordTarget =
       Number.isFinite(targetWords) && targetWords > 0
-        ? (previewMode ? Math.min(Math.max(targetWords, 1), 1000) : Math.min(Math.max(targetWords, 300), 1500))
+        ? previewMode
+          ? Math.min(Math.max(targetWords, 1), 1000)
+          : isIntroductionBlock
+            ? Math.min(Math.max(targetWords, 300), 5000)
+            : Math.min(Math.max(targetWords, 300), 1500)
         : 900;
 
     const systemPrompt = `
@@ -308,6 +315,7 @@ Si plusieurs sections consécutives forment une unité argumentative cohérente,
 
 OBJECTIF DE LONGUEUR :
 Environ ${safeWordTarget} mots.
+${isIntroductionBlock ? `RÈGLE SPÉCIFIQUE À L’INTRODUCTION GÉNÉRALE : cette introduction doit représenter environ 10 % du volume total du mémoire. Respecte la cible de mots calculée et transmise par l’application. Développe une introduction complète en paragraphes distincts : chaque paragraphe traite une fonction ou une idée cohérente et forme une progression académique. Sépare les paragraphes par une ligne vide (deux retours à la ligne). Ne livre jamais toute l’introduction dans un seul bloc, ne fais pas une liste de rubriques, ne répète pas le titre dans le contenu et ne coupe aucune phrase. Respecte en priorité les consignes méthodologiques du client et le plan validé.` : ""}
 
 TÂCHE
 
