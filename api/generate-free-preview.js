@@ -37,7 +37,7 @@ function trimToWords(value, limit) {
 
     const remaining = limit - used;
     if (remaining > 0) {
-      const sentences = paragraph.match(/[^.!?]+[.!?]+(?:["’”')]*]*)|[^.!?]+$/gu) || [];
+      const sentences = paragraph.match(/[^.!?]+[.!?]+|[^.!?]+$/gu) || [];
       const completeSentences = [];
       let sentenceWords = 0;
       for (const sentence of sentences) {
