@@ -416,7 +416,12 @@ export default async function handler(req, res) {
     res.setHeader('Content-Disposition', 'attachment; filename="' + title + '.docx"');
     return res.status(200).send(buffer);
   } catch (error) {
-    console.error('TRIMEMO_EXPORT_FAILED', { status: Number(error?.status) || 500, code: String(error?.code || 'EXPORT_ERROR') });
+    console.error('TRIMEMO_EXPORT_FAILED', {
+      status: Number(error?.status) || 500,
+      code: String(error?.code || 'EXPORT_ERROR'),
+      name: String(error?.name || 'Error'),
+      message: String(error?.message || 'Erreur inconnue').slice(0, 700)
+    });
     return res.status(error.status || 500).json({
       error: error.status && error.status < 500 ? (error.message || 'Requête invalide.') : 'Erreur pendant la génération du document Word. Réessayez ou contactez le support.',
     });
