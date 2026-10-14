@@ -151,7 +151,7 @@ async function createPaypalOrder(project) {
   }
 
   const approval = Array.isArray(data.links)
-    ? data.links.find((link) => link.rel === "approve")
+    ? data.links.find((link) => ["approve", "payer-action"].includes(String(link.rel || "").toLowerCase()))
     : null;
 
   if (!approval?.href) {
