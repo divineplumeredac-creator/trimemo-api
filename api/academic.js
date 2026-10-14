@@ -21,10 +21,12 @@ function limitByParagraphs(value, limit) {
   if (countWords(source) <= limit) return source;
 
   let paragraphs = source.split(/\n\s*\n/u).map((part) => part.trim()).filter(Boolean);
+  let sentenceFallback = false;
   if (paragraphs.length === 1) {
+    sentenceFallback = true;
     // Certains anciens aperçus ont perdu leurs sauts de paragraphe.
     // Dans ce cas, garder des phrases complètes plutôt que couper au milieu d'une phrase.
-    const sentences = paragraphs[0].match(/[^.!?]+[.!?]+(?:["’”')]*]*)|[^.!?]+$/gu) || [];
+    const sentences = paragraphs[0].match(/[^.!?]+[.!?]+|[^.!?]+$/gu) || [];
     paragraphs = sentences.map((part) => part.trim()).filter(Boolean);
   }
 
@@ -36,7 +38,7 @@ function limitByParagraphs(value, limit) {
     kept.push(paragraph);
     used += words;
   }
-  return kept.join(paragraphs.length > 1 ? " " : "\n\n");
+  return kept.join(sentenceFallback ? " " : "\n\n");
 }
 
 function normalizePreviewWordLimit(preview) {
