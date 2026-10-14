@@ -175,9 +175,10 @@ export default async function handler(req, res) {
     const firstPart = result.plan.parts[0];
     const firstChapter = firstPart?.chapters?.[0];
     if (!firstChapter) throw fail("Le premier chapitre est absent du plan.",502);
-    const introductionContent = trimToWords(result.introduction.content, PREVIEW_INTRO_WORDS);
-    const remainingPreviewWords = Math.max(0, FREE_PREVIEW_WORDS - introductionContent.split(/\s+/u).filter(Boolean).length);
-    const chapterContent = trimToWords(String(result.chapterOne.content).trim(), remainingPreviewWords);
+    // Ne jamais couper un texte généré au milieu d'une phrase ou d'un paragraphe.
+    // La limite de volume est une consigne de génération, pas une opération de troncature.
+    const introductionContent = String(result.introduction.content || "").trim();
+    const chapterContent = String(result.chapterOne.content || "").trim();
     return res.status(200).json({
       success:true,
       previewWordLimit:FREE_PREVIEW_WORDS,
