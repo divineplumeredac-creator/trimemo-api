@@ -70,7 +70,7 @@ function heading(value, level, formatting) {
     keepNext: true,
     // Une nouvelle page est réservée aux grandes parties, pas à chaque titre de niveau 1.
     // Cela évite les pages blanches entre la couverture, le sommaire et l'introduction.
-    pageBreakBefore: level === 1 && /^PARTIE\\s+/i.test(text(value).trim()),
+    pageBreakBefore: level === 1 && /^PARTIE\s+/i.test(text(value).trim()),
     spacing: {
       before: level === 1 ? 360 : level === 2 ? 280 : 200,
       after: 120,
