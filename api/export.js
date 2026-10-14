@@ -352,33 +352,15 @@ export default async function handler(req, res) {
     if (body.format && body.format !== 'docx') return res.status(400).json({ error: 'Format non pris en charge. Utilisez docx.' });
 
     const compiled = compileDocument(body);
-    let styleResult;
-    try {
-      styleResult = await enforceAcademicStyle({
-        blocks: compiled.blocks,
-        planIntro: compiled.plan?.introductionGeneral || compiled.plan?.introduction || {},
-        planConclusion: compiled.plan?.conclusionGeneral || compiled.plan?.conclusion || {}
-      }, {
-        apiKey: process.env.OPENAI_API_KEY,
-        timeoutMs: 25000
-      });
-    } catch (styleError) {
-      // Export must not discard a paid document solely because the optional
-      // final style pass times out on a long, already-generated manuscript.
-      if (styleError?.name !== "AbortError" && styleError?.code !== 20) throw styleError;
-      console.warn("TRIMEMO_EXPORT_STYLE_TIMEOUT_CONTINUING", {
-        name: String(styleError?.name || "Error"),
-        code: String(styleError?.code || "")
-      });
-      styleResult = {
-        value: {
-          blocks: compiled.blocks,
-          planIntro: compiled.plan?.introductionGeneral || compiled.plan?.introduction || {},
-          planConclusion: compiled.plan?.conclusionGeneral || compiled.plan?.conclusion || {}
-        },
-        correctedFields: 0
-      };
-    }
+    const styleResult = await enforceAcademicStyle({
+      blocks: compiled.blocks,
+      planIntro: compiled.plan?.introductionGeneral || compiled.plan?.introduction || {},
+      planConclusion: compiled.plan?.conclusionGeneral || compiled.plan?.conclusion || {}
+    }, {
+      apiKey: process.env.OPENAI_API_KEY,
+      timeoutMs: 60000,
+      batchSize: 2
+    });
     compiled.blocks = styleResult.value.blocks;
     if (compiled.plan?.introductionGeneral) compiled.plan.introductionGeneral = styleResult.value.planIntro;
     else if (compiled.plan?.introduction) compiled.plan.introduction = styleResult.value.planIntro;
