@@ -345,7 +345,7 @@ export default async function handler(req, res) {
 
     return fail(res, 404, "Action de paiement inconnue.");
   } catch (error) {
-    console.error("TRIMEMO_PAYMENT_FAILED", { status: Number(error?.status) || 500, code: String(error?.code || "PAYMENT_ERROR") });
+    console.error("TRIMEMO_PAYMENT_FAILED", { status: Number(error?.status) || 500, code: String(error?.code || "PAYMENT_ERROR"), message: String(error?.message || "Erreur inconnue").slice(0, 300), name: String(error?.name || "Error") });
     return fail(res, Number(error?.status) || 500, Number(error?.status) && Number(error.status) < 500 ? error.message : "Le service de paiement est temporairement indisponible.");
   }
 }
