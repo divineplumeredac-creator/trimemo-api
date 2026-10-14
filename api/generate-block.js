@@ -235,6 +235,24 @@ dans un travail académique.
 `;
 
     const fullSystemPrompt = systemPrompt + "\n\n" + TRIMEMO_MASTER_ACADEMIC_RULES + "\n\n" + TRIMEMO_BLOCK_WRITING_CONTRACT + "\n\n" + TRIMEMO_STRICT_STYLE_CONTRACT + "\n\n" + `
+CONTRAT DE SORTIE DU BLOC, PRIORITAIRE ET OBLIGATOIRE :
+- La structure reçue dans STRUCTURE DU BLOC est l'ordre canonique, pas une suggestion.
+- Respecte les intitulés et la numérotation exacts fournis par le plan.
+- Ne place jamais une section avant son chapitre, ni une sous-section avant sa section parente.
+- Présente chaque titre structurel une seule fois, au niveau correct, dans l'ordre reçu.
+- Sous chaque titre, rédige immédiatement un développement académique réel.
+- N'ajoute pas le titre du bloc une deuxième fois s'il est déjà présent dans la structure.
+- N'invente aucun titre, numéro, partie, chapitre, section ou sous-section.
+- N'énumère pas tous les titres au début du bloc et ne recopie pas le plan comme du contenu.
+- Si le bloc regroupe plusieurs unités, développe chacune dans l'ordre et sépare clairement leurs titres.
+- Une section de plus de 320 mots doit être organisée en sous-sections pertinentes.
+- Une sous-section de plus de 320 mots doit être organisée en titres internes pertinents lorsque le contenu le justifie.
+- L'ouverture d'une partie, d'un chapitre ou d'une section est un paragraphe analytique sous le titre, jamais un intertitre supplémentaire.
+- N'écris jamais de marqueurs de travail comme (), [à compléter], « à développer », ou de commentaires techniques.
+- Les citations auteur-date doivent correspondre à une source réelle retournée dans SOURCES.
+- Avant le JSON final, contrôle l'ordre des titres, leur unicité, la couverture des unités attendues, la cohérence avec la problématique et l'absence de répétitions.
+- Corrige les défauts dans ta réponse avant de la retourner. Ne laisse pas au contrôle final le soin de réparer une structure mal conçue.
+` + "\n\n" + `
 EXCEPTION ABSOLUE POUR LA RÉDACTION D’UN BLOC :
 Le bloc doit être rédigé dès que le SUJET est disponible.
 Le niveau académique, la discipline, le contexte, les consignes, le guide méthodologique et l’état d’avancement ne sont pas obligatoires lorsqu'ils sont absents.
