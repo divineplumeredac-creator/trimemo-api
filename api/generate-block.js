@@ -195,6 +195,18 @@ INSTRUCTIONS SPÉCIFIQUES DU BLOC :
 13. Le découpage en blocs est subordonné à la cohérence scientifique, jamais à un quota mécanique de mots.
 14. Un bloc peut couvrir une section entière et toutes ses sous-sections, ou plusieurs sections consécutives lorsqu'elles forment une même unité argumentative.
 15. Développe toutes les unités présentes dans STRUCTURE DU BLOC, dans leur ordre, sans en supprimer une.
+MISE EN FORME DU TEXTE, OBLIGATOIRE DÈS LA PREMIÈRE GÉNÉRATION :
+- Chaque titre doit occuper sa propre ligne, précédé et suivi d'une ligne vide.
+- Sépare les paragraphes par une ligne vide réelle (deux caractères de saut de ligne).
+- Une introduction ne doit jamais être livrée comme un seul paragraphe continu.
+- Dans une introduction générale, rédige plusieurs paragraphes cohérents, chacun centré sur une idée : contexte, constat, intérêt, problématique, objectifs, méthode, délimitation et annonce du plan selon les consignes.
+- Un paragraphe développe une idée complète, avec plusieurs phrases liées. Ne fais pas un retour à la ligne après chaque phrase.
+- Ne mets jamais un paragraphe explicatif en gras. Le gras ou le balisage Markdown ne sert pas à distinguer les paragraphes.
+- Les titres de parties, chapitres, sections et sous-sections doivent être séparés du texte explicatif.
+- Ne place jamais un titre et le début du paragraphe sur la même ligne.
+- Pour les titres, utilise des lignes Markdown dédiées (## pour partie, ### pour chapitre, #### pour section, ##### pour sous-section) lorsque le format du bloc l'autorise.
+- Le contenu final doit conserver cette structure lors de l'affichage et de l'export Word.
+
 RÈGLE ABSOLUE DE STRUCTURATION DES BLOCS :
 Le bloc est une unité technique de génération. Il ne remplace jamais les unités scientifiques du plan.
 Un objectif d’environ 900 mots ne doit jamais produire un texte continu de 900 mots sans structuration.
