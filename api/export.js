@@ -106,13 +106,27 @@ function structureLevel(label) {
   if (/^\d+\.\d+\.\d+\.\d+\s*:/i.test(value)) return 5;
   return 0;
 }
+function stripLeadingTitle(value, title) {
+  const lines = text(value).split(/\r?\n/);
+  while (lines.length && !lines[0].trim()) lines.shift();
+  if (lines.length) {
+    const first = lines[0].trim().replace(/^#{1,5}\s+/, '').replace(/:$/, '').trim();
+    if (first.toLocaleLowerCase('fr') === String(title).toLocaleLowerCase('fr')) lines.shift();
+  }
+  return lines.join('\n').trim();
+}
 function cleanAcademicText(value) {
   return text(value)
     .replace(/\*\*(.*?)\*\*/g, '$1')
     .replace(/\*(.*?)\*/g, '$1')
     .replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, '$1')
     .replace(/([?&])utm_(source|medium|campaign|term|content)=[^&\s)]+/gi, '$1')
+    // Supprimer les marqueurs vides laissés par la génération des citations.
+    .replace(/\(\s*\)/g, '')
+    .replace(/\[\s*à compléter\s*\]/giu, '')
+    .replace(/\(\s*à compléter\s*\)/giu, '')
     .replace(/[ \t]+/g, ' ')
+    .replace(/ +([,.;:!?])/g, '$1')
     .trim();
 }
 function normalizeHeadingKey(value) {
@@ -204,7 +218,17 @@ function addStructuredBlock(children, block, formatting, hierarchy = {}) {
 
     if (markdown) {
       flush();
-      children.push(heading(markdown.title, markdown.level, formatting));
+      const level = markdown.level;
+      const key = normalizeHeadingKey(markdown.title);
+      const parentKey = hierarchy[level - 1] || '';
+      const occurrenceKey = parentKey + '|' + level + '|' + key;
+      if (key && hierarchy[level] !== key && !hierarchy.__emitted?.has(occurrenceKey)) {
+        if (!hierarchy.__emitted) hierarchy.__emitted = new Set();
+        hierarchy.__emitted.add(occurrenceKey);
+        children.push(heading(markdown.title, level, formatting));
+        hierarchy[level] = key;
+        for (let deeper = level + 1; deeper <= 5; deeper++) delete hierarchy[deeper];
+      }
       continue;
     }
 
@@ -292,7 +316,10 @@ function buildChildren(compiled, formatting) {
   const hierarchy = {};
 
   if (introductionBlocks.length) {
-    for (const block of introductionBlocks) addStructuredBlock(children, block, formatting, hierarchy);
+    for (const block of introductionBlocks) {
+      const cleanedBlock = { ...block, content: stripLeadingTitle(block.content, 'Introduction générale') };
+      addStructuredBlock(children, cleanedBlock, formatting, hierarchy);
+    }
   } else {
     const intro = compiled.plan?.introductionGeneral || compiled.plan?.introduction || {};
     if (text(intro.content)) addContent(children, intro.content, formatting);
@@ -303,7 +330,7 @@ function buildChildren(compiled, formatting) {
   if (conclusionBlocks.length) {
     children.push(heading('Conclusion générale', 1, formatting));
     for (const block of conclusionBlocks) {
-      const content = text(block.content);
+      const content = stripLeadingTitle(block.content, 'Conclusion générale');
       addContent(children, content, formatting);
     }
   } else if (text(compiled.plan?.conclusionGeneral?.content || compiled.plan?.conclusion?.content)) {
