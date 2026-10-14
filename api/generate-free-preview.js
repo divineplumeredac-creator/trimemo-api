@@ -13,10 +13,44 @@ const WORDS_PER_PAGE = 320;
 const FREE_PREVIEW_WORDS = 2500;
 const PREVIEW_INTRO_WORDS = 500;
 
+function countWords(value) {
+  return String(value || "").trim().split(/\\s+/u).filter(Boolean).length;
+}
+
+// Conserve les paragraphes entiers. Si un paragraphe dépasse le quota restant,
+// ne conserve que ses phrases complètes qui tiennent dans la limite.
 function trimToWords(value, limit) {
-  const words = String(value || "").trim().split(/\s+/).filter(Boolean);
-  if (words.length <= limit) return words.join(" ");
-  return words.slice(0, limit).join(" ") + "…";
+  const source = String(value || "").trim();
+  if (!source || limit <= 0) return "";
+  if (countWords(source) <= limit) return source;
+
+  const paragraphs = source.split(/\\n\\s*\\n/u).map((part) => part.trim()).filter(Boolean);
+  const kept = [];
+  let used = 0;
+  for (const paragraph of paragraphs) {
+    const paragraphWords = countWords(paragraph);
+    if (used + paragraphWords <= limit) {
+      kept.push(paragraph);
+      used += paragraphWords;
+      continue;
+    }
+
+    const remaining = limit - used;
+    if (remaining > 0) {
+      const sentences = paragraph.match(/[^.!?]+[.!?]+(?:["’”')\\]]*)|[^.!?]+$/gu) || [];
+      const completeSentences = [];
+      let sentenceWords = 0;
+      for (const sentence of sentences) {
+        const nextCount = countWords(sentence);
+        if (sentenceWords + nextCount > remaining) break;
+        completeSentences.push(sentence.trim());
+        sentenceWords += nextCount;
+      }
+      if (completeSentences.length) kept.push(completeSentences.join(" "));
+    }
+    break;
+  }
+  return kept.join("\\n\\n");
 }
 
 function cors(res, req) { setCors(res, req, "POST, OPTIONS"); }
