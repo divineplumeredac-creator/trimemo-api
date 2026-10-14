@@ -86,14 +86,17 @@ export default async function handler(req, res) {
     if (action === "signup" || action === "login") {
       const email = validEmail(body.email);
       const password = String(body.password || "");
+      const firstName = String(body.firstName || "").trim().slice(0, 100);
+      const lastName = String(body.lastName || "").trim().slice(0, 100);
       if (!email) return fail(res, 400, "Saisissez une adresse e-mail valide.");
       if (password.length < 8 || password.length > 128) return fail(res, 400, "Le mot de passe doit contenir entre 8 et 128 caractères.");
+      if (action === "signup" && (!firstName || !lastName)) return fail(res, 400, "Le prénom et le nom sont obligatoires pour créer un compte.");
       if (action === "signup") {
         const { url, key } = config();
         const created = await fetch(url + "/auth/v1/admin/users", {
           method: "POST",
           headers: { apikey: key, Authorization: "Bearer " + key, "Content-Type": "application/json" },
-          body: JSON.stringify({ email, password, email_confirm: true, user_metadata: { product: "Trimémo" } }),
+          body: JSON.stringify({ email, password, email_confirm: true, user_metadata: { product: "Trimémo", first_name: firstName, last_name: lastName, full_name: (firstName + " " + lastName).trim() } }),
           signal: AbortSignal.timeout(10000),
         });
         const result = await created.json().catch(() => ({}));
@@ -112,7 +115,7 @@ export default async function handler(req, res) {
         success: true,
         token: session.access_token,
         expires_at: session.expires_at || null,
-        user: { id: session.user.id, email: session.user.email || email },
+        user: { id: session.user.id, email: session.user.email || email, firstName: String(session.user.user_metadata?.first_name || firstName || ""), lastName: String(session.user.user_metadata?.last_name || lastName || "") },
       });
     }
     const token = String(body.token || "").trim();
