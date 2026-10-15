@@ -382,6 +382,21 @@ export default async function handler(req, res) {
     if (body.format && body.format !== 'docx') return res.status(400).json({ error: 'Format non pris en charge. Utilisez docx.' });
 
     const compiled = compileDocument(body);
+
+    // L'export ne doit jamais masquer un bloc vide ou resté inachevé.
+    const incompleteBlocks = compiled.blocks.filter((block) => !text(block.content).trim());
+    if (incompleteBlocks.length) {
+      const titles = incompleteBlocks.slice(0, 5).map((block) => text(block.title || block.id || "Bloc sans titre"));
+      const error = new Error(
+        "Export interrompu : " + incompleteBlocks.length +
+        " bloc(s) restent vides ou inachevés. Terminez-les avant l’export. " +
+        "Blocs concernés : " + titles.join(" ; ") +
+        (incompleteBlocks.length > titles.length ? " ; …" : "")
+      );
+      error.status = 422;
+      throw error;
+    }
+
     const styleResult = await enforceAcademicStyle({
       blocks: compiled.blocks,
       planIntro: compiled.plan?.introductionGeneral || compiled.plan?.introduction || {},
