@@ -156,7 +156,7 @@ export default async function handler(req, res) {
           blocks[introIndex] = {
             ...blocks[introIndex],
             content: previewIntroduction,
-            wordCount: previewIntroduction.split(/\\s+/u).filter(Boolean).length,
+            wordCount: previewIntroduction.split(/\s+/u).filter(Boolean).length,
             status: "done",
             error: undefined,
           };
