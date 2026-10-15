@@ -145,9 +145,28 @@ export default async function handler(req, res) {
       if (!recoveryToken) return fail(res, 400, "Le lien de réinitialisation est invalide ou expiré. Demandez un nouveau lien.");
       if (password.length < 8 || password.length > 128) return fail(res, 400, "Le nouveau mot de passe doit contenir entre 8 et 128 caractères.");
       const { url, key } = config();
+
+      // Supabase peut renvoyer soit un access_token JWT dans le fragment,
+      // soit un token_hash opaque dans l'URL. Dans le second cas, vérifier
+      // explicitement le jeton de récupération avant de changer le mot de passe.
+      let accessToken = recoveryToken;
+      if (recoveryToken.split(".").length !== 3) {
+        const verification = await fetch(url + "/auth/v1/verify", {
+          method: "POST",
+          headers: { apikey: key, "Content-Type": "application/json" },
+          body: JSON.stringify({ token_hash: recoveryToken, type: "recovery" }),
+          signal: AbortSignal.timeout(10000),
+        });
+        const verified = await verification.json().catch(() => ({}));
+        if (!verification.ok || !verified?.access_token) {
+          return fail(res, 400, "Le lien de réinitialisation est invalide ou expiré. Demandez un nouveau lien.");
+        }
+        accessToken = String(verified.access_token);
+      }
+
       const response = await fetch(url + "/auth/v1/user", {
         method: "PUT",
-        headers: { apikey: key, Authorization: "Bearer " + recoveryToken, "Content-Type": "application/json" },
+        headers: { apikey: key, Authorization: "Bearer " + accessToken, "Content-Type": "application/json" },
         body: JSON.stringify({ password }),
         signal: AbortSignal.timeout(10000),
       });
