@@ -119,6 +119,44 @@ export default async function handler(req, res) {
         user: { id: session.user.id, email: session.user.email || email, firstName: String(session.user.user_metadata?.first_name || firstName || ""), lastName: String(session.user.user_metadata?.last_name || lastName || "") },
       });
     }
+    if (action === "forgot-password") {
+      const email = validEmail(body.email);
+      if (!email) return fail(res, 400, "Saisissez une adresse e-mail valide.");
+      const { url, key } = config();
+      const frontendUrl = String(process.env.TRIMEMO_FRONTEND_URL || "https://trimemo-frontend.vercel.app").trim().replace(/\/$/, "");
+      const redirectTo = frontendUrl + "/?reset-password=1";
+      try {
+        await fetch(url + "/auth/v1/recover?redirect_to=" + encodeURIComponent(redirectTo), {
+          method: "POST",
+          headers: { apikey: key, Authorization: "Bearer " + key, "Content-Type": "application/json" },
+          body: JSON.stringify({ email }),
+          signal: AbortSignal.timeout(10000),
+        });
+      } catch (error) {
+        console.error("TRIMEMO_PASSWORD_RECOVERY_REQUEST_FAILED", { message: String(error?.message || "unknown").slice(0, 120) });
+        return fail(res, 502, "Le service de récupération est temporairement indisponible. Réessayez plus tard.");
+      }
+      // Réponse volontairement identique, que l'adresse existe ou non.
+      return res.status(200).json({ success: true, message: "Si un compte correspond à cette adresse, un lien de réinitialisation sera envoyé." });
+    }
+    if (action === "reset-password") {
+      const recoveryToken = String(body.recoveryToken || "").trim();
+      const password = String(body.password || "");
+      if (!recoveryToken) return fail(res, 400, "Le lien de réinitialisation est invalide ou expiré. Demandez un nouveau lien.");
+      if (password.length < 8 || password.length > 128) return fail(res, 400, "Le nouveau mot de passe doit contenir entre 8 et 128 caractères.");
+      const { url, key } = config();
+      const response = await fetch(url + "/auth/v1/user", {
+        method: "PUT",
+        headers: { apikey: key, Authorization: "Bearer " + recoveryToken, "Content-Type": "application/json" },
+        body: JSON.stringify({ password }),
+        signal: AbortSignal.timeout(10000),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result?.id) {
+        return fail(res, 400, "Le lien de réinitialisation est invalide ou expiré. Demandez un nouveau lien.");
+      }
+      return res.status(200).json({ success: true, message: "Mot de passe modifié. Vous pouvez maintenant vous connecter." });
+    }
     const token = String(body.token || "").trim();
     const user = await authenticate(token);
     if (action === "list") {
