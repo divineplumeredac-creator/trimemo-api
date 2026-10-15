@@ -144,6 +144,31 @@ export default async function handler(req, res) {
       const stateRows = await supabase("/rest/v1/trimemo_project_state?project_id=eq." + encodeURIComponent(projectId) + "&select=project_id,state,updated_at&limit=1");
       const stateRow = Array.isArray(stateRows) ? stateRows[0] : null;
       if (!stateRow?.state) return fail(res, 404, "Le contenu sauvegardé de ce projet est introuvable. Contactez le support avant de créer un nouveau projet.");
+
+      // Restaure l'introduction de l'aperçu dans le bloc de rédaction.
+      // Historiquement, l'introduction restait dans state.preview, tandis que le bloc Introduction générale était vide.
+      const restoredState = { ...stateRow.state };
+      const blocks = Array.isArray(restoredState.blocks) ? restoredState.blocks.map((block) => ({ ...block })) : [];
+      const previewIntroduction = String(restoredState.preview?.introduction?.content || "").trim();
+      if (previewIntroduction) {
+        const introIndex = blocks.findIndex((block) => String(block.kind || "").toLowerCase() === "introduction");
+        if (introIndex >= 0 && !String(blocks[introIndex].content || "").trim()) {
+          blocks[introIndex] = {
+            ...blocks[introIndex],
+            content: previewIntroduction,
+            wordCount: previewIntroduction.split(/\\s+/u).filter(Boolean).length,
+            status: "done",
+            error: undefined,
+          };
+        }
+      }
+      restoredState.blocks = blocks;
+      const preferredBlock = blocks.find((block) => block.id === restoredState.selectedWritingBlockId);
+      if (!preferredBlock || preferredBlock.status === "done" || String(preferredBlock.content || "").trim()) {
+        const nextPending = blocks.find((block) => block.status !== "done" || !String(block.content || "").trim());
+        restoredState.selectedWritingBlockId = nextPending?.id || preferredBlock?.id || blocks.find((block) => String(block.content || "").trim())?.id || blocks[0]?.id || null;
+      }
+
       let premiumToken = "";
       if (membership.payment_status === "paid") {
         const orders = await supabase("/rest/v1/trimemo_orders?project_id=eq." + encodeURIComponent(projectId) + "&status=in.(paid,consumed)&select=order_id,project_id,project_snapshot,status&order=paid_at.desc&limit=1");
@@ -155,7 +180,7 @@ export default async function handler(req, res) {
       return res.status(200).json({
         success: true,
         project: { project_id: membership.project_id, subject: membership.subject, payment_status: membership.payment_status },
-        state: stateRow.state,
+        state: restoredState,
         premium_token: premiumToken || null,
         updatedAt: stateRow.updated_at,
       });
