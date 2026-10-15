@@ -320,8 +320,19 @@ ${typeof plan === "string"
 BLOC À RÉDIGER :
 ${blockTitle}
 
-STRUCTURE DU BLOC :
+STRUCTURE DU BLOC (TITRES À AFFICHER DANS CE BLOC UNIQUEMENT) :
 ${structure.length ? structure.join(" > ") : "Structure fournie dans le plan"}
+
+RÈGLE DE HIÉRARCHIE ET DE NON-RÉPÉTITION :
+- La liste STRUCTURE DU BLOC contient uniquement les titres qui doivent apparaître dans le contenu de ce bloc.
+- Les titres parents déjà traités dans les blocs précédents servent de contexte, pas de titres à recopier.
+- Si la partie et le chapitre ont déjà été affichés, commence directement par le premier titre de section attendu.
+- Si une section a déjà été traitée, commence par la première sous-section encore attendue.
+- N'affiche jamais un titre parent uniquement pour rappeler le contexte.
+- N'affiche jamais l'identifiant technique du bloc, son numéro interne ou une formule telle que « Bloc 3 ».
+- Respecte strictement l'ordre et la numérotation des titres fournis. Ne transforme pas un titre en phrase intégrée au paragraphe.
+- Si un titre attendu apparaît déjà dans l'historique, ne le répète pas, sauf si le bloc demandé reprend explicitement cette unité encore incomplète.
+- Sous chaque titre effectivement affiché, place le paragraphe d'ouverture approprié, puis son développement. Ne fusionne jamais le titre avec le texte.
 
 FONCTION DU BLOC :
 ${blockKind || "Non précisée"}
