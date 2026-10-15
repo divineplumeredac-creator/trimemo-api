@@ -142,8 +142,16 @@ export default async function handler(req, res) {
 
     const isPartStart = ["part", "partie", "part_intro", "partie_intro", "part-intro", "partie-intro"].includes(blockKind);
     const isChapterStart = ["chapter", "chapitre", "chapter_intro", "chapitre_intro", "chapter-intro", "chapitre-intro"].includes(blockKind);
+    // Conserver l'historique des blocs pour éviter qu'une suite ne reparte de l'introduction.
+    // Les blocs récents gardent leur texte intégral ; les anciens gardent un extrait pour le contexte.
     const preceding = Array.isArray(body.preceding)
-      ? body.preceding.slice(-3)
+      ? body.preceding.slice(-30).map((item, index, all) => ({
+          title: String(item?.title || "").slice(0, 240),
+          content: index >= all.length - 3
+            ? String(item?.content || "").slice(-7000)
+            : String(item?.content || "").slice(0, 1200),
+          sources: Array.isArray(item?.sources) ? item.sources.slice(0, 12) : []
+        })).filter((item) => item.title || item.content)
       : [];
 
     const targetWords = Number(
@@ -321,6 +329,14 @@ Début de partie : ${isPartStart ? "OUI" : "NON"}
 Début de chapitre : ${isChapterStart ? "OUI" : "NON"}
 Si « Début de partie » ou « Début de chapitre » vaut OUI, l'ouverture doit être un paragraphe directement placé sous le titre concerné, sans intertitre supplémentaire.
 Chaque SECTION doit également recevoir une brève introduction directement sous son titre, avant sa première sous-section. Si plusieurs sections figurent dans le bloc, répétez cette règle pour chacune.
+
+CONTINUITÉ OBLIGATOIRE :
+- Les blocs précédents constituent l'historique réel du document. Continue après leur dernier contenu, sans recommencer le document.
+- Si « Introduction générale » figure déjà dans les blocs précédents, ne rédige aucune nouvelle introduction générale, problématique, justification, méthodologie générale ou annonce du plan.
+- Ne reprends pas un titre déjà développé, sauf si ce titre fait explicitement partie du bloc demandé et que son contenu est encore vide.
+- Le bloc demandé est la seule unité à rédiger. Ne remplace jamais son contenu par celui d'un autre bloc.
+- Avant de rédiger, identifie le dernier titre traité et la place exacte du bloc demandé dans le plan.
+- Si le bloc demandé n'est pas une introduction, commence directement par son titre ou son développement attendu, jamais par une nouvelle introduction générale.
 
 CONTENU ET SOURCES DES BLOCS PRÉCÉDENTS :
 ${preceding.length ? JSON.stringify(preceding) : "Aucun bloc précédent transmis."}
