@@ -534,6 +534,12 @@ export default async function handler(req, res) {
 
     const settings = await readAdminSettings();
     const projectId = String(project.projectId || project.project_id || "").trim();
+    const maxPages = Math.max(1, Math.min(300, Number(settings.quotas?.maxPages) || 300));
+    if (Number(project.pages || 1) > maxPages) {
+      const error = new Error("Le volume demandé dépasse la limite administrateur de " + maxPages + " pages.");
+      error.status = 400;
+      throw error;
+    }
     if (body.ownerMode !== true) {
       await assertGenerationQuota("generate-problematics", projectId, count, settings.quotas.maxProblematicGenerations);
     }
