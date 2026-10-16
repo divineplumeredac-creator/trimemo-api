@@ -1,0 +1,409 @@
+import { requireOwner } from "../lib/owner-auth.js";
+import { setCors } from "../lib/http.js";
+import { readAdminSettings, writeAdminSettings, supabaseAdminConfig, supabaseAdminRequest } from "../lib/admin-data.js";
+import { logAdminEvent } from "../lib/admin-telemetry.js";
+
+const DEFAULT_MARKETS = ["africa", "europe", "northAmerica", "international"];
+const DOCUMENT_TYPES = ["devoir", "rapport", "memoire", "article", "these"];
+
+function reply(res, status, payload) { return res.status(status).json(payload); }
+function errorStatus(error) { return Number(error?.status) || 500; }
+function asArray(value) { return Array.isArray(value) ? value : []; }
+function safeStr(value, max = 300) { return String(value ?? "").trim().slice(0, max); }
+function safeNumber(value, min, max, field) {
+  const num = Number(value);
+  if (!Number.isFinite(num) || num < min || num > max) {
+    const error = new Error("Valeur invalide pour " + field + ".");
+    error.status = 400;
+    throw error;
+  }
+  return num;
+}
+async function authAdminRequest(path, init = {}) {
+  const { url, key } = supabaseAdminConfig();
+  const response = await fetch(url + path, {
+    ...init,
+    headers: { apikey: key, Authorization: "Bearer " + key, "Content-Type": "application/json", ...(init.headers || {}) },
+    signal: AbortSignal.timeout(12000),
+  });
+  const raw = await response.text();
+  let data = {};
+  try { data = raw ? JSON.parse(raw) : {}; } catch {}
+  if (!response.ok) {
+    const error = new Error(String(data?.msg || data?.message || data?.error_description || "Opération Auth impossible.").slice(0, 300));
+    error.status = response.status;
+    throw error;
+  }
+  return data;
+}
+async function getAllAuthUsers() {
+  const users = [];
+  for (let page = 1; page <= 50; page++) {
+    const data = await authAdminRequest("/auth/v1/admin/users?page=" + page + "&per_page=100");
+    const batch = asArray(data?.users || data);
+    users.push(...batch);
+    if (batch.length < 100) break;
+  }
+  return users;
+}
+async function getAllRows(path, pageSize = 1000, maxRows = 10000) {
+  const rows = [];
+  for (let offset = 0; offset < maxRows; offset += pageSize) {
+    const sep = path.includes("?") ? "&" : "?";
+    const result = await supabaseAdminRequest(path + sep + "limit=" + pageSize + "&offset=" + offset);
+    const batch = asArray(result.data);
+    rows.push(...batch);
+    if (batch.length < pageSize) break;
+  }
+  return rows;
+}
+function formatUser(user, projectCounts = {}) {
+  const until = user?.banned_until ? Date.parse(user.banned_until) : 0;
+  const isBanned = Number.isFinite(until) && until > Date.now();
+  return {
+    id: user.id,
+    email: safeStr(user.email, 254),
+    created_at: user.created_at || null,
+    last_sign_in_at: user.last_sign_in_at || null,
+    banned_until: user.banned_until || null,
+    disabled: isBanned || user?.app_metadata?.trimemo_access === "suspended",
+    access: user?.app_metadata?.trimemo_access === "suspended" ? "suspended" : (isBanned ? "suspended" : "active"),
+    project_count: Number(projectCounts[user.id] || 0),
+    display_name: safeStr(user?.user_metadata?.full_name || user?.user_metadata?.name || "", 120),
+  };
+}
+function blockStats(state, membership = {}) {
+  const blocks = asArray(state?.blocks || state?.document?.blocks || state?.writing?.blocks);
+  const completed = blocks.filter(block => block?.status === "done" && String(block?.content || "").trim());
+  const target = blocks.reduce((sum, block) => sum + Math.max(0, Number(block?.expectedWords || 0)), 0);
+  const words = completed.reduce((sum, block) => sum + Math.max(0, Number(block?.wordCount || String(block?.content || "").trim().split(/\s+/u).filter(Boolean).length)), 0);
+  const percent = target > 0 ? Math.min(100, Math.round(words / target * 100)) : (blocks.length ? Math.round(completed.length / blocks.length * 100) : 0);
+  const project = state?.project || {};
+  return {
+    subject: safeStr(membership.subject || project.sujet || project.subject || state?.subject || "Projet sans titre", 240),
+    level: safeStr(project.niveau || project.level || "", 60),
+    domain: safeStr(project.domaine || project.discipline || "", 100),
+    document_type: safeStr(project.typeDoc || project.documentType || "", 80),
+    status: safeStr(membership.payment_status || state?.status || "draft", 40),
+    progress_percent: percent,
+    blocks_done: completed.length,
+    blocks_total: blocks.length,
+    words_written: words,
+    updated_at: membership.updated_at || state?.updated_at || null,
+  };
+}
+function money(value) {
+  const num = Number(String(value ?? "").replace(",", "."));
+  return Number.isFinite(num) ? num : 0;
+}
+function aggregateRevenue(orders) {
+  const currencies = {};
+  const months = {};
+  for (const order of orders) {
+    const currency = safeStr(order.currency || "UNKNOWN", 12).toUpperCase();
+    const amount = money(order.amount);
+    const refund = order.refund_status === "refunded" || order.status === "refunded" ? money(order.refund_amount || order.amount) : 0;
+    currencies[currency] ||= { currency, gross: 0, refunds: 0, net: 0, pending: 0, paid_orders: 0, refunded_orders: 0 };
+    const item = currencies[currency];
+    if (["paid", "consumed", "refunded"].includes(order.status)) {
+      item.gross += amount;
+      item.paid_orders += 1;
+    } else if (order.status === "pending") item.pending += amount;
+    if (refund > 0) { item.refunds += refund; item.refunded_orders += 1; }
+    item.net = item.gross - item.refunds;
+    if (order.paid_at) {
+      const month = String(order.paid_at).slice(0, 7);
+      const key = month + "|" + currency;
+      months[key] ||= { month, currency, gross: 0, refunds: 0, net: 0 };
+      if (order.status !== "pending") months[key].gross += amount;
+      months[key].refunds += refund;
+      months[key].net = months[key].gross - months[key].refunds;
+    }
+  }
+  return {
+    by_currency: Object.values(currencies).map(v => Object.fromEntries(Object.entries(v).map(([k, n]) => [k, typeof n === "number" ? Number(n.toFixed(2)) : n]))),
+    by_month: Object.values(months).sort((a, b) => a.month.localeCompare(b.month)).map(v => ({ ...v, gross: Number(v.gross.toFixed(2)), refunds: Number(v.refunds.toFixed(2)), net: Number(v.net.toFixed(2)) })),
+  };
+}
+async function loadClients() {
+  const [users, memberships] = await Promise.all([
+    getAllAuthUsers(),
+    getAllRows("/rest/v1/trimemo_client_projects?select=user_id,project_id"),
+  ]);
+  const counts = {};
+  for (const row of memberships) counts[row.user_id] = (counts[row.user_id] || 0) + 1;
+  return users.map(user => formatUser(user, counts)).sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+}
+async function loadProjects() {
+  const [memberships, states, users] = await Promise.all([
+    getAllRows("/rest/v1/trimemo_client_projects?select=user_id,project_id,subject,payment_status,created_at,updated_at&order=updated_at.desc"),
+    getAllRows("/rest/v1/trimemo_project_state?select=project_id,state,updated_at&order=updated_at.desc"),
+    getAllAuthUsers(),
+  ]);
+  const membershipById = new Map(memberships.map(row => [String(row.project_id), row]));
+  const userById = new Map(users.map(user => [String(user.id), safeStr(user.email, 254)]));
+  const stateById = new Map(states.map(row => [String(row.project_id), row]));
+  const ids = new Set([...membershipById.keys(), ...stateById.keys()]);
+  return [...ids].map(id => {
+    const membership = membershipById.get(id) || {};
+    const stateRow = stateById.get(id) || {};
+    const state = stateRow.state || {};
+    const stats = blockStats(state, membership);
+    return {
+      project_id: id,
+      subject: stats.subject,
+      email: userById.get(String(membership.user_id)) || "",
+      user_id: membership.user_id || null,
+      level: stats.level,
+      domain: stats.domain,
+      document_type: stats.document_type,
+      status: stats.status,
+      progress_percent: stats.progress_percent,
+      blocks_done: stats.blocks_done,
+      blocks_total: stats.blocks_total,
+      words_written: stats.words_written,
+      created_at: membership.created_at || null,
+      updated_at: stats.updated_at,
+    };
+  }).sort((a, b) => String(b.updated_at || b.created_at || "").localeCompare(String(a.updated_at || a.created_at || "")));
+}
+async function loadOrders() {
+  const orders = await getAllRows("/rest/v1/trimemo_orders?select=order_id,project_id,status,amount,currency,capture_id,created_at,paid_at,consumed_at,refund_status,refunded_at,refund_id,refund_amount,updated_at&order=created_at.desc");
+  const memberships = await getAllRows("/rest/v1/trimemo_client_projects?select=project_id,subject,user_id");
+  const states = await getAllRows("/rest/v1/trimemo_project_state?select=project_id,state");
+  const users = await getAllAuthUsers();
+  const userById = new Map(users.map(user => [String(user.id), safeStr(user.email, 254)]));
+  const subjectById = new Map();
+  for (const row of memberships) subjectById.set(String(row.project_id), { subject: row.subject, user_id: row.user_id });
+  for (const row of states) {
+    const s = row.state?.project || {};
+    const id = String(row.project_id);
+    if (!subjectById.has(id)) subjectById.set(id, { subject: s.sujet || s.subject || "Projet sans titre", user_id: null });
+  }
+  const clean = orders.map(order => {
+    const link = subjectById.get(String(order.project_id)) || {};
+    return {
+      order_id: order.order_id, project_id: order.project_id, subject: safeStr(link.subject || "Projet non relié", 240),
+      customer_email: userById.get(String(link.user_id)) || "",
+      status: order.status, amount: order.amount, currency: order.currency,
+      has_capture: Boolean(order.capture_id), capture_id: order.capture_id || null,
+      created_at: order.created_at, paid_at: order.paid_at, consumed_at: order.consumed_at,
+      refund_status: order.refund_status || "none", refunded_at: order.refunded_at || null,
+      refund_id: order.refund_id || null, refund_amount: order.refund_amount || null,
+    };
+  });
+  return { orders: clean, revenue: aggregateRevenue(orders) };
+}
+async function loadUsage() {
+  const rows = await getAllRows("/rest/v1/trimemo_openai_usage?select=id,endpoint,model,input_tokens,output_tokens,total_tokens,estimated_cost_usd,status,duration_ms,request_id,error_code,metadata,created_at&order=created_at.desc", 1000, 5000);
+  const summary = rows.reduce((acc, row) => {
+    acc.requests += 1;
+    acc.input_tokens += Number(row.input_tokens || 0);
+    acc.output_tokens += Number(row.output_tokens || 0);
+    acc.total_tokens += Number(row.total_tokens || 0);
+    if (row.status === "error") acc.errors += 1;
+    if (row.estimated_cost_usd !== null && row.estimated_cost_usd !== undefined) {
+      acc.estimated_cost_usd += money(row.estimated_cost_usd);
+      acc.cost_coverage += 1;
+    }
+    const key = safeStr(row.endpoint || "unknown", 100);
+    acc.by_endpoint[key] ||= { endpoint: key, calls: 0, input_tokens: 0, output_tokens: 0, total_tokens: 0, estimated_cost_usd: 0, priced_calls: 0, errors: 0 };
+    const entry = acc.by_endpoint[key];
+    entry.calls += 1; entry.input_tokens += Number(row.input_tokens || 0); entry.output_tokens += Number(row.output_tokens || 0);
+    entry.total_tokens += Number(row.total_tokens || 0);
+    if (row.status === "error") entry.errors += 1;
+    if (row.estimated_cost_usd !== null && row.estimated_cost_usd !== undefined) {
+      entry.estimated_cost_usd += money(row.estimated_cost_usd); entry.priced_calls += 1;
+    }
+    return acc;
+  }, { requests: 0, input_tokens: 0, output_tokens: 0, total_tokens: 0, estimated_cost_usd: 0, cost_coverage: 0, errors: 0, by_endpoint: {} });
+  summary.estimated_cost_usd = Number(summary.estimated_cost_usd.toFixed(6));
+  return { summary, by_endpoint: Object.values(summary.by_endpoint).map(v => ({ ...v, estimated_cost_usd: Number(v.estimated_cost_usd.toFixed(6)) })), records: rows.slice(0, 300).map(row => ({ ...row, metadata: row.metadata || {} })) };
+}
+function validateSettings(body) {
+  const currentDefaults = {
+    markets: {
+      africa: { currency: "XOF", label: "Afrique francophone", rates: { devoir: 150, rapport: 200, memoire: 250, article: 300, these: 300 } },
+      europe: { currency: "EUR", label: "Europe", rates: { devoir: 0.4, rapport: 0.6, memoire: 0.8, article: 1, these: 1.3 } },
+      northAmerica: { currency: "USD", label: "Canada / États-Unis", rates: { devoir: 0.5, rapport: 0.75, memoire: 1, article: 1.25, these: 1.6 } },
+      international: { currency: "USD", label: "Marché international", rates: { devoir: 0.5, rapport: 0.75, memoire: 1, article: 1.25, these: 1.6 } },
+    },
+    levelCoefficients: { licence: 1, master: 1.15, doctorat: 1.4 },
+    complexityCoefficients: { faible: 0.9, moyenne: 1, elevee: 1.2 },
+  };
+  const supplied = body.pricing_config || {};
+  const config = { markets: {}, levelCoefficients: {}, complexityCoefficients: {} };
+  for (const market of DEFAULT_MARKETS) {
+    const base = currentDefaults.markets[market];
+    const input = supplied.markets?.[market] || {};
+    const currency = safeStr(input.currency || base.currency, 6).toUpperCase();
+    if (!["XOF", "EUR", "USD", "CAD"].includes(currency)) { const e = new Error("Devise non prise en charge."); e.status = 400; throw e; }
+    const rates = {};
+    for (const type of DOCUMENT_TYPES) rates[type] = safeNumber(input.rates?.[type] ?? base.rates[type], 0, 1000000, market + "." + type);
+    config.markets[market] = { currency, label: safeStr(input.label || base.label, 80), rates };
+  }
+  for (const level of ["licence", "master", "doctorat"]) config.levelCoefficients[level] = safeNumber(supplied.levelCoefficients?.[level] ?? currentDefaults.levelCoefficients[level], 0.1, 10, "coefficient " + level);
+  for (const complexity of ["faible", "moyenne", "elevee"]) config.complexityCoefficients[complexity] = safeNumber(supplied.complexityCoefficients?.[complexity] ?? currentDefaults.complexityCoefficients[complexity], 0.1, 10, "complexité " + complexity);
+  const rawQuotas = body.quotas || {};
+  const quotas = {
+    maxProblematicGenerations: Math.round(safeNumber(rawQuotas.maxProblematicGenerations ?? 3, 1, 10, "quota de problématiques")),
+    maxPlanGenerations: Math.round(safeNumber(rawQuotas.maxPlanGenerations ?? 3, 1, 10, "quota de plans")),
+    freePreviewWords: Math.round(safeNumber(rawQuotas.freePreviewWords ?? 300, 0, 5000, "aperçu gratuit")),
+    wordsPerPage: Math.round(safeNumber(rawQuotas.wordsPerPage ?? 320, 100, 1000, "mots par page")),
+    maxPages: Math.round(safeNumber(rawQuotas.maxPages ?? 300, 1, 300, "pages maximum")),
+  };
+  const costs = body.usage_costs || {};
+  function optionalRate(value, field) {
+    if (value === null || value === undefined || value === "") return null;
+    return safeNumber(value, 0, 1000000, field);
+  }
+  const usage_costs = {
+    inputUsdPerMillion: optionalRate(costs.inputUsdPerMillion, "coût OpenAI entrée"),
+    outputUsdPerMillion: optionalRate(costs.outputUsdPerMillion, "coût OpenAI sortie"),
+  };
+  return { pricing_config: config, quotas, usage_costs };
+}
+async function findOrder(orderId) {
+  const query = "/rest/v1/trimemo_orders?order_id=eq." + encodeURIComponent(orderId) + "&select=order_id,project_id,status,amount,currency,capture_id,refund_status,refund_id,refund_amount&limit=1";
+  const result = await supabaseAdminRequest(query);
+  return asArray(result.data)[0] || null;
+}
+function paypalBaseUrl() {
+  return String(process.env.PAYPAL_ENV || "sandbox").toLowerCase() === "live" ? "https://api-m.paypal.com" : "https://api-m.sandbox.paypal.com";
+}
+async function getPaypalToken() {
+  const clientId = String(process.env.PAYPAL_CLIENT_ID || "");
+  const secret = String(process.env.PAYPAL_CLIENT_SECRET || "");
+  if (!clientId || !secret) { const e = new Error("Les identifiants PayPal serveur ne sont pas configurés."); e.status = 503; throw e; }
+  const response = await fetch(paypalBaseUrl() + "/v1/oauth2/token", {
+    method: "POST", headers: { Authorization: "Basic " + Buffer.from(clientId + ":" + secret).toString("base64"), "Content-Type": "application/x-www-form-urlencoded" },
+    body: "grant_type=client_credentials", signal: AbortSignal.timeout(12000),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || !data.access_token) { const e = new Error("PayPal n'a pas délivré de jeton pour le remboursement."); e.status = 502; throw e; }
+  return data.access_token;
+}
+async function updateOrder(orderId, payload) {
+  const query = "/rest/v1/trimemo_orders?order_id=eq." + encodeURIComponent(orderId);
+  const result = await supabaseAdminRequest(query, { method: "PATCH", headers: { Prefer: "return=representation" }, body: JSON.stringify({ ...payload, updated_at: new Date().toISOString() }) });
+  return asArray(result.data)[0] || null;
+}
+async function refreshRefund(order) {
+  if (!order.refund_id || order.refund_status !== "processing") return order;
+  const token = await getPaypalToken();
+  const response = await fetch(paypalBaseUrl() + "/v2/payments/refunds/" + encodeURIComponent(order.refund_id), { headers: { Authorization: "Bearer " + token, Accept: "application/json" }, signal: AbortSignal.timeout(12000) });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) { const e = new Error("Impossible de vérifier l'état du remboursement PayPal."); e.status = 502; throw e; }
+  const status = String(data.status || "").toUpperCase();
+  if (status === "COMPLETED") return updateOrder(order.order_id, { status: "refunded", refund_status: "refunded", refunded_at: new Date().toISOString(), refund_amount: String(data?.amount?.value || order.amount) });
+  if (status === "FAILED" || status === "CANCELLED") return updateOrder(order.order_id, { refund_status: "failed" });
+  return order;
+}
+async function refundOrder(orderId, actor) {
+  let order = await findOrder(orderId);
+  if (!order) { const e = new Error("Commande introuvable."); e.status = 404; throw e; }
+  if (order.refund_status === "refunded" || order.status === "refunded") { const e = new Error("Cette commande a déjà été remboursée."); e.status = 409; throw e; }
+  if (order.refund_status === "processing") return refreshRefund(order);
+  if (!["paid", "consumed"].includes(order.status)) { const e = new Error("Seules les commandes payées peuvent être remboursées."); e.status = 409; throw e; }
+  if (!order.capture_id) { const e = new Error("Aucun identifiant de capture PayPal n'est associé à cette commande. Remboursement automatique indisponible."); e.status = 409; throw e; }
+  const token = await getPaypalToken();
+  const response = await fetch(paypalBaseUrl() + "/v2/payments/captures/" + encodeURIComponent(order.capture_id) + "/refund", {
+    method: "POST",
+    headers: { Authorization: "Bearer " + token, "Content-Type": "application/json", Accept: "application/json", "PayPal-Request-Id": "trimemo-refund-" + String(order.order_id).replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 70) },
+    body: JSON.stringify({}),
+    signal: AbortSignal.timeout(15000),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    await updateOrder(order.order_id, { refund_status: "failed" }).catch(() => null);
+    await logAdminEvent({ actor, category: "payment", severity: "error", action: "refund_failed", message: "PayPal a rejeté le remboursement.", statusCode: response.status, metadata: { orderId: order.order_id, providerIssue: safeStr(data?.details?.[0]?.issue || data?.name || "", 100) } });
+    const e = new Error("PayPal a rejeté le remboursement. Consultez les journaux et vérifiez la commande avant une nouvelle tentative."); e.status = 502; throw e;
+  }
+  const status = String(data.status || "").toUpperCase();
+  const payload = {
+    refund_id: data.id || null,
+    refund_status: status === "COMPLETED" ? "refunded" : "processing",
+    refund_amount: String(data?.amount?.value || order.amount),
+    refunded_at: status === "COMPLETED" ? new Date().toISOString() : null,
+    ...(status === "COMPLETED" ? { status: "refunded" } : {}),
+  };
+  const updated = await updateOrder(order.order_id, payload);
+  await logAdminEvent({ actor, category: "payment", severity: status === "COMPLETED" ? "warning" : "info", action: "refund_" + (status === "COMPLETED" ? "completed" : "processing"), message: status === "COMPLETED" ? "Remboursement PayPal confirmé." : "Remboursement PayPal lancé et en attente.", metadata: { orderId: order.order_id, refundId: data.id || null, currency: order.currency, amount: payload.refund_amount } });
+  return updated || { ...order, ...payload };
+}
+
+export default async function handler(req, res) {
+  setCors(res, req, "POST, OPTIONS");
+  if (req.method === "OPTIONS") return res.status(204).end();
+  if (req.method !== "POST") return reply(res, 405, { ok: false, error: "Utilisez POST." });
+  let actor = "owner";
+  try {
+    const owner = requireOwner(req);
+    actor = safeStr(owner.sub || "owner", 254);
+    const { action } = req.body || {};
+    if (action === "overview") {
+      const [clients, projects, orderData, usageData, logs] = await Promise.all([
+        loadClients(), loadProjects(), loadOrders(), loadUsage(),
+        getAllRows("/rest/v1/trimemo_admin_logs?select=id,actor,category,severity,action,message,request_path,status_code,request_id,metadata,created_at&order=created_at.desc", 300, 300),
+      ]);
+      const allOrders = orderData.orders;
+      return reply(res, 200, {
+        ok: true,
+        summary: { clients: clients.length, projects: projects.length, orders: allOrders.length,
+          paidOrders: allOrders.filter(o => ["paid", "consumed"].includes(o.status)).length,
+          pendingOrders: allOrders.filter(o => o.status === "pending").length,
+          refundedOrders: allOrders.filter(o => o.status === "refunded" || o.refund_status === "refunded").length,
+          activeProjects: projects.filter(p => p.progress_percent < 100).length,
+          revenue: orderData.revenue, usage: usageData.summary, errorLogs: logs.filter(l => ["error", "critical"].includes(l.severity)).length },
+        recentOrders: allOrders.slice(0, 8), recentProjects: projects.slice(0, 8),
+        recentLogs: logs.slice(0, 10), usageByEndpoint: usageData.by_endpoint,
+      });
+    }
+    if (action === "clients") return reply(res, 200, { ok: true, clients: await loadClients() });
+    if (action === "projects") return reply(res, 200, { ok: true, projects: await loadProjects() });
+    if (action === "orders") {
+      const data = await loadOrders();
+      return reply(res, 200, { ok: true, ...data });
+    }
+    if (action === "pricing") {
+      const settings = await readAdminSettings({ strict: true });
+      return reply(res, 200, { ok: true, settings });
+    }
+    if (action === "usage") return reply(res, 200, { ok: true, ...(await loadUsage()) });
+    if (action === "logs") {
+      const logs = await getAllRows("/rest/v1/trimemo_admin_logs?select=id,actor,category,severity,action,message,request_path,status_code,request_id,metadata,created_at&order=created_at.desc", 1000, 3000);
+      return reply(res, 200, { ok: true, logs: logs.slice(0, 1000) });
+    }
+    if (action === "save-settings") {
+      const validated = validateSettings(req.body || {});
+      const settings = await writeAdminSettings({ ...validated, updated_by: actor });
+      await logAdminEvent({ actor, category: "settings", severity: "warning", action: "settings_updated", message: "La grille tarifaire, les quotas ou les paramètres de coût OpenAI ont été modifiés." });
+      return reply(res, 200, { ok: true, settings });
+    }
+    if (action === "update-client") {
+      const clientId = safeStr(req.body?.clientId, 80);
+      const access = req.body?.access === "suspended" ? "suspended" : "active";
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(clientId)) return reply(res, 400, { ok: false, error: "Identifiant client invalide." });
+      const current = await authAdminRequest("/auth/v1/admin/users/" + encodeURIComponent(clientId));
+      const user = current.user || current;
+      const app_metadata = { ...(user.app_metadata || {}), trimemo_access: access };
+      await authAdminRequest("/auth/v1/admin/users/" + encodeURIComponent(clientId), {
+        method: "PUT",
+        body: JSON.stringify({ app_metadata, ban_duration: access === "suspended" ? "876000h" : "none" }),
+      });
+      await logAdminEvent({ actor, category: "account", severity: "warning", action: access === "suspended" ? "client_suspended" : "client_restored", message: access === "suspended" ? "Accès client suspendu par l'administrateur." : "Accès client rétabli par l'administrateur.", metadata: { clientId } });
+      return reply(res, 200, { ok: true, clientId, access });
+    }
+    if (action === "refund-order") {
+      const orderId = safeStr(req.body?.orderId, 160);
+      if (!orderId) return reply(res, 400, { ok: false, error: "Référence de commande absente." });
+      const order = await refundOrder(orderId, actor);
+      return reply(res, 200, { ok: true, order: { order_id: order?.order_id, status: order?.status, refund_status: order?.refund_status, refund_id: order?.refund_id, refund_amount: order?.refund_amount, refunded_at: order?.refunded_at } });
+    }
+    return reply(res, 400, { ok: false, error: "Action administrateur inconnue." });
+  } catch (error) {
+    const status = errorStatus(error);
+    await logAdminEvent({ actor, category: "admin-api", severity: status >= 500 ? "error" : "warning", action: "admin_request_failed", message: safeStr(error?.message || "Erreur administrateur", 450), requestPath: "/api/admin-console", statusCode: status });
+    return reply(res, status, { ok: false, error: status >= 500 ? "Opération administrateur impossible pour le moment." : safeStr(error?.message || "Requête invalide.", 300) });
+  }
+}
