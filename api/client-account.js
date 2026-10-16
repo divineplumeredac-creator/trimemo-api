@@ -60,6 +60,12 @@ async function authenticate(token) {
     error.status = 401;
     throw error;
   }
+  const bannedUntil = user.banned_until ? Date.parse(user.banned_until) : 0;
+  if (user.app_metadata?.trimemo_access === "suspended" || (Number.isFinite(bannedUntil) && bannedUntil > Date.now())) {
+    const error = new Error("L'accès à ce compte Trimémo est suspendu. Contactez le support.");
+    error.status = 403;
+    throw error;
+  }
   return user;
 }
 async function listProjects(userId) {
