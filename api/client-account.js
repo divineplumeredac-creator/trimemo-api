@@ -1,5 +1,6 @@
 import { setCors } from "../lib/http.js";
 import { createPremiumToken } from "../lib/premium-auth.js";
+import { rateLimit } from "../lib/rate-limit.js";
 
 function cors(res, req) { setCors(res, req, "POST, OPTIONS"); }
 function fail(res, status, error) { return res.status(status).json({ error }); }
@@ -90,6 +91,8 @@ export default async function handler(req, res) {
   const body = req.body || {};
   const action = String(body.action || "").trim();
   try {
+    if (action === "signup") await rateLimit(req, "client-signup", 5, 60 * 60 * 1000);
+    if (action === "login") await rateLimit(req, "client-login", 10, 15 * 60 * 1000);
     if (action === "signup" || action === "login") {
       const email = validEmail(body.email);
       const password = String(body.password || "");
@@ -252,8 +255,12 @@ export default async function handler(req, res) {
       const projectId = validProjectId(body.projectId);
       if (!projectId) return fail(res, 400, "Identifiant de projet invalide.");
       const subject = String(body.subject || "Projet académique").trim().slice(0, 240) || "Projet académique";
-      const paymentStatus = body.paid === true ? "paid" : "draft";
       const { url, key } = config();
+      // Le navigateur ne peut jamais déclarer lui-même un projet comme payé.
+      const paidOrders = await supabase("/rest/v1/trimemo_orders?project_id=eq." + encodeURIComponent(projectId) + "&status=in.(paid,consumed)&select=order_id,project_id,status,project_snapshot&order=paid_at.desc&limit=1");
+      const paidOrder = Array.isArray(paidOrders) ? paidOrders[0] : null;
+      const paymentStatus = paidOrder?.project_id === projectId && paidOrder?.project_snapshot ? "paid" : "draft";
+      if (body.paid === true && paymentStatus !== "paid") return fail(res, 403, "Le paiement de ce projet n’est pas confirmé dans le registre sécurisé.");
       const now = new Date().toISOString();
       const response = await fetch(url + "/rest/v1/trimemo_client_projects?on_conflict=user_id,project_id", {
         method: "POST",
@@ -273,6 +280,6 @@ export default async function handler(req, res) {
   } catch (error) {
     const status = Number(error?.status) || 500;
     console.error("TRIMEMO_CLIENT_ACCOUNT_FAILED", { action, status, message: String(error?.message || "unknown").slice(0, 180) });
-    return fail(res, status >= 400 && status < 500 ? status : 502, status === 503 ? "Le service de comptes clients est indisponible." : String(error?.message || "Opération de compte impossible."));
+    return fail(res, status === 503 ? 503 : (status >= 400 && status < 500 ? status : 502), status === 503 ? "Le service de comptes clients ou de limitation des requêtes est indisponible." : String(error?.message || "Opération de compte impossible."));
   }
 }
