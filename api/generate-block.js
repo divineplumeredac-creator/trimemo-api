@@ -4,6 +4,8 @@ import { enforceAcademicStyle } from "../lib/style-control.js";
 import { TRIMEMO_BLOCK_WRITING_CONTRACT, TRIMEMO_STRICT_STYLE_CONTRACT } from "../lib/strict-writing-contract.js";
 import { requireOwner } from "../lib/owner-auth.js";
 import { requirePremiumOrOwner } from "../lib/premium-auth.js";
+import { readAdminSettings } from "../lib/admin-data.js";
+import { logAdminEvent, recordOpenAIUsage } from "../lib/admin-telemetry.js";
 import { assertOrderUsable } from "../lib/order-ledger.js";
 import { rateLimit } from "../lib/rate-limit.js";
 import { hydrateProjectFiles } from "../lib/project-file-store.js";
@@ -375,6 +377,7 @@ Ne crée aucune donnée empirique.
 Utilise des références vérifiables si elles sont nécessaires.
 `;
 
+    const requestStartedAt = Date.now();
     const response = await fetch(
       "https://api.openai.com/v1/responses",
       {
@@ -482,6 +485,9 @@ Utilise des références vérifiables si elles sont nécessaires.
     const rawText = await response.text();
 
     if (!response.ok) {
+      let failedPayload = {};
+      try { failedPayload = JSON.parse(rawText); } catch {}
+      void recordOpenAIUsage({ endpoint: "generate-block", model: getOpenAIModel(), usage: failedPayload?.usage, status: "error", durationMs: Date.now() - requestStartedAt, requestId: failedPayload?.id, projectId: body.project?.projectId || body.project?.project_id, errorCode: "OPENAI_HTTP_" + response.status });
       let details = rawText.slice(0, 2000);
       try {
         const parsedError = JSON.parse(rawText);
@@ -505,6 +511,7 @@ Utilise des références vérifiables si elles sont nécessaires.
 
     try {
       const data = JSON.parse(rawText);
+      void recordOpenAIUsage({ endpoint: "generate-block", model: getOpenAIModel(), usage: data?.usage, status: data?.status === "incomplete" ? "incomplete" : "success", durationMs: Date.now() - requestStartedAt, requestId: data?.id, projectId: body.project?.projectId || body.project?.project_id, errorCode: data?.status === "incomplete" ? "INCOMPLETE" : null });
 
       if (data?.status === "incomplete") {
         console.error("OPENAI_BLOCK_INCOMPLETE", { reason: String(data?.incomplete_details?.reason || "unknown") });
@@ -576,6 +583,7 @@ Utilise des références vérifiables si elles sont nécessaires.
     });
   } catch (error) {
     console.error("GENERATE_BLOCK_FAILED", { status: Number(error?.status) || 500, code: String(error?.code || "BLOCK_GENERATION_ERROR") });
+    void logAdminEvent({ category: "generation", severity: (Number(error?.status) || 500) >= 500 ? "error" : "warning", action: "block_generation_failed", message: String(error?.code || error?.name || "BLOCK_GENERATION_ERROR"), requestPath: "/api/generate-block", statusCode: Number(error?.status) || 500 });
     return res.status(Number.isInteger(error?.status) ? error.status : 500).json({
       error: error?.status === 401 || error?.status === 402 || error?.status === 403 || error?.status === 413 || error?.status === 429
         ? error.message
