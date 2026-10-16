@@ -256,6 +256,10 @@ export default async function handler(req, res) {
       if (!projectId) return fail(res, 400, "Identifiant de projet invalide.");
       const subject = String(body.subject || "Projet académique").trim().slice(0, 240) || "Projet académique";
       const { url, key } = config();
+      const existingMemberships = await supabase("/rest/v1/trimemo_client_projects?project_id=eq." + encodeURIComponent(projectId) + "&select=user_id&limit=2");
+      if (Array.isArray(existingMemberships) && existingMemberships.some((row) => row.user_id !== user.id)) {
+        return fail(res, 403, "Ce projet est déjà rattaché à un autre compte client.");
+      }
       // Le navigateur ne peut jamais déclarer lui-même un projet comme payé.
       const paidOrders = await supabase("/rest/v1/trimemo_orders?project_id=eq." + encodeURIComponent(projectId) + "&status=in.(paid,consumed)&select=order_id,project_id,status,project_snapshot&order=paid_at.desc&limit=1");
       const paidOrder = Array.isArray(paidOrders) ? paidOrders[0] : null;
