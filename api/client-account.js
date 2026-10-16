@@ -264,6 +264,9 @@ export default async function handler(req, res) {
       const paidOrders = await supabase("/rest/v1/trimemo_orders?project_id=eq." + encodeURIComponent(projectId) + "&status=in.(paid,consumed)&select=order_id,project_id,status,project_snapshot&order=paid_at.desc&limit=1");
       const paidOrder = Array.isArray(paidOrders) ? paidOrders[0] : null;
       const snapshotClientId = String(paidOrder?.project_snapshot?.clientUserId || "").trim();
+      if (snapshotClientId && snapshotClientId !== user.id) {
+        return fail(res, 403, "Cette commande appartient à un autre compte client.");
+      }
       const legacyOrderBelongsToClient = Array.isArray(existingMemberships) && existingMemberships.some((row) => row.user_id === user.id);
       const ownsPaidOrder = snapshotClientId ? snapshotClientId === user.id : legacyOrderBelongsToClient;
       const paymentStatus = paidOrder?.project_id === projectId && paidOrder?.project_snapshot && ownsPaidOrder ? "paid" : "draft";
