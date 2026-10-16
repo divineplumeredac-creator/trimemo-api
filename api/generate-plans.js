@@ -5,7 +5,7 @@ import { setCors } from "../lib/http.js";
 import { TRIMEMO_MASTER_ACADEMIC_RULES } from "../lib/trimemo-academic-rules.js";
 import { requireOwner } from "../lib/owner-auth.js";
 import { requirePremiumOrOwner } from "../lib/premium-auth.js";
-import { readAdminSettings, assertGenerationQuota, recordGenerationQuotaUse } from "../lib/admin-data.js";
+import { readAdminSettings, assertGenerationQuota, recordGenerationQuotaUse, assertClientProjectActive } from "../lib/admin-data.js";
 import { logAdminEvent, recordOpenAIUsage } from "../lib/admin-telemetry.js";
 import { verifyPricingQuote } from "../lib/pricing.js";
 import { buildProjectDocumentContext, buildDocumentInstructions, uploadProjectFiles, deleteOpenAIFiles, extractFileText, buildImageInputs } from "../lib/project-documents.js";
@@ -257,7 +257,10 @@ export default async function handler(req,res){
     if(b.ownerMode===true) requireOwner(req);
     else {
       const quote=verifyPricingQuote(p.pricingQuoteToken,p);
-      if(!quote) requirePremiumOrOwner(req,b);
+      if(!quote) {
+        const access = requirePremiumOrOwner(req,b);
+        if(access?.mode === "premium") await assertClientProjectActive(p.projectId || p.project_id);
+      }
     }
 
     stage="lecture du dossier";
