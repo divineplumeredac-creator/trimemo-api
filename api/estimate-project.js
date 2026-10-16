@@ -1,4 +1,5 @@
 import { getOpenAIModel } from "../lib/openai-model.js";
+import { readAdminSettings } from "../lib/admin-data.js";
 import { buildProjectDocumentContext, buildImageInputs } from "../lib/project-documents.js";
 import { assertFilesSize } from "../lib/limits.js";
 import { rateLimit } from "../lib/rate-limit.js";
@@ -36,8 +37,10 @@ export default async function handler(req, res) {
   if (!process.env.OPENAI_API_KEY) return fail(res, 500, "OPENAI_API_KEY est absente du serveur.");
   let project = req.body?.project || {};
   if (!String(project.sujet || project.subject || "").trim()) return fail(res, 400, "Le sujet du projet est obligatoire.");
+  const settings = await readAdminSettings();
+  const maxPages = Math.max(1, Math.min(300, Number(settings.quotas?.maxPages) || 300));
   const pages = Number(project.pages);
-  if (!Number.isInteger(pages) || pages < 1 || pages > 300) return fail(res, 400, "Le volume doit être un nombre entier compris entre 1 et 300 pages.");
+  if (!Number.isInteger(pages) || pages < 1 || pages > maxPages) return fail(res, 400, "Le volume doit être un nombre entier compris entre 1 et " + maxPages + " pages.");
   try {
     await rateLimit(req, "project-estimate", 5, 60 * 60 * 1000);
     if (Array.isArray(project.files) && project.files.length && project.files.some((file) => !String(file?.content || "").length)) {
@@ -89,7 +92,7 @@ export default async function handler(req, res) {
     let analysis;
     try { analysis = JSON.parse(extractText(data)); } catch { return fail(res, 502, "Le moteur n'a pas retourné une analyse exploitable."); }
     if (!["faible", "moyenne", "elevee"].includes(analysis.complexity)) return fail(res, 502, "La complexité détectée est invalide.");
-    const quote = calculateQuote({ project: { ...project, pages }, country, complexity: analysis.complexity, reasons: analysis.reasons });
+    const quote = calculateQuote({ project: { ...project, pages }, country, complexity: analysis.complexity, reasons: analysis.reasons, pricingConfig: settings.pricing_config });
     if (files.length) await storeProjectBundle(String(project.projectId || project.project_id || ""), files, documents);
     quote.detectedRequirements = Array.isArray(analysis.detectedRequirements) ? analysis.detectedRequirements.slice(0, 8) : [];
     quote.countryDetected = country !== "UNKNOWN";
