@@ -5,6 +5,7 @@ import { setCors } from "../lib/http.js";
 import { TRIMEMO_MASTER_ACADEMIC_RULES } from "../lib/trimemo-academic-rules.js";
 import { requireOwner } from "../lib/owner-auth.js";
 import { requirePremiumOrOwner } from "../lib/premium-auth.js";
+import { readAdminSettings, assertGenerationQuota, recordGenerationQuotaUse } from "../lib/admin-data.js";
 import { verifyPricingQuote } from "../lib/pricing.js";
 import { buildProjectDocumentContext, buildDocumentInstructions, uploadProjectFiles, deleteOpenAIFiles, extractFileText, buildImageInputs } from "../lib/project-documents.js";
 import { clampPages, assertFilesSize } from "../lib/limits.js";
@@ -246,7 +247,7 @@ export default async function handler(req,res){
     await rateLimit(req, "generate-plans", 8, 60 * 60 * 1000);
     const b=req.body||{};
     let p=b.project||b.projet||b;
-    if (String(p.projectId || p.project_id || "").trim()) await rateLimitByKey("plan-project-" + String(p.projectId || p.project_id).trim(), 3, 24 * 60 * 60 * 1000);
+    if (String(p.projectId || p.project_id || "").trim()) await rateLimitByKey("plan-project-" + String(p.projectId || p.project_id).trim(), 30, 24 * 60 * 60 * 1000);
     if (Array.isArray(p.files) && p.files.length) p = await hydrateProjectFiles(p);
     if(b.ownerMode===true) requireOwner(req);
     else {
@@ -258,10 +259,18 @@ export default async function handler(req,res){
     const subject=txt(p.sujet||p.subject);
     if(!subject)return res.status(400).json({error:"Le sujet est obligatoire."});
 
+    const settings = await readAdminSettings();
+    const projectId = String(p.projectId || p.project_id || "").trim();
+    if (b.ownerMode !== true) {
+      await assertGenerationQuota("generate-plans", projectId, 1, settings.quotas.maxPlanGenerations);
+    }
     const files=Array.isArray(p.files)?p.files:[];
     if (files.length) assertFilesSize(files);
     const imageInputs=buildImageInputs(files);
     const count=1;
+    const requestedPageValue = Number(p.pages) || 1;
+    const maxPages = Math.max(1, Math.min(300, Number(settings.quotas?.maxPages) || 300));
+    if (requestedPageValue > maxPages) throw fail("Le volume demandé dépasse la limite administrateur de " + maxPages + " pages.", 400);
     const requestedPages=clampPages(p);
     const words=requestedPages*WORDS_PER_PAGE;
     const introductionPages=Math.max(1,Math.round(requestedPages*0.10));
@@ -719,6 +728,7 @@ ${TRIMEMO_STRICT_STYLE_CONTRACT}`;
       });
     }
     const styledPlans = styleResult.value;
+    if (b.ownerMode !== true) await recordGenerationQuotaUse("generate-plans", projectId, count);
 
     stage="nettoyage des fichiers temporaires";
     await safeCleanup();
