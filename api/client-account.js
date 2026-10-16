@@ -239,7 +239,13 @@ export default async function handler(req, res) {
       if (membership.payment_status === "paid") {
         const orders = await supabase("/rest/v1/trimemo_orders?project_id=eq." + encodeURIComponent(projectId) + "&status=in.(paid,consumed)&select=order_id,project_id,project_snapshot,status&order=paid_at.desc&limit=1");
         const order = Array.isArray(orders) ? orders[0] : null;
-        if (order?.order_id && order.project_snapshot) {
+        const consumedAt = Date.parse(order?.consumed_at || "");
+        const consumedRetryAllowed = order?.status === "consumed" && Number.isFinite(consumedAt) && Date.now() - consumedAt <= 15 * 60 * 1000;
+        const orderClientId = String(order?.project_snapshot?.clientUserId || "").trim();
+        if (order?.order_id && order.project_snapshot && orderClientId !== "" && orderClientId !== user.id) {
+          return fail(res, 403, "Cette commande appartient à un autre compte client.");
+        }
+        if (order?.order_id && order.project_snapshot && (order.status === "paid" || consumedRetryAllowed)) {
           premiumToken = createPremiumToken(order.project_snapshot, order.order_id);
         }
       }
