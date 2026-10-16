@@ -267,9 +267,14 @@ export default async function handler(req, res) {
       if (!savedOrder || !["pending", "paid"].includes(savedOrder.status) || !savedOrder.project_snapshot) {
         return res.status(403).json({ status: "ORDER_NOT_AVAILABLE", error: "Cette commande n'est pas disponible ou son crédit a déjà été consommé." });
       }
-      if (!String(project.sujet || project.subject || "").trim() || String(project.projectId || project.project_id || "") !== savedOrder.project_id || projectFingerprint(project) !== savedOrder.project_fingerprint) {
-        // The server snapshot is authoritative; never bind the payment to browser-edited project data.
-        project = savedOrder.project_snapshot;
+      if (!String(project.sujet || project.subject || "").trim() ||
+          String(project.projectId || project.project_id || "") !== savedOrder.project_id ||
+          projectFingerprint(project) !== savedOrder.project_fingerprint) {
+        // Do not turn a known order ID into a bearer credential for the saved project.
+        return res.status(403).json({
+          status: "PAYMENT_PROJECT_MISMATCH",
+          error: "La commande ne correspond pas aux informations de ce projet. Rouvrez le projet associé à cette commande."
+        });
       }
       const expectedPriceQuote = { value: String(savedOrder.amount), currency: String(savedOrder.currency) };
 
