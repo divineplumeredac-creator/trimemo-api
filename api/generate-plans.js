@@ -6,6 +6,7 @@ import { TRIMEMO_MASTER_ACADEMIC_RULES } from "../lib/trimemo-academic-rules.js"
 import { requireOwner } from "../lib/owner-auth.js";
 import { requirePremiumOrOwner } from "../lib/premium-auth.js";
 import { readAdminSettings, assertGenerationQuota, recordGenerationQuotaUse } from "../lib/admin-data.js";
+import { logAdminEvent, recordOpenAIUsage } from "../lib/admin-telemetry.js";
 import { verifyPricingQuote } from "../lib/pricing.js";
 import { buildProjectDocumentContext, buildDocumentInstructions, uploadProjectFiles, deleteOpenAIFiles, extractFileText, buildImageInputs } from "../lib/project-documents.js";
 import { clampPages, assertFilesSize } from "../lib/limits.js";
@@ -58,6 +59,7 @@ const SCHEMA={
 };
 
 async function callModel({key,system,user,schema,name,files=[],imageInputs=[],timeoutMs=45000}){
+  const requestStartedAt=Date.now();
   const controller=new AbortController();
   const timer=setTimeout(()=>controller.abort(),timeoutMs);
   let response;
@@ -83,11 +85,14 @@ async function callModel({key,system,user,schema,name,files=[],imageInputs=[],ti
   }
   const raw=await response.text();
   if(!response.ok){
-    let detail=raw;
-    try{const e=JSON.parse(raw);detail=e?.error?.message||detail}catch{}
+    let detail=raw, payload={};
+    try{payload=JSON.parse(raw);detail=payload?.error?.message||detail}catch{}
+    void recordOpenAIUsage({endpoint:"generate-plans",model:getOpenAIModel(),usage:payload?.usage,status:"error",durationMs:Date.now()-requestStartedAt,requestId:payload?.id,errorCode:"OPENAI_HTTP_"+response.status});
     throw fail("Erreur OpenAI : "+String(detail).slice(0,1200),502);
   }
-  return json(out(JSON.parse(raw)));
+  const payload=JSON.parse(raw);
+  void recordOpenAIUsage({endpoint:"generate-plans",model:getOpenAIModel(),usage:payload?.usage,status:payload?.status==="incomplete"?"incomplete":"success",durationMs:Date.now()-requestStartedAt,requestId:payload?.id,errorCode:payload?.status==="incomplete"?"INCOMPLETE":null});
+  return json(out(payload));
 }
 
 async function repairPlanSet({key,system,user,schema,name,files,imageInputs,plans,reason}) {
@@ -752,6 +757,7 @@ ${TRIMEMO_STRICT_STYLE_CONTRACT}`;
   }catch(e){
     await safeCleanup();
     console.error("GENERATE_PLANS_FAILED", { stage, status: Number(e?.status) || 500, code: String(e?.code || "PLAN_GENERATION_ERROR") });
+    void logAdminEvent({ category: "generation", severity: (Number(e?.status) || 500) >= 500 ? "error" : "warning", action: "plans_failed", message: String(e?.code || e?.name || "PLAN_GENERATION_ERROR"), requestPath: "/api/generate-plans", statusCode: Number(e?.status) || 500, metadata: { stage } });
     const status=Number.isInteger(e?.status)?e.status:500;
     return res.status(status).json({
       error: status >= 500 ? "La génération du plan a échoué. Réessayez dans quelques instants." : (e?.message || "Requête invalide."),
