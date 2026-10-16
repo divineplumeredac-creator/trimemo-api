@@ -26,7 +26,7 @@ export default async function handler(req, res) {
     return json(res, 503, {
       ok: false,
       error: "OWNER_AUTH_NOT_CONFIGURED",
-      message: "Définissez TRIMEMO_OWNER_EMAIL, TRIMEMO_OWNER_PASSWORD et TRIMEMO_OWNER_AUTH_SECRET.",
+      message: "Définissez TRIMEMO_OWNER_EMAIL, TRIMEMO_OWNER_PASSWORD_HASH (ou le mot de passe de migration) et TRIMEMO_OWNER_AUTH_SECRET.",
     }, req);
   }
 
@@ -36,7 +36,7 @@ export default async function handler(req, res) {
     try {
       await rateLimit(req, "owner-login", 8, 15 * 60 * 1000);
     } catch (error) {
-      return json(res, 429, { ok: false, error: "TOO_MANY_ATTEMPTS", message: error.message }, req);
+      return json(res, Number(error?.status) === 503 ? 503 : 429, { ok: false, error: Number(error?.status) === 503 ? "RATE_LIMIT_UNAVAILABLE" : "TOO_MANY_ATTEMPTS", message: error.message }, req);
     }
     if (!checkOwnerCredentials(email, password)) {
       return json(res, 401, { ok: false, error: "INVALID_CREDENTIALS", message: "Identifiants invalides." }, req);
