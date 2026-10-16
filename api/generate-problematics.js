@@ -6,6 +6,7 @@ import { TRIMEMO_MASTER_ACADEMIC_RULES } from "../lib/trimemo-academic-rules.js"
 import { requireOwner } from "../lib/owner-auth.js";
 import { requirePremiumOrOwner } from "../lib/premium-auth.js";
 import { readAdminSettings, assertGenerationQuota, recordGenerationQuotaUse } from "../lib/admin-data.js";
+import { logAdminEvent, recordOpenAIUsage } from "../lib/admin-telemetry.js";
 import { verifyPricingQuote } from "../lib/pricing.js";
 import { buildProjectDocumentContext, buildDocumentInstructions, uploadProjectFiles, deleteOpenAIFiles, buildImageInputs } from "../lib/project-documents.js";
 import { assertFilesSize } from "../lib/limits.js";
@@ -329,6 +330,7 @@ Elle doit être suffisamment précise sans imposer des informations absentes.
 Retourne uniquement le JSON.
 `;
 
+  const requestStartedAt = Date.now();
   const response = await fetch(
     OPENAI_URL,
     {
@@ -387,6 +389,18 @@ Retourne uniquement le JSON.
       502
     );
   }
+
+  void recordOpenAIUsage({
+    endpoint: "generate-problematics",
+    model: getOpenAIModel(),
+    usage: data?.usage,
+    status: response.ok ? "success" : "error",
+    durationMs: Date.now() - requestStartedAt,
+    requestId: data?.id,
+    projectId: project?.projectId || project?.project_id,
+    itemCount: count,
+    errorCode: response.ok ? null : "OPENAI_HTTP_" + response.status,
+  });
 
   if (!response.ok) {
     throw fail(
@@ -559,6 +573,7 @@ export default async function handler(req, res) {
         : 500;
 
     console.error("GENERATE_PROBLEMATICS_FAILED", { status, code: String(error?.code || "GENERATION_ERROR") });
+    void logAdminEvent({ category: "generation", severity: status >= 500 ? "error" : "warning", action: "problematics_failed", message: String(error?.code || error?.name || "GENERATION_ERROR"), requestPath: "/api/generate-problematics", statusCode: status });
 
     return res.status(status).json({
       error: status >= 500 ? "La génération des problématiques a échoué. Réessayez dans quelques instants." : (error?.message || "Requête invalide."),
