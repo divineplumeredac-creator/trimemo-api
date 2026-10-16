@@ -11,6 +11,7 @@ import { rateLimit, rateLimitByKey } from "../lib/rate-limit.js";
 import { hydrateProjectFiles } from "../lib/project-file-store.js";
 import { buildProjectDocumentContext, buildDocumentInstructions, buildImageInputs } from "../lib/project-documents.js";
 import { assertFilesSize } from "../lib/limits.js";
+import { verifyPricingQuote } from "../lib/pricing.js";
 import { verifySources } from "../lib/verify-sources.js";
 function normalizeGeneratedAcademicContent(input) {
   let text = String(input || "").replace(/\r\n?/gu, "\n").trim();
@@ -83,6 +84,9 @@ export default async function handler(req, res) {
       }
     }
     if (Array.isArray(project.files) && project.files.length) project = await hydrateProjectFiles(project);
+    if (body.ownerMode !== true && !verifyPricingQuote(project.pricingQuoteToken, project)) {
+      const e = new Error("Le devis signé du projet est invalide ou expiré. Relancez l’analyse du projet."); e.status = 403; throw e;
+    }
     assertFilesSize(project.files);
     const documentContext = project.documentContext || await buildProjectDocumentContext(project.files);
     const imageInputs = buildImageInputs(project.files);
