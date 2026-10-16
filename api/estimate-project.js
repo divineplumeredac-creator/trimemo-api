@@ -1,5 +1,6 @@
 import { getOpenAIModel } from "../lib/openai-model.js";
 import { readAdminSettings } from "../lib/admin-data.js";
+import { logAdminEvent, recordOpenAIUsage } from "../lib/admin-telemetry.js";
 import { buildProjectDocumentContext, buildImageInputs } from "../lib/project-documents.js";
 import { assertFilesSize } from "../lib/limits.js";
 import { rateLimit } from "../lib/rate-limit.js";
@@ -63,6 +64,7 @@ export default async function handler(req, res) {
       "Consignes : " + String(project.consignes || "").slice(0, 5000),
       "Guide et documents extraits : " + String(documents.allText || "Aucun guide fourni").slice(0, 12000),
     ].join("\n\n");
+    const requestStartedAt = Date.now();
     const response = await fetch(OPENAI_URL, {
       method: "POST",
       headers: { Authorization: "Bearer " + process.env.OPENAI_API_KEY, "Content-Type": "application/json" },
@@ -88,6 +90,7 @@ export default async function handler(req, res) {
     const raw = await response.text();
     let data = {};
     try { data = JSON.parse(raw); } catch {}
+    void recordOpenAIUsage({ endpoint: "estimate-project", model: getOpenAIModel(), usage: data?.usage, status: response.ok ? "success" : "error", durationMs: Date.now() - requestStartedAt, requestId: data?.id, projectId: project.projectId || project.project_id, errorCode: response.ok ? null : "OPENAI_HTTP_" + response.status });
     if (!response.ok) { console.error("PROJECT_ESTIMATE_PROVIDER_ERROR", { status: response.status }); return fail(res, 502, "L'analyse du projet a échoué. Réessayez dans quelques instants."); }
     let analysis;
     try { analysis = JSON.parse(extractText(data)); } catch { return fail(res, 502, "Le moteur n'a pas retourné une analyse exploitable."); }
@@ -101,6 +104,7 @@ export default async function handler(req, res) {
   } catch (error) {
     const status = Number(error?.status) || 500;
     console.error("TRIMEMO_PROJECT_ESTIMATE_FAILED", { status, code: String(error?.code || "ESTIMATE_ERROR"), errorName: String(error?.name || "Error"), message: String(error?.message || "Erreur inconnue").slice(0, 300) });
+    void logAdminEvent({ category: "estimation", severity: status >= 500 ? "error" : "warning", action: "project_estimate_failed", message: String(error?.code || error?.name || "ESTIMATE_ERROR"), requestPath: "/api/estimate-project", statusCode: status });
     return fail(res, status, status >= 500 ? "Impossible d'estimer le projet pour le moment. Réessayez dans quelques instants." : (error?.message || "Requête invalide."));
   }
 }
