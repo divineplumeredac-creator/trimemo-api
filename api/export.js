@@ -18,6 +18,7 @@ import { requirePremiumOrOwner } from '../lib/premium-auth.js';
 import { assertOrderUsable, consumeOrderAfterExport } from '../lib/order-ledger.js';
 import { enforceAcademicStyle } from '../lib/style-control.js';
 import { rateLimit } from '../lib/rate-limit.js';
+import { logAdminEvent } from '../lib/admin-telemetry.js';
 
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
@@ -467,6 +468,7 @@ export default async function handler(req, res) {
       name: String(error?.name || 'Error'),
       message: String(error?.message || 'Erreur inconnue').slice(0, 700)
     });
+    void logAdminEvent({ category: "export", severity: (Number(error?.status) || 500) >= 500 ? "error" : "warning", action: "word_export_failed", message: String(error?.code || error?.name || "EXPORT_ERROR"), requestPath: "/api/export", statusCode: Number(error?.status) || 500 });
     return res.status(error.status || 500).json({
       error: error.status && error.status < 500 ? (error.message || 'Requête invalide.') : 'Erreur pendant la génération du document Word. Réessayez ou contactez le support.',
     });
