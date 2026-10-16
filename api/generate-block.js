@@ -68,10 +68,10 @@ export default async function handler(req, res) {
       if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(projectId)) {
         const e = new Error("Identifiant de projet invalide pour l’aperçu gratuit."); e.status = 400; throw e;
       }
-      // Trois blocs maximum par IP et par projet sur 24 h, chacun plafonné à 833 mots.
-      await rateLimit(req, "generate-block-preview", 3, 24 * 60 * 60 * 1000);
-      await rateLimitByKey("generate-block-preview-" + projectId, 3, 24 * 60 * 60 * 1000);
-      body.targetWords = Math.min(Number(body.targetWords) || 833, 833);
+      // Limite serveur : 10 blocs/jour par IP, 5 par projet, 500 mots maximum par bloc.
+      await rateLimit(req, "generate-block-preview", 10, 24 * 60 * 60 * 1000);
+      await rateLimitByKey("generate-block-preview-" + projectId, 5, 24 * 60 * 60 * 1000);
+      body.targetWords = Math.min(Number(body.targetWords) || 500, 500);
       if (body.targetWords < 250) body.targetWords = Math.max(1, body.targetWords);
     } else {
       const access = requirePremiumOrOwner(req, body);
@@ -579,7 +579,7 @@ Utilise des références vérifiables si elles sont nécessaires.
     }
     if (previewMode) {
       // L'API applique elle-même le plafond ; le client ne peut pas le contourner en falsifiant previewBlocks.
-      correctedContent = correctedContent.split(/\s+/u).filter(Boolean).slice(0, Math.max(1, Math.min(833, safeWordTarget))).join(" ");
+      correctedContent = correctedContent.split(/\s+/u).filter(Boolean).slice(0, Math.max(1, Math.min(500, safeWordTarget))).join(" ");
     }
     const wordCount = correctedContent.split(/\s+/u).filter(Boolean).length;
     let verifiedSources = [];
