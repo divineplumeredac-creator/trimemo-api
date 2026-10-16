@@ -579,7 +579,7 @@ Utilise des références vérifiables si elles sont nécessaires.
     }
     if (previewMode) {
       // L'API applique elle-même le plafond ; le client ne peut pas le contourner en falsifiant previewBlocks.
-      correctedContent = correctedContent.split(/\s+/u).filter(Boolean).slice(0, Math.max(1, Math.min(500, safeWordTarget))).join(" ");
+      correctedContent = (correctedContent.match(/\S+\s*/gu) || []).slice(0, Math.max(1, Math.min(500, safeWordTarget))).join("").trim();
     }
     const wordCount = correctedContent.split(/\s+/u).filter(Boolean).length;
     let verifiedSources = [];
