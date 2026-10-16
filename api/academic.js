@@ -67,6 +67,53 @@ function formulaOf(project = {}) {
   return "MASTER";
 }
 
+async function verifyClientSession(token) {
+  const accessToken = String(token || "").trim();
+  const url = String(process.env.SUPABASE_URL || "").trim().replace(/\/$/, "");
+  const key = String(process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
+  if (!accessToken || !url || !key) {
+    const e = new Error("Connectez-vous à votre compte client avant de payer."); e.status = 401; throw e;
+  }
+  const response = await fetch(url + "/auth/v1/user", {
+    headers: { apikey: key, Authorization: "Bearer " + accessToken },
+    signal: AbortSignal.timeout(8000)
+  });
+  const user = await response.json().catch(() => ({}));
+  if (!response.ok || !user?.id) { const e = new Error("La session client est invalide ou expirée."); e.status = 401; throw e; }
+  const bannedUntil = user.banned_until ? Date.parse(user.banned_until) : 0;
+  if (user.app_metadata?.trimemo_access === "suspended" || (Number.isFinite(bannedUntil) && bannedUntil > Date.now())) {
+    const e = new Error("L’accès à ce compte a été suspendu."); e.status = 403; throw e;
+  }
+  return { id: String(user.id), email: String(user.email || "") };
+}
+
+async function ensureClientOwnsProject(user, project, createIfMissing = false) {
+  const url = String(process.env.SUPABASE_URL || "").trim().replace(/\/$/, "");
+  const key = String(process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
+  const projectId = String(project?.projectId || project?.project_id || "").trim();
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(projectId)) {
+    const e = new Error("Identifiant de projet invalide."); e.status = 400; throw e;
+  }
+  const headers = { apikey: key, Authorization: "Bearer " + key, "Content-Type": "application/json" };
+  const query = await fetch(url + "/rest/v1/trimemo_client_projects?project_id=eq." + encodeURIComponent(projectId) + "&select=user_id&limit=2", {
+    headers, signal: AbortSignal.timeout(8000)
+  });
+  const memberships = await query.json().catch(() => []);
+  if (!query.ok) { const e = new Error("Impossible de vérifier le propriétaire du projet."); e.status = 503; throw e; }
+  const rows = Array.isArray(memberships) ? memberships : [];
+  if (rows.some((row) => row.user_id !== user.id)) { const e = new Error("Ce projet appartient à un autre compte client."); e.status = 403; throw e; }
+  if (rows.some((row) => row.user_id === user.id)) return true;
+  if (!createIfMissing) { const e = new Error("Cette commande n’est pas rattachée à votre compte client."); e.status = 403; throw e; }
+  const insert = await fetch(url + "/rest/v1/trimemo_client_projects?on_conflict=user_id,project_id", {
+    method: "POST",
+    headers: { ...headers, Prefer: "resolution=merge-duplicates,return=minimal" },
+    body: JSON.stringify({ user_id: user.id, project_id: projectId, subject: String(project?.sujet || project?.subject || "Projet académique").trim().slice(0, 240), payment_status: "draft", updated_at: new Date().toISOString() }),
+    signal: AbortSignal.timeout(8000)
+  });
+  if (!insert.ok) { const e = new Error("Impossible de rattacher le projet à votre compte client."); e.status = 503; throw e; }
+  return true;
+}
+
 
 function priceForProject(project = {}) {
   const quote = verifyPricingQuote(project.pricingQuoteToken, project);
@@ -225,6 +272,12 @@ export default async function handler(req, res) {
     if (action === "verify-paypal") await rateLimit(req, "verify-paypal", 20, 60 * 60 * 1000);
     if (action === "create-mobile-money") await rateLimit(req, "create-mobile-money", 5, 60 * 60 * 1000);
     if (action === "verify-mobile-money") await rateLimit(req, "verify-mobile-money", 10, 60 * 60 * 1000);
+    if (action === "create-paypal-order") {
+      const client = await verifyClientSession(body.clientToken);
+      if (!String(project.sujet || project.subject || "").trim()) return fail(res, 400, "Le sujet du projet est obligatoire.");
+      await ensureClientOwnsProject(client, project, true);
+      project = { ...project, clientUserId: client.id };
+    }
     if (action === "create-paypal-order" && Array.isArray(project.files) && project.files.length) project = await hydrateProjectFiles(project);
     if (action === "create-paypal-order") {
       if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) return fail(res, 503, "Le registre sécurisé des commandes n'est pas configuré. Le paiement est temporairement indisponible.");
@@ -262,11 +315,17 @@ export default async function handler(req, res) {
       const orderId = String(body.id || "").trim();
       if (!orderId) return fail(res, 400, "Identifiant PayPal manquant.");
 
+      const client = await verifyClientSession(body.clientToken);
       await assertOrderLedgerReady();
       const savedOrder = await getOrderRecord(orderId);
       if (!savedOrder || !["pending", "paid"].includes(savedOrder.status) || !savedOrder.project_snapshot) {
         return res.status(403).json({ status: "ORDER_NOT_AVAILABLE", error: "Cette commande n'est pas disponible ou son crédit a déjà été consommé." });
       }
+      const orderClientId = String(savedOrder.project_snapshot.clientUserId || "").trim();
+      if (orderClientId && orderClientId !== client.id) {
+        return res.status(403).json({ status: "ORDER_CLIENT_MISMATCH", error: "Cette commande appartient à un autre compte client." });
+      }
+      if (!orderClientId) await ensureClientOwnsProject(client, savedOrder.project_snapshot, false);
       if (!String(project.sujet || project.subject || "").trim() ||
           String(project.projectId || project.project_id || "") !== savedOrder.project_id ||
           projectFingerprint(project) !== savedOrder.project_fingerprint) {
