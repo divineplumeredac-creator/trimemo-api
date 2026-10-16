@@ -53,6 +53,11 @@ export default async function handler(req, res) {
   try {
     const body = req.body || {};
     let project = body.project || body;
+    const adminSettings = await readAdminSettings();
+    const maxPages = Math.max(1, Math.min(300, Number(adminSettings.quotas?.maxPages) || 300));
+    if (Number(project.pages || 1) > maxPages) {
+      const e = new Error("Le volume demandé dépasse la limite administrateur de " + maxPages + " pages."); e.status = 400; throw e;
+    }
     await rateLimit(req, "generate-block", 30, 60 * 60 * 1000);
     const previewMode = body.previewMode === true;
     if (body.ownerMode === true) requireOwner(req);
