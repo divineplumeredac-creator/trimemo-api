@@ -7,7 +7,7 @@ import { requirePremiumOrOwner } from "../lib/premium-auth.js";
 import { readAdminSettings, assertClientProjectActive } from "../lib/admin-data.js";
 import { logAdminEvent, recordOpenAIUsage } from "../lib/admin-telemetry.js";
 import { assertOrderUsable } from "../lib/order-ledger.js";
-import { rateLimit } from "../lib/rate-limit.js";
+import { rateLimit, rateLimitByKey } from "../lib/rate-limit.js";
 import { hydrateProjectFiles } from "../lib/project-file-store.js";
 import { buildProjectDocumentContext, buildDocumentInstructions, buildImageInputs } from "../lib/project-documents.js";
 import { assertFilesSize } from "../lib/limits.js";
@@ -62,14 +62,16 @@ export default async function handler(req, res) {
     const previewMode = body.previewMode === true;
     if (body.ownerMode === true) requireOwner(req);
     else if (previewMode) {
-      // Aperçu public : rédaction progressive bloc par bloc, limitée à 2 500 mots cumulés.
-      const previewBlocks = Array.isArray(body.previewBlocks) ? body.previewBlocks : [];
-      const previewWords = previewBlocks.reduce((sum, item) => sum + String(item?.content || "").trim().split(/\s+/u).filter(Boolean).length, 0);
-      if (previewWords >= 2500) {
-        const e = new Error("L’aperçu de 2 500 mots est atteint. Consultez l’aperçu et payez pour poursuivre la rédaction."); e.status = 402; throw e;
+      // Le quota ne dépend jamais du texte envoyé par le navigateur : previewBlocks est falsifiable.
+      const projectId = String(project.projectId || project.project_id || "").trim();
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(projectId)) {
+        const e = new Error("Identifiant de projet invalide pour l’aperçu gratuit."); e.status = 400; throw e;
       }
-      body.targetWords = Math.min(Number(body.targetWords) || 900, 2500 - previewWords, 1000);
-      if (body.targetWords < 250) body.targetWords = 250;
+      // Trois blocs maximum par IP et par projet sur 24 h, chacun plafonné à 833 mots.
+      await rateLimit(req, "generate-block-preview", 3, 24 * 60 * 60 * 1000);
+      await rateLimitByKey("generate-block-preview-" + projectId, 3, 24 * 60 * 60 * 1000);
+      body.targetWords = Math.min(Number(body.targetWords) || 833, 833);
+      if (body.targetWords < 250) body.targetWords = Math.max(1, body.targetWords);
     } else {
       const access = requirePremiumOrOwner(req, body);
       if (access.mode === "premium") {
@@ -571,7 +573,11 @@ Utilise des références vérifiables si elles sont nécessaires.
     } catch (styleError) {
       console.error("BLOCK_STYLE_CONTROL_FAILED", { name: String(styleError?.name || "Error"), code: String(styleError?.code || ""), message: String(styleError?.message || "unknown").slice(0, 300) });
     }
-    const wordCount = correctedContent.split(/\s+/).filter(Boolean).length;
+    if (previewMode) {
+      // L'API applique elle-même le plafond ; le client ne peut pas le contourner en falsifiant previewBlocks.
+      correctedContent = correctedContent.split(/\s+/u).filter(Boolean).slice(0, Math.max(1, Math.min(833, safeWordTarget))).join(" ");
+    }
+    const wordCount = correctedContent.split(/\s+/u).filter(Boolean).length;
     let verifiedSources = [];
     try {
       verifiedSources = await verifySources(Array.isArray(result.sources) ? result.sources : []);
