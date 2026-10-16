@@ -169,6 +169,7 @@ export default async function handler(req, res) {
     let result=null;
     let lastValidationReason="";
     for(let attempt=0;attempt<3;attempt++){
+      const requestStartedAt=Date.now();
       const correction=attempt===0?"":"\n\nCONTRÔLE STRUCTUREL : le plan précédent a été rejeté : "+lastValidationReason+". Régénère le plan en corrigeant ce défaut. Les titres ne doivent contenir aucune numérotation.";
       const response=await fetch(OPENAI_URL,{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+apiKey},body:JSON.stringify({
         model:getOpenAIModel(),
@@ -181,8 +182,11 @@ MISE EN FORME OBLIGATOIRE : l'introduction générale doit comporter plusieurs p
         text:{format:{type:"json_schema",name:"trimemo_free_preview",strict:true,schema}}
       })});
       const raw=await response.text();
-      if(!response.ok){let detail="Le service de génération a refusé la requête.";try{const e=JSON.parse(raw);detail=e?.error?.message||detail}catch{}throw fail("OpenAI a refusé l'aperçu : "+detail,502);}
-      const candidate=parseJson(extractOutputText(JSON.parse(raw)));
+      let payload={};
+      try{payload=JSON.parse(raw)}catch{}
+      void recordOpenAIUsage({endpoint:"generate-free-preview",model:getOpenAIModel(),usage:payload?.usage,status:response.ok?(payload?.status==="incomplete"?"incomplete":"success"):"error",durationMs:Date.now()-requestStartedAt,requestId:payload?.id,errorCode:response.ok?null:"OPENAI_HTTP_"+response.status,projectId:project.projectId||project.project_id});
+      if(!response.ok){let detail="Le service de génération a refusé la requête.";detail=payload?.error?.message||detail;throw fail("OpenAI a refusé l'aperçu : "+detail,502);}
+      const candidate=parseJson(extractOutputText(payload));
       const chapterOneWords = String(candidate?.chapterOne?.content || "").trim().split(/\s+/u).filter(Boolean).length;
       if (chapterOneWords < 800) {
         lastValidationReason = "Le premier chapitre doit contenir au moins 800 mots pour permettre une véritable évaluation de la qualité.";
@@ -231,6 +235,7 @@ MISE EN FORME OBLIGATOIRE : l'introduction générale doit comporter plusieurs p
   } catch(error) {
     await deleteOpenAIFiles(fileIds, apiKey);
     console.error("FREE_PREVIEW_FAILED", { status: Number(error?.status) || 500, code: String(error?.code || "PREVIEW_GENERATION_ERROR") });
+    void logAdminEvent({ category: "generation", severity: (Number(error?.status) || 500) >= 500 ? "error" : "warning", action: "free_preview_failed", message: String(error?.code || error?.name || "PREVIEW_GENERATION_ERROR"), requestPath: "/api/generate-free-preview", statusCode: Number(error?.status) || 500 });
     void logAdminEvent({ category: "generation", severity: "error", action: "free_preview_failed", message: String(error?.code || error?.name || "PREVIEW_GENERATION_ERROR"), requestPath: "/api/generate-free-preview", statusCode: Number(error?.status) || 500 });
     const status = error?.status || 500;
     return res.status(status).json({error: status >= 500 ? "Impossible de générer l’aperçu pour le moment. Réessayez dans quelques instants." : (error?.message || "Requête invalide.")});
