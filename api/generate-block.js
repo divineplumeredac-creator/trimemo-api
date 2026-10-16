@@ -4,7 +4,7 @@ import { enforceAcademicStyle } from "../lib/style-control.js";
 import { TRIMEMO_BLOCK_WRITING_CONTRACT, TRIMEMO_STRICT_STYLE_CONTRACT } from "../lib/strict-writing-contract.js";
 import { requireOwner } from "../lib/owner-auth.js";
 import { requirePremiumOrOwner } from "../lib/premium-auth.js";
-import { readAdminSettings } from "../lib/admin-data.js";
+import { readAdminSettings, assertClientProjectActive } from "../lib/admin-data.js";
 import { logAdminEvent, recordOpenAIUsage } from "../lib/admin-telemetry.js";
 import { assertOrderUsable } from "../lib/order-ledger.js";
 import { rateLimit } from "../lib/rate-limit.js";
@@ -73,6 +73,7 @@ export default async function handler(req, res) {
     } else {
       const access = requirePremiumOrOwner(req, body);
       if (access.mode === "premium") {
+        await assertClientProjectActive(project.projectId || project.project_id);
         await assertOrderUsable(access.token, project);
         if (!project.paymentProblematicId || body.problematic?.id !== project.paymentProblematicId || !project.paymentPlanId || body.plan?.id !== project.paymentPlanId) {
           const e = new Error("Le paiement est lié à une autre problématique ou à un autre plan."); e.status = 403; throw e;
