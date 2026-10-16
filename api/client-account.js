@@ -263,7 +263,10 @@ export default async function handler(req, res) {
       // Le navigateur ne peut jamais déclarer lui-même un projet comme payé.
       const paidOrders = await supabase("/rest/v1/trimemo_orders?project_id=eq." + encodeURIComponent(projectId) + "&status=in.(paid,consumed)&select=order_id,project_id,status,project_snapshot&order=paid_at.desc&limit=1");
       const paidOrder = Array.isArray(paidOrders) ? paidOrders[0] : null;
-      const paymentStatus = paidOrder?.project_id === projectId && paidOrder?.project_snapshot ? "paid" : "draft";
+      const snapshotClientId = String(paidOrder?.project_snapshot?.clientUserId || "").trim();
+      const legacyOrderBelongsToClient = Array.isArray(existingMemberships) && existingMemberships.some((row) => row.user_id === user.id);
+      const ownsPaidOrder = snapshotClientId ? snapshotClientId === user.id : legacyOrderBelongsToClient;
+      const paymentStatus = paidOrder?.project_id === projectId && paidOrder?.project_snapshot && ownsPaidOrder ? "paid" : "draft";
       if (body.paid === true && paymentStatus !== "paid") return fail(res, 403, "Le paiement de ce projet n’est pas confirmé dans le registre sécurisé.");
       const now = new Date().toISOString();
       const response = await fetch(url + "/rest/v1/trimemo_client_projects?on_conflict=user_id,project_id", {
