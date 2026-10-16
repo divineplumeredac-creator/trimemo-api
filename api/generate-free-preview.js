@@ -6,6 +6,8 @@ import { clampPages, assertFilesSize } from "../lib/limits.js";
 import { rateLimit, rateLimitByKey } from "../lib/rate-limit.js";
 import { hydrateProjectFiles } from "../lib/project-file-store.js";
 import { deleteOpenAIFiles } from "../lib/project-documents.js";
+import { readAdminSettings } from "../lib/admin-data.js";
+import { logAdminEvent, recordOpenAIUsage } from "../lib/admin-telemetry.js";
 import { buildProjectDocumentContext, buildDocumentInstructions, uploadProjectFiles, buildImageInputs } from "../lib/project-documents.js";
 import { PLAN_PARTS_SCHEMA, normalizePlanStructure } from "../lib/plan-structure.js";
 const OPENAI_URL = "https://api.openai.com/v1/responses";
@@ -128,7 +130,10 @@ export default async function handler(req, res) {
   if (!apiKey) return res.status(500).json({error:"OPENAI_API_KEY est absente du serveur."});
 
   let fileIds = [];
+  let previewWordLimit = FREE_PREVIEW_WORDS;
   try {
+    const settings = await readAdminSettings();
+    previewWordLimit = Math.max(0, Math.min(5000, Number(settings.quotas?.freePreviewWords ?? FREE_PREVIEW_WORDS)));
     let project = req.body?.project || req.body || {};
     const sujet = text(project.sujet || project.subject);
     if (!sujet) return res.status(400).json({error:"Le sujet est obligatoire."});
@@ -138,6 +143,8 @@ export default async function handler(req, res) {
     if (!verifyPricingQuote(project.pricingQuoteToken, project)) return res.status(403).json({ error: "L'analyse tarifaire du projet est absente ou expirée. Relancez l'analyse avant l'aperçu." });
     const files = Array.isArray(project.files) ? project.files : [];
     if (files.length) assertFilesSize(files);
+    const maxPages = Math.max(1, Math.min(300, Number(settings.quotas?.maxPages) || 300));
+    if (Number(project.pages || 1) > maxPages) throw fail("Le volume demandé dépasse la limite administrateur de " + maxPages + " pages.", 400);
     const pages = clampPages(project);
     const targetWords = pages * WORDS_PER_PAGE;
     const introductionWords = calculateAcademicIntroductionWords(pages);
@@ -215,15 +222,16 @@ MISE EN FORME OBLIGATOIRE : l'introduction générale doit comporter plusieurs p
     const chapterContent = trimToWords(String(result.chapterOne.content).trim(), remainingPreviewWords);
     return res.status(200).json({
       success:true,
-      previewWordLimit:FREE_PREVIEW_WORDS,
+      previewWordLimit,
       problematic:result.problematic,
       plan:normalizedPlan,
-      introduction:{...result.introduction,content:introductionContent,wordCount:introductionContent.split(/\s+/u).filter(Boolean).length,incomplete:true,previewWords:FREE_PREVIEW_WORDS,targetWords:introductionWords},
+      introduction:{...result.introduction,content:introductionContent,wordCount:introductionContent.split(/\s+/u).filter(Boolean).length,incomplete:true,previewWords:previewWordLimit,targetWords:introductionWords},
       chapterOne:{...result.chapterOne,title:firstChapter.title || result.chapterOne.title,content:chapterContent,wordCount:chapterContent.split(/\s+/u).filter(Boolean).length,partTitle:firstPart.title || "",chapterNumber:firstChapter.number || 1,sectionTitles:(firstChapter.sections || []).map(section=>section.title)}
     });
   } catch(error) {
     await deleteOpenAIFiles(fileIds, apiKey);
     console.error("FREE_PREVIEW_FAILED", { status: Number(error?.status) || 500, code: String(error?.code || "PREVIEW_GENERATION_ERROR") });
+    void logAdminEvent({ category: "generation", severity: "error", action: "free_preview_failed", message: String(error?.code || error?.name || "PREVIEW_GENERATION_ERROR"), requestPath: "/api/generate-free-preview", statusCode: Number(error?.status) || 500 });
     const status = error?.status || 500;
     return res.status(status).json({error: status >= 500 ? "Impossible de générer l’aperçu pour le moment. Réessayez dans quelques instants." : (error?.message || "Requête invalide.")});
   }
