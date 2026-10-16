@@ -5,7 +5,7 @@ import { getOpenAIModel } from "../lib/openai-model.js";
 import { TRIMEMO_MASTER_ACADEMIC_RULES } from "../lib/trimemo-academic-rules.js";
 import { requireOwner } from "../lib/owner-auth.js";
 import { requirePremiumOrOwner } from "../lib/premium-auth.js";
-import { readAdminSettings, assertGenerationQuota, recordGenerationQuotaUse } from "../lib/admin-data.js";
+import { readAdminSettings, assertGenerationQuota, recordGenerationQuotaUse, assertClientProjectActive } from "../lib/admin-data.js";
 import { logAdminEvent, recordOpenAIUsage } from "../lib/admin-telemetry.js";
 import { verifyPricingQuote } from "../lib/pricing.js";
 import { buildProjectDocumentContext, buildDocumentInstructions, uploadProjectFiles, deleteOpenAIFiles, buildImageInputs } from "../lib/project-documents.js";
@@ -495,7 +495,10 @@ export default async function handler(req, res) {
     if (body.ownerMode === true) requireOwner(req);
     else {
       const quote = verifyPricingQuote(project.pricingQuoteToken, project);
-      if (!quote) requirePremiumOrOwner(req, body);
+      if (!quote) {
+        const access = requirePremiumOrOwner(req, body);
+        if (access?.mode === "premium") await assertClientProjectActive(project.projectId || project.project_id);
+      }
     }
 
     const count = body.ownerMode === true && Number(body.count) !== 1 ? 3 : 1;
