@@ -5,6 +5,7 @@ import { getOpenAIModel } from "../lib/openai-model.js";
 import { TRIMEMO_MASTER_ACADEMIC_RULES } from "../lib/trimemo-academic-rules.js";
 import { requireOwner } from "../lib/owner-auth.js";
 import { requirePremiumOrOwner } from "../lib/premium-auth.js";
+import { readAdminSettings, assertGenerationQuota, recordGenerationQuotaUse } from "../lib/admin-data.js";
 import { verifyPricingQuote } from "../lib/pricing.js";
 import { buildProjectDocumentContext, buildDocumentInstructions, uploadProjectFiles, deleteOpenAIFiles, buildImageInputs } from "../lib/project-documents.js";
 import { assertFilesSize } from "../lib/limits.js";
@@ -474,7 +475,7 @@ export default async function handler(req, res) {
     const body = req.body || {};
     let project = body.project || body;
     if (String(project.projectId || project.project_id || "").trim()) {
-      await rateLimitByKey("problematic-project-" + String(project.projectId || project.project_id).trim(), 3, 24 * 60 * 60 * 1000);
+      await rateLimitByKey("problematic-project-" + String(project.projectId || project.project_id).trim(), 30, 24 * 60 * 60 * 1000);
     }
     if (Array.isArray(project.files) && project.files.length) project = await hydrateProjectFiles(project);
     if (body.ownerMode === true) requireOwner(req);
@@ -514,6 +515,12 @@ export default async function handler(req, res) {
       });
     }
 
+    const settings = await readAdminSettings();
+    const projectId = String(project.projectId || project.project_id || "").trim();
+    if (body.ownerMode !== true) {
+      await assertGenerationQuota("generate-problematics", projectId, count, settings.quotas.maxProblematicGenerations);
+    }
+
     const files = Array.isArray(project.files) ? project.files : [];
     let fileIds = [];
     try {
@@ -533,6 +540,7 @@ export default async function handler(req, res) {
       });
       const generated = validateProblematiques(rawResponse, count);
       const styleResult = await enforceAcademicStyle({ problematiques: generated }, { apiKey, timeoutMs: 25000 });
+      if (body.ownerMode !== true) await recordGenerationQuotaUse("generate-problematics", projectId, count);
       return res.status(200).json({
         problematiques: styleResult.value.problematiques,
         styleControl: {
