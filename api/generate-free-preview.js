@@ -133,7 +133,8 @@ export default async function handler(req, res) {
   let previewWordLimit = FREE_PREVIEW_WORDS;
   try {
     const settings = await readAdminSettings();
-    previewWordLimit = Math.max(0, Math.min(5000, Number(settings.quotas?.freePreviewWords ?? FREE_PREVIEW_WORDS)));
+    previewWordLimit = Math.max(0, Math.min(2500, Number(settings.quotas?.freePreviewWords ?? FREE_PREVIEW_WORDS)));
+    if (previewWordLimit < 1) throw fail("L’aperçu gratuit est désactivé par l’administrateur.", 403);
     let project = req.body?.project || req.body || {};
     const sujet = text(project.sujet || project.subject);
     if (!sujet) return res.status(400).json({error:"Le sujet est obligatoire."});
@@ -221,8 +222,8 @@ MISE EN FORME OBLIGATOIRE : l'introduction générale doit comporter plusieurs p
     const firstPart = result.plan.parts[0];
     const firstChapter = firstPart?.chapters?.[0];
     if (!firstChapter) throw fail("Le premier chapitre est absent du plan.",502);
-    const introductionContent = trimToWords(result.introduction.content, PREVIEW_INTRO_WORDS);
-    const remainingPreviewWords = Math.max(0, FREE_PREVIEW_WORDS - introductionContent.split(/\s+/u).filter(Boolean).length);
+    const introductionContent = trimToWords(result.introduction.content, Math.min(PREVIEW_INTRO_WORDS, previewWordLimit));
+    const remainingPreviewWords = Math.max(0, previewWordLimit - introductionContent.split(/\s+/u).filter(Boolean).length);
     const chapterContent = trimToWords(String(result.chapterOne.content).trim(), remainingPreviewWords);
     return res.status(200).json({
       success:true,
