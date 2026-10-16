@@ -248,7 +248,7 @@ function validateSettings(body) {
   const quotas = {
     maxProblematicGenerations: Math.round(safeNumber(rawQuotas.maxProblematicGenerations ?? 3, 1, 10, "quota de problématiques")),
     maxPlanGenerations: Math.round(safeNumber(rawQuotas.maxPlanGenerations ?? 3, 1, 10, "quota de plans")),
-    freePreviewWords: Math.round(safeNumber(rawQuotas.freePreviewWords ?? 300, 0, 5000, "aperçu gratuit")),
+    freePreviewWords: Math.round(safeNumber(rawQuotas.freePreviewWords ?? 2500, 0, 2500, "aperçu gratuit")),
     wordsPerPage: Math.round(safeNumber(rawQuotas.wordsPerPage ?? 320, 100, 1000, "mots par page")),
     maxPages: Math.round(safeNumber(rawQuotas.maxPages ?? 300, 1, 300, "pages maximum")),
   };
