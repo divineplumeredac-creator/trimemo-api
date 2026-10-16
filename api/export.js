@@ -19,6 +19,7 @@ import { assertOrderUsable, consumeOrderAfterExport } from '../lib/order-ledger.
 import { enforceAcademicStyle } from '../lib/style-control.js';
 import { rateLimit } from '../lib/rate-limit.js';
 import { logAdminEvent } from '../lib/admin-telemetry.js';
+import { assertClientProjectActive } from '../lib/admin-data.js';
 
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
@@ -375,6 +376,7 @@ export default async function handler(req, res) {
     const access = requirePremiumOrOwner(req, body);
     if (access.mode === "premium") {
       const paidProject = body.project || body;
+      await assertClientProjectActive(paidProject.projectId || paidProject.project_id);
       await assertOrderUsable(access.token, paidProject);
       if (!paidProject.paymentProblematicId || body.problematic?.id !== paidProject.paymentProblematicId || !paidProject.paymentPlanId || body.plan?.id !== paidProject.paymentPlanId) {
         const e = new Error("Le paiement est lié à une autre problématique ou à un autre plan."); e.status = 403; throw e;
