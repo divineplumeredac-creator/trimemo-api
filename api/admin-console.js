@@ -339,6 +339,7 @@ export default async function handler(req, res) {
   let actor = "owner";
   try {
     const { action } = req.body || {};
+    // Keep client and owner revision workflows in this existing function to stay within Vercel Hobby function limits.
     const revisionActions = ["revision-submit","revision-client-list","revision-client-file"];
     if (revisionActions.includes(String(action || ""))) {
       const body=req.body||{}, token=safeStr(body.token,5000);
