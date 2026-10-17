@@ -90,6 +90,24 @@ export default async function handler(req, res) {
   const body = req.body || {};
   const action = String(body.action || "").trim();
   try {
+    if (action === "refresh") {
+      const refreshToken = String(body.refreshToken || "").trim();
+      if (!refreshToken) return fail(res, 401, "La session doit être renouvelée. Connectez-vous à nouveau.");
+      const { url, key } = config();
+      const response = await fetch(url + "/auth/v1/token?grant_type=refresh_token", {
+        method: "POST",
+        headers: { apikey: key, "Content-Type": "application/json" },
+        body: JSON.stringify({ refresh_token: refreshToken }),
+        signal: AbortSignal.timeout(10000),
+      });
+      const session = await response.json().catch(() => ({}));
+      if (!response.ok || !session?.access_token || !session?.user?.id) return fail(res, 401, "Votre session ne peut plus être renouvelée. Connectez-vous à nouveau.");
+      return res.status(200).json({
+        success: true, token: session.access_token, refresh_token: session.refresh_token || refreshToken,
+        expires_at: session.expires_at || null,
+        user: { id: session.user.id, email: session.user.email || "", firstName: String(session.user.user_metadata?.first_name || ""), lastName: String(session.user.user_metadata?.last_name || "") },
+      });
+    }
     if (action === "signup" || action === "login") {
       const email = validEmail(body.email);
       const password = String(body.password || "");
@@ -121,6 +139,7 @@ export default async function handler(req, res) {
       return res.status(200).json({
         success: true,
         token: session.access_token,
+        refresh_token: session.refresh_token || null,
         expires_at: session.expires_at || null,
         user: { id: session.user.id, email: session.user.email || email, firstName: String(session.user.user_metadata?.first_name || firstName || ""), lastName: String(session.user.user_metadata?.last_name || lastName || "") },
       });
