@@ -351,8 +351,15 @@ export default async function handler(req, res) {
         if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(projectId)) return reply(res,400,{ok:false,error:"Identifiant de projet invalide."});
         const member=await supabaseAdminRequest("/rest/v1/trimemo_client_projects?user_id=eq."+encodeURIComponent(clientUser.id)+"&project_id=eq."+encodeURIComponent(projectId)+"&select=project_id,subject&limit=1");
         if(!member.data?.length) return reply(res,403,{ok:false,error:"Ce document n’est pas associé à votre compte."});
-        const instructions=safeStr(body.instructions,8000), file=body.file||{}, name=safeStr(file.name,180), base64=String(file.base64||"");
-        if(instructions.length<10) return reply(res,400,{ok:false,error:"Précisez les corrections attendues (10 caractères minimum)."});
+        const rawInstructions=safeStr(body.instructions,8000), file=body.file||{}, name=safeStr(file.name,180), base64=String(file.base64||"");
+        const tier=String(body.revisionTier||"standard"), market=String(body.revisionMarket||"west_africa"), pages=Math.round(Number(body.revisionPages)||0);
+        const tierLabels={essential:"Correction essentielle",standard:"Révision standard",deep:"Révision approfondie"};
+        const marketRates={west_africa:{label:"Bénin et Afrique de l’Ouest francophone",currency:"FCFA",rates:{essential:750,standard:1500,deep:2500}},africa_other:{label:"Autres marchés africains francophones",currency:"FCFA",rates:{essential:1000,standard:1800,deep:3000}},fr_be:{label:"France et Belgique",currency:"EUR",rates:{essential:2,standard:3.5,deep:6}},canada:{label:"Canada francophone",currency:"CAD",rates:{essential:3,standard:5,deep:8}}};
+        if(!Object.prototype.hasOwnProperty.call(tierLabels,tier)||!Object.prototype.hasOwnProperty.call(marketRates,market)||!Number.isInteger(pages)||pages<1||pages>500) return reply(res,400,{ok:false,error:"Niveau de révision, marché ou nombre de pages invalide."});
+        if(rawInstructions.length<10) return reply(res,400,{ok:false,error:"Précisez les corrections attendues (10 caractères minimum)."});
+        const marketInfo=marketRates[market], unitPrice=marketInfo.rates[tier], totalPrice=Math.round(unitPrice*pages*100)/100;
+        const quoteBlock="\n\n--- DEVIS INDICATIF DE RÉVISION HUMAINE ---\nPrestation : "+tierLabels[tier]+"\nMarché de facturation : "+marketInfo.label+"\nVolume déclaré : "+pages+" page(s) de 320 mots\nTarif unitaire : "+unitPrice+" "+marketInfo.currency+" / page\nEstimation : "+totalPrice+" "+marketInfo.currency+"\nLe montant est à confirmer avant paiement.\n--- FIN DU DEVIS ---";
+        const instructions=rawInstructions+quoteBlock;
         if(!name||!base64||base64.length>4000000||! /\.(pdf|docx|doc|txt|rtf)$/i.test(name)) return reply(res,400,{ok:false,error:"Joignez un document PDF, Word, TXT ou RTF de moins de 3 Mo."});
         const row={user_id:clientUser.id,project_id:projectId,client_email:safeStr(clientUser.email,254),document_title:safeStr(body.documentTitle||member.data[0].subject||"Document Trimémo",240),instructions,attachment_name:name,attachment_type:safeStr(file.type,120)||"application/octet-stream",attachment_base64:base64,status:"pending"};
         const created=await supabaseAdminRequest("/rest/v1/trimemo_human_revisions",{method:"POST",headers:{Prefer:"return=representation"},body:JSON.stringify(row)});
@@ -361,7 +368,7 @@ export default async function handler(req, res) {
         if(emailKey&&to){
           const origin=String(process.env.TRIMEMO_FRONTEND_URL||"https://trimemo-frontend.vercel.app").replace(/\/$/,"");
           const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-          const html="<h2>Nouvelle demande de révision humaine</h2><p><b>Document :</b> "+esc(row.document_title)+"</p><p><b>Client :</b> "+esc(row.client_email)+"</p><p><b>Consignes :</b><br>"+esc(instructions).replace(/\n/g,"<br>")+"</p><p>Le document joint est disponible dans l’espace administrateur : <a href='"+origin+"/owner'>Ouvrir Trimémo Admin</a></p>";
+          const html="<h2>Nouvelle demande de révision humaine</h2><p><b>Document :</b> "+esc(row.document_title)+"</p><p><b>Client :</b> "+esc(row.client_email)+"</p><p><b>Consignes et devis indicatif :</b><br>"+esc(instructions).replace(/\n/g,"<br>")+"</p><p>Le document joint est disponible dans l’espace administrateur : <a href='"+origin+"/owner'>Ouvrir Trimémo Admin</a></p>";
           try { const sent=await fetch("https://api.resend.com/emails",{method:"POST",headers:{Authorization:"Bearer "+emailKey,"Content-Type":"application/json"},body:JSON.stringify({from:process.env.TRIMEMO_EMAIL_FROM||"Trimémo <onboarding@resend.dev>",to:[to],subject:"Nouvelle demande de révision : "+row.document_title,html}),signal:AbortSignal.timeout(10000)}); emailSent=sent.ok; } catch {}
         }
         return reply(res,201,{ok:true,request:{id:saved.id,status:saved.status,created_at:saved.created_at},emailSent,message:emailSent?"Demande envoyée et notification e-mail transmise.":"Demande enregistrée. La notification e-mail doit être configurée côté serveur."});
