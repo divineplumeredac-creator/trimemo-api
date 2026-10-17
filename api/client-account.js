@@ -103,10 +103,17 @@ export default async function handler(req, res) {
       if (action === "signup" && (!firstName || !lastName)) return fail(res, 400, "Le prénom et le nom sont obligatoires pour créer un compte.");
       if (action === "signup") {
         const { url, key } = config();
-        const created = await fetch(url + "/auth/v1/admin/users", {
+        // Utiliser le flux d'inscription public de Supabase : il déclenche l'e-mail
+        // de confirmation lorsque « Confirm email » est activé dans Auth > Settings.
+        const signupKey = String(process.env.SUPABASE_ANON_KEY || key).trim();
+        const created = await fetch(url + "/auth/v1/signup", {
           method: "POST",
-          headers: { apikey: key, Authorization: "Bearer " + key, "Content-Type": "application/json" },
-          body: JSON.stringify({ email, password, email_confirm: true, user_metadata: { product: "Trimémo", first_name: firstName, last_name: lastName, full_name: (firstName + " " + lastName).trim() } }),
+          headers: { apikey: signupKey, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email,
+            password,
+            data: { product: "Trimémo", first_name: firstName, last_name: lastName, full_name: (firstName + " " + lastName).trim() },
+          }),
           signal: AbortSignal.timeout(10000),
         });
         const result = await created.json().catch(() => ({}));
@@ -115,6 +122,15 @@ export default async function handler(req, res) {
           if (/already|registered|exists|duplicate/i.test(message)) return fail(res, 409, "Un compte existe déjà avec cette adresse. Connectez-vous plutôt.");
           return fail(res, created.status === 422 ? 400 : 502, "La création du compte a échoué. Vérifiez l'adresse e-mail et réessayez.");
         }
+        if (result?.user?.email_confirmed_at || result?.email_confirmed_at) {
+          return fail(res, 503, "La confirmation obligatoire des e-mails n'est pas activée dans Supabase. Activez « Confirm email » dans Authentication > Settings, puis réessayez.");
+        }
+        // Ne jamais ouvrir une session ni le tableau de bord immédiatement après l'inscription.
+        return res.status(200).json({
+          success: true,
+          needsEmailConfirmation: true,
+          message: "Votre compte a été créé. Consultez votre boîte e-mail et cliquez sur le lien de confirmation avant de vous connecter. Vérifiez aussi les courriers indésirables.",
+        });
       }
       const session = await supabase("/auth/v1/token?grant_type=password", {
         method: "POST",
