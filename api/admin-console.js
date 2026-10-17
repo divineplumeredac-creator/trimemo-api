@@ -338,9 +338,79 @@ export default async function handler(req, res) {
   if (req.method !== "POST") return reply(res, 405, { ok: false, error: "Utilisez POST." });
   let actor = "owner";
   try {
+    const { action } = req.body || {};
+    const revisionActions = ["revision-submit","revision-client-list","revision-client-file"];
+    if (revisionActions.includes(String(action || ""))) {
+      const body=req.body||{}, token=safeStr(body.token,5000);
+      const {url,key}=supabaseAdminConfig();
+      const authResponse=await fetch(url+"/auth/v1/user",{headers:{apikey:key,Authorization:"Bearer "+token},signal:AbortSignal.timeout(8000)});
+      const clientUser=await authResponse.json().catch(()=>({}));
+      if(!authResponse.ok||!clientUser?.id) return reply(res,401,{ok:false,error:"Session client invalide. Reconnectez-vous."});
+      if(action==="revision-submit"){
+        const projectId=safeStr(body.projectId,80);
+        if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(projectId)) return reply(res,400,{ok:false,error:"Identifiant de projet invalide."});
+        const member=await supabaseAdminRequest("/rest/v1/trimemo_client_projects?user_id=eq."+encodeURIComponent(clientUser.id)+"&project_id=eq."+encodeURIComponent(projectId)+"&select=project_id,subject&limit=1");
+        if(!member.data?.length) return reply(res,403,{ok:false,error:"Ce document n’est pas associé à votre compte."});
+        const instructions=safeStr(body.instructions,8000), file=body.file||{}, name=safeStr(file.name,180), base64=String(file.base64||"");
+        if(instructions.length<10) return reply(res,400,{ok:false,error:"Précisez les corrections attendues (10 caractères minimum)."});
+        if(!name||!base64||base64.length>4000000||! /\.(pdf|docx|doc|txt|rtf)$/i.test(name)) return reply(res,400,{ok:false,error:"Joignez un document PDF, Word, TXT ou RTF de moins de 3 Mo."});
+        const row={user_id:clientUser.id,project_id:projectId,client_email:safeStr(clientUser.email,254),document_title:safeStr(body.documentTitle||member.data[0].subject||"Document Trimémo",240),instructions,attachment_name:name,attachment_type:safeStr(file.type,120)||"application/octet-stream",attachment_base64:base64,status:"pending"};
+        const created=await supabaseAdminRequest("/rest/v1/trimemo_human_revisions",{method:"POST",headers:{Prefer:"return=representation"},body:JSON.stringify(row)});
+        const saved=created.data?.[0]||{};
+        let emailSent=false; const emailKey=String(process.env.RESEND_API_KEY||"").trim(), to=String(process.env.TRIMEMO_REVISION_EMAIL||process.env.TRIMEMO_OWNER_EMAIL||"").trim();
+        if(emailKey&&to){
+          const origin=String(process.env.TRIMEMO_FRONTEND_URL||"https://trimemo-frontend.vercel.app").replace(/\/$/,"");
+          const esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+          const html="<h2>Nouvelle demande de révision humaine</h2><p><b>Document :</b> "+esc(row.document_title)+"</p><p><b>Client :</b> "+esc(row.client_email)+"</p><p><b>Consignes :</b><br>"+esc(instructions).replace(/\n/g,"<br>")+"</p><p>Le document joint est disponible dans l’espace administrateur : <a href='"+origin+"/owner'>Ouvrir Trimémo Admin</a></p>";
+          try { const sent=await fetch("https://api.resend.com/emails",{method:"POST",headers:{Authorization:"Bearer "+emailKey,"Content-Type":"application/json"},body:JSON.stringify({from:process.env.TRIMEMO_EMAIL_FROM||"Trimémo <onboarding@resend.dev>",to:[to],subject:"Nouvelle demande de révision : "+row.document_title,html}),signal:AbortSignal.timeout(10000)}); emailSent=sent.ok; } catch {}
+        }
+        return reply(res,201,{ok:true,request:{id:saved.id,status:saved.status,created_at:saved.created_at},emailSent,message:emailSent?"Demande envoyée et notification e-mail transmise.":"Demande enregistrée. La notification e-mail doit être configurée côté serveur."});
+      }
+      if(action==="revision-client-list"){
+        const rows=await supabaseAdminRequest("/rest/v1/trimemo_human_revisions?user_id=eq."+encodeURIComponent(clientUser.id)+"&select=id,project_id,document_title,status,admin_notes,delivery_name,created_at,updated_at,completed_at&order=created_at.desc&limit=200");
+        return reply(res,200,{ok:true,requests:rows.data||[]});
+      }
+      const id=safeStr(body.id,30);if(!/^\d+$/.test(id))return reply(res,400,{ok:false,error:"Identifiant invalide."});
+      const rows=await supabaseAdminRequest("/rest/v1/trimemo_human_revisions?user_id=eq."+encodeURIComponent(clientUser.id)+"&id=eq."+id+"&select=delivery_name,delivery_type,delivery_base64,status&limit=1");
+      const item=rows.data?.[0];if(!item||item.status!=="completed"||!item.delivery_base64)return reply(res,404,{ok:false,error:"Le document corrigé n’est pas disponible."});
+      return reply(res,200,{ok:true,name:item.delivery_name,type:item.delivery_type,base64:item.delivery_base64});
+    }
     const owner = requireOwner(req);
     actor = safeStr(owner.sub || "owner", 254);
-    const { action } = req.body || {};
+    if (action === "revisions") {
+      const rows=await supabaseAdminRequest("/rest/v1/trimemo_human_revisions?select=id,user_id,project_id,client_email,document_title,instructions,attachment_name,attachment_type,status,admin_notes,delivery_name,created_at,updated_at,completed_at&order=created_at.desc&limit=500");
+      return reply(res,200,{ok:true,requests:rows.data||[]});
+    }
+    if (action === "revision-file") {
+      const id=safeStr(req.body?.id,30);if(!/^\d+$/.test(id))return reply(res,400,{ok:false,error:"Identifiant invalide."});
+      const rows=await supabaseAdminRequest("/rest/v1/trimemo_human_revisions?id=eq."+id+"&select=attachment_name,attachment_type,attachment_base64,delivery_name,delivery_type,delivery_base64&limit=1");
+      const item=rows.data?.[0];if(!item)return reply(res,404,{ok:false,error:"Demande introuvable."});
+      const delivery=req.body?.delivery===true,base64=delivery?item.delivery_base64:item.attachment_base64;if(!base64)return reply(res,404,{ok:false,error:"Fichier indisponible."});
+      return reply(res,200,{ok:true,name:delivery?item.delivery_name:item.attachment_name,type:delivery?item.delivery_type:item.attachment_type,base64});
+    }
+    if (action === "revision-update") {
+      const id=safeStr(req.body?.id,30),status=safeStr(req.body?.status,30);
+      if(!/^\d+$/.test(id)||!["pending","in_progress","completed"].includes(status))return reply(res,400,{ok:false,error:"Statut invalide."});
+      const patch={status,admin_notes:safeStr(req.body?.adminNotes,5000),updated_at:new Date().toISOString()};
+      if(status==="completed"){
+        const file=req.body?.file||{},name=safeStr(file.name,180),base64=String(file.base64||"");
+        if(!name||!base64||base64.length>4000000||! /\.(pdf|docx|doc|txt|rtf)$/i.test(name))return reply(res,400,{ok:false,error:"Joignez le document corrigé avant de terminer la demande."});
+        patch.delivery_name=name;patch.delivery_type=safeStr(file.type,120)||"application/octet-stream";patch.delivery_base64=base64;patch.completed_at=new Date().toISOString();
+      }
+      const updated=await supabaseAdminRequest("/rest/v1/trimemo_human_revisions?id=eq."+id,{method:"PATCH",headers:{Prefer:"return=representation"},body:JSON.stringify(patch)});
+      const item=updated.data?.[0];
+      let emailSent=false;
+      if(status==="completed"&&item?.client_email&&process.env.RESEND_API_KEY){
+        try {
+          const origin=String(process.env.TRIMEMO_FRONTEND_URL||"https://trimemo-frontend.vercel.app").replace(/\/$/,"");
+          const note=safeStr(patch.admin_notes,5000).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+          const sent=await fetch("https://api.resend.com/emails",{method:"POST",headers:{Authorization:"Bearer "+process.env.RESEND_API_KEY,"Content-Type":"application/json"},body:JSON.stringify({from:process.env.TRIMEMO_EMAIL_FROM||"Trimémo <onboarding@resend.dev>",to:[item.client_email],subject:"Votre document corrigé est prêt - Trimémo",html:"<p>Votre document corrigé est disponible dans votre espace client Trimémo.</p><p><a href='"+origin+"'>Connectez-vous pour le récupérer.</a></p>"+(note?"<p>Note : "+note+"</p>":"")}),signal:AbortSignal.timeout(10000)});
+          emailSent=sent.ok;
+        } catch {}
+      }
+      return reply(res,200,{ok:true,request:item,emailSent,emailConfigured:Boolean(process.env.RESEND_API_KEY)});
+    }
+
     if (action === "overview") {
       const [clients, projects, orderData, usageData, logs] = await Promise.all([
         loadClients(), loadProjects(), loadOrders(), loadUsage(),
