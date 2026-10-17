@@ -340,13 +340,33 @@ export default async function handler(req, res) {
   let actor = "owner";
   try {
     const { action } = req.body || {};
-    const revisionActions = ["revision-submit","revision-client-list","revision-client-file"];
+    const revisionActions = ["revision-submit","revision-quote","revision-client-list","revision-client-file"];
     if (revisionActions.includes(String(action || ""))) {
       const body=req.body||{}, token=safeStr(body.token,5000);
       const {url,key}=supabaseAdminConfig();
       const authResponse=await fetch(url+"/auth/v1/user",{headers:{apikey:key,Authorization:"Bearer "+token},signal:AbortSignal.timeout(8000)});
       const clientUser=await authResponse.json().catch(()=>({}));
       if(!authResponse.ok||!clientUser?.id) return reply(res,401,{ok:false,error:"Session client invalide. Reconnectez-vous."});
+      if(action==="revision-quote"){
+        const file=body.file||{}, name=safeStr(file.name,180), base64=String(file.base64||"");
+        const tier=String(body.revisionTier||"standard");
+        const tierLabels={essential:"Correction essentielle",standard:"Révision standard",deep:"Révision approfondie"};
+        const marketRates={west_africa:{currency:"FCFA",rates:{essential:750,standard:1500,deep:2500}},africa_other:{currency:"FCFA",rates:{essential:1000,standard:1800,deep:3000}},fr_be:{currency:"EUR",rates:{essential:2,standard:3.5,deep:6}},canada:{currency:"CAD",rates:{essential:3,standard:5,deep:8}}};
+        const countryCode=String(req.headers["x-vercel-ip-country"]||req.headers["cf-ipcountry"]||"").trim().toUpperCase();
+        const westAfricaCountries=new Set(["BJ","CI","SN","TG","BF","ML","NE","GN","GW","MR"]);
+        const market=countryCode==="FR"||countryCode==="BE" ? "fr_be" : countryCode==="CA" ? "canada" : westAfricaCountries.has(countryCode) ? "west_africa" : ["CD","CG","GA","CM","TD","MG","RW","BI"].includes(countryCode) ? "africa_other" : "";
+        if(!Object.prototype.hasOwnProperty.call(tierLabels,tier)) return reply(res,400,{ok:false,error:"Niveau de révision invalide."});
+        if(!name||!base64||base64.length>4000000||!/\.docx$/i.test(name)) return reply(res,400,{ok:false,error:"Joignez un document Word .docx de moins de 3 Mo."});
+        let documentText="";
+        try { const extracted=await mammoth.extractRawText({buffer:Buffer.from(base64,"base64")}); documentText=String(extracted.value||"").trim(); }
+        catch { return reply(res,400,{ok:false,error:"Le fichier Word est illisible. Réexportez-le puis réessayez."}); }
+        const wordCount=documentText?documentText.split(/\s+/).filter(Boolean).length:0;
+        if(wordCount<1) return reply(res,400,{ok:false,error:"Aucun texte exploitable n’a été détecté dans le document."});
+        if(!market) return reply(res,422,{ok:false,error:"Le devis ne peut pas être calculé pour ce marché pour le moment.",code:"COUNTRY_DETECTION_UNAVAILABLE"});
+        const pages=Math.max(1,Math.ceil(wordCount/320)), marketInfo=marketRates[market], unitPrice=marketInfo.rates[tier], totalPrice=Math.round(unitPrice*pages*100)/100;
+        const daysPer20={essential:2,standard:3,deep:5}, extraDays=Math.max(0,Math.ceil(pages/20)-1), minDays=daysPer20[tier]+extraDays, maxDays=minDays+1;
+        return reply(res,200,{ok:true,estimatedPages:pages,detectedWordCount:wordCount,unitPrice,currency:marketInfo.currency,estimatedAmount:totalPrice,revisionTier:tier,tierLabel:tierLabels[tier],deliveryDays:{min:minDays,max:maxDays},deliveryLabel:minDays===maxDays?minDays+" jours ouvrés":minDays+" à "+maxDays+" jours ouvrés"});
+      }
       if(action==="revision-submit"){
         const projectId=safeStr(body.projectId,80);
         if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(projectId)) return reply(res,400,{ok:false,error:"Identifiant de projet invalide."});
@@ -375,7 +395,7 @@ export default async function handler(req, res) {
         const pages=Math.max(1,Math.ceil(wordCount/320));
         if(!market) return reply(res,422,{ok:false,error:"Le pays n’a pas pu être détecté automatiquement par le serveur. Réessayez depuis le site Trimémo.",code:"COUNTRY_DETECTION_UNAVAILABLE"});
         const marketInfo=marketRates[market], unitPrice=marketInfo.rates[tier], totalPrice=Math.round(unitPrice*pages*100)/100;
-        const quoteBlock="\n\n--- DEVIS INDICATIF DE RÉVISION HUMAINE ---\nPrestation : "+tierLabels[tier]+"\nVolume estimé automatiquement : "+pages+" page(s) calculée(s) à partir de "+wordCount+" mots (320 mots/page)\nTarif unitaire : "+unitPrice+" "+marketInfo.currency+" / page\nEstimation : "+totalPrice+" "+marketInfo.currency+"\nLe volume est une estimation textuelle, pas une pagination Word exacte. Le montant définitif est à confirmer avant paiement.\n--- FIN DU DEVIS ---";
+        const daysPer20={essential:2,standard:3,deep:5}, extraDays=Math.max(0,Math.ceil(pages/20)-1), minDays=daysPer20[tier]+extraDays, maxDays=minDays+1;\n        const quoteBlock="\\n\\n--- DEVIS INDICATIF DE RÉVISION HUMAINE ---\\nPrestation : "+tierLabels[tier]+"\\nVolume estimé : "+pages+" page(s)\\nTarif unitaire : "+unitPrice+" "+marketInfo.currency+" / page\\nEstimation : "+totalPrice+" "+marketInfo.currency+"\\nDélai estimé : "+minDays+" à "+maxDays+" jours ouvrés\\n--- FIN DU DEVIS ---";
         const instructions=rawInstructions+quoteBlock;
         const row={user_id:clientUser.id,project_id:projectId,client_email:safeStr(clientUser.email,254),document_title:safeStr(body.documentTitle||member.data[0].subject||"Document Trimémo",240),instructions,attachment_name:name,attachment_type:safeStr(file.type,120)||"application/octet-stream",attachment_base64:base64,status:"pending"};
         const created=await supabaseAdminRequest("/rest/v1/trimemo_human_revisions",{method:"POST",headers:{Prefer:"return=representation"},body:JSON.stringify(row)});
@@ -387,7 +407,7 @@ export default async function handler(req, res) {
           const html="<h2>Nouvelle demande de révision humaine</h2><p><b>Document :</b> "+esc(row.document_title)+"</p><p><b>Client :</b> "+esc(row.client_email)+"</p><p><b>Consignes et devis indicatif :</b><br>"+esc(instructions).replace(/\n/g,"<br>")+"</p><p>Le document joint est disponible dans l’espace administrateur : <a href='"+origin+"/owner'>Ouvrir Trimémo Admin</a></p>";
           try { const sent=await fetch("https://api.resend.com/emails",{method:"POST",headers:{Authorization:"Bearer "+emailKey,"Content-Type":"application/json"},body:JSON.stringify({from:process.env.TRIMEMO_EMAIL_FROM||"Trimémo <onboarding@resend.dev>",to:[to],subject:"Nouvelle demande de révision : "+row.document_title,html}),signal:AbortSignal.timeout(10000)}); emailSent=sent.ok; } catch {}
         }
-        return reply(res,201,{ok:true,request:{id:saved.id,status:saved.status,created_at:saved.created_at},emailSent,estimatedPages:pages,detectedWordCount:wordCount,estimatedAmount:totalPrice,currency:marketInfo.currency,message:(emailSent?"Demande envoyée et notification e-mail transmise.":"Demande enregistrée. La notification e-mail doit être configurée côté serveur.")+" Volume analysé automatiquement : environ "+pages+" page(s)."});
+        return reply(res,201,{ok:true,request:{id:saved.id,status:saved.status,created_at:saved.created_at},emailSent,estimatedPages:pages,detectedWordCount:wordCount,estimatedAmount:totalPrice,currency:marketInfo.currency,deliveryDays:{min:minDays,max:maxDays},deliveryLabel:minDays+" à "+maxDays+" jours ouvrés",message:(emailSent?"Demande envoyée et notification e-mail transmise.":"Demande enregistrée. La notification e-mail doit être configurée côté serveur.")+" Volume analysé automatiquement : environ "+pages+" page(s)."});
       }
       if(action==="revision-client-list"){
         const rows=await supabaseAdminRequest("/rest/v1/trimemo_human_revisions?user_id=eq."+encodeURIComponent(clientUser.id)+"&select=id,project_id,document_title,status,admin_notes,delivery_name,created_at,updated_at,completed_at&order=created_at.desc&limit=200");
