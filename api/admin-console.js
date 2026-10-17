@@ -428,8 +428,16 @@ export default async function handler(req, res) {
       const patch={status,admin_notes:safeStr(req.body?.adminNotes,5000),updated_at:new Date().toISOString()};
       if(status==="completed"){const file=req.body?.file||{},name=safeStr(file.name,180),base64=String(file.base64||"");if(!name||!base64||base64.length>4000000||!/\.(pdf|docx|doc|txt|rtf)$/i.test(name))return reply(res,400,{ok:false,error:"Joignez le document corrigé avant de terminer la demande."});patch.delivery_name=name;patch.delivery_type=safeStr(file.type,120)||"application/octet-stream";patch.delivery_base64=base64;patch.completed_at=new Date().toISOString();}
       const updated=await supabaseAdminRequest("/rest/v1/trimemo_human_revisions?id=eq."+id,{method:"PATCH",headers:{Prefer:"return=representation"},body:JSON.stringify(patch)});const item=updated.data?.[0];
-      if(status==="completed"&&item?.client_email&&process.env.RESEND_API_KEY){const origin=String(process.env.TRIMEMO_FRONTEND_URL||"https://trimemo-frontend.vercel.app").replace(/\/$/,"");const note=safeStr(patch.admin_notes,5000).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));await fetch("https://api.resend.com/emails",{method:"POST",headers:{Authorization:"Bearer "+process.env.RESEND_API_KEY,"Content-Type":"application/json"},body:JSON.stringify({from:process.env.TRIMEMO_EMAIL_FROM||"Trimémo <onboarding@resend.dev>",to:[item.client_email],subject:"Votre document corrigé est prêt - Trimémo",html:"<p>Votre document corrigé est disponible dans votre espace client Trimémo.</p><p><a href='"+origin+"'>Connectez-vous pour le récupérer.</a></p>"+(note?"<p>Note : "+note+"</p>":"")}),signal:AbortSignal.timeout(10000)}).catch(()=>{});}
-      return reply(res,200,{ok:true,request:item});
+      let emailSent=false;
+      if(status==="completed"&&item?.client_email&&process.env.RESEND_API_KEY){
+        try {
+          const origin=String(process.env.TRIMEMO_FRONTEND_URL||"https://trimemo-frontend.vercel.app").replace(/\/$/,"");
+          const note=safeStr(patch.admin_notes,5000).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+          const sent=await fetch("https://api.resend.com/emails",{method:"POST",headers:{Authorization:"Bearer "+process.env.RESEND_API_KEY,"Content-Type":"application/json"},body:JSON.stringify({from:process.env.TRIMEMO_EMAIL_FROM||"Trimémo <onboarding@resend.dev>",to:[item.client_email],subject:"Votre document corrigé est prêt - Trimémo",html:"<p>Votre document corrigé est disponible dans votre espace client Trimémo.</p><p><a href='"+origin+"'>Connectez-vous pour le récupérer.</a></p>"+(note?"<p>Note : "+note+"</p>":"")}),signal:AbortSignal.timeout(10000)});
+          emailSent=sent.ok;
+        } catch {}
+      }
+      return reply(res,200,{ok:true,request:item,emailSent,emailConfigured:Boolean(process.env.RESEND_API_KEY)});
     }
 
     if (action === "save-settings") {
