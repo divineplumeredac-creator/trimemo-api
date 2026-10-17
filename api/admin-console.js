@@ -352,10 +352,12 @@ export default async function handler(req, res) {
         const member=await supabaseAdminRequest("/rest/v1/trimemo_client_projects?user_id=eq."+encodeURIComponent(clientUser.id)+"&project_id=eq."+encodeURIComponent(projectId)+"&select=project_id,subject&limit=1");
         if(!member.data?.length) return reply(res,403,{ok:false,error:"Ce document n’est pas associé à votre compte."});
         const rawInstructions=safeStr(body.instructions,8000), file=body.file||{}, name=safeStr(file.name,180), base64=String(file.base64||"");
-        const tier=String(body.revisionTier||"standard"), market=String(body.revisionMarket||"west_africa"), pages=Math.round(Number(body.revisionPages)||0);
+        const tier=String(body.revisionTier||"standard"), billingCountry=String(body.revisionBillingCountry||"BJ").toUpperCase(), pages=Math.round(Number(body.revisionPages)||0);
         const tierLabels={essential:"Correction essentielle",standard:"Révision standard",deep:"Révision approfondie"};
         const marketRates={west_africa:{label:"Bénin et Afrique de l’Ouest francophone",currency:"FCFA",rates:{essential:750,standard:1500,deep:2500}},africa_other:{label:"Autres marchés africains francophones",currency:"FCFA",rates:{essential:1000,standard:1800,deep:3000}},fr_be:{label:"France et Belgique",currency:"EUR",rates:{essential:2,standard:3.5,deep:6}},canada:{label:"Canada francophone",currency:"CAD",rates:{essential:3,standard:5,deep:8}}};
-        if(!Object.prototype.hasOwnProperty.call(tierLabels,tier)||!Object.prototype.hasOwnProperty.call(marketRates,market)||!Number.isInteger(pages)||pages<1||pages>500) return reply(res,400,{ok:false,error:"Niveau de révision, marché ou nombre de pages invalide."});
+        const westAfricaCountries=new Set(["BJ","CI","SN","TG","BF","ML","NE","GN","GW","MR"]);
+        const market= billingCountry==="FR"||billingCountry==="BE" ? "fr_be" : billingCountry==="CA" ? "canada" : billingCountry==="AFRICA_OTHER" ? "africa_other" : westAfricaCountries.has(billingCountry) ? "west_africa" : "";
+        if(!Object.prototype.hasOwnProperty.call(tierLabels,tier)||!market||!Number.isInteger(pages)||pages<1||pages>500) return reply(res,400,{ok:false,error:"Pays de facturation, niveau de révision ou nombre de pages invalide."});
         if(rawInstructions.length<10) return reply(res,400,{ok:false,error:"Précisez les corrections attendues (10 caractères minimum)."});
         const marketInfo=marketRates[market], unitPrice=marketInfo.rates[tier], totalPrice=Math.round(unitPrice*pages*100)/100;
         const quoteBlock="\n\n--- DEVIS INDICATIF DE RÉVISION HUMAINE ---\nPrestation : "+tierLabels[tier]+"\nMarché de facturation : "+marketInfo.label+"\nVolume déclaré : "+pages+" page(s) de 320 mots\nTarif unitaire : "+unitPrice+" "+marketInfo.currency+" / page\nEstimation : "+totalPrice+" "+marketInfo.currency+"\nLe montant est à confirmer avant paiement.\n--- FIN DU DEVIS ---";
