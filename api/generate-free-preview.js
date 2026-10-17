@@ -237,7 +237,6 @@ MISE EN FORME OBLIGATOIRE : l'introduction générale doit comporter plusieurs p
     await deleteOpenAIFiles(fileIds, apiKey);
     console.error("FREE_PREVIEW_FAILED", { status: Number(error?.status) || 500, code: String(error?.code || "PREVIEW_GENERATION_ERROR") });
     void logAdminEvent({ category: "generation", severity: (Number(error?.status) || 500) >= 500 ? "error" : "warning", action: "free_preview_failed", message: String(error?.code || error?.name || "PREVIEW_GENERATION_ERROR"), requestPath: "/api/generate-free-preview", statusCode: Number(error?.status) || 500 });
-    void logAdminEvent({ category: "generation", severity: "error", action: "free_preview_failed", message: String(error?.code || error?.name || "PREVIEW_GENERATION_ERROR"), requestPath: "/api/generate-free-preview", statusCode: Number(error?.status) || 500 });
     const status = error?.status || 500;
     return res.status(status).json({error: status >= 500 ? "Impossible de générer l’aperçu pour le moment. Réessayez dans quelques instants." : (error?.message || "Requête invalide.")});
   }

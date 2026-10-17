@@ -1,5 +1,6 @@
 import { setCors } from "../lib/http.js";
 import { createPremiumToken } from "../lib/premium-auth.js";
+import { rateLimit } from "../lib/rate-limit.js";
 
 function cors(res, req) { setCors(res, req, "POST, OPTIONS"); }
 function fail(res, status, error) { return res.status(status).json({ error }); }
@@ -90,6 +91,8 @@ export default async function handler(req, res) {
   const body = req.body || {};
   const action = String(body.action || "").trim();
   try {
+    if (action === "signup") await rateLimit(req, "client-signup", 5, 60 * 60 * 1000);
+    if (action === "login") await rateLimit(req, "client-login", 10, 15 * 60 * 1000);
     if (action === "signup" || action === "login") {
       const email = validEmail(body.email);
       const password = String(body.password || "");
@@ -100,10 +103,17 @@ export default async function handler(req, res) {
       if (action === "signup" && (!firstName || !lastName)) return fail(res, 400, "Le prénom et le nom sont obligatoires pour créer un compte.");
       if (action === "signup") {
         const { url, key } = config();
-        const created = await fetch(url + "/auth/v1/admin/users", {
+        // Utiliser le flux d'inscription public de Supabase : il déclenche l'e-mail
+        // de confirmation lorsque « Confirm email » est activé dans Auth > Settings.
+        const signupKey = String(process.env.SUPABASE_ANON_KEY || key).trim();
+        const created = await fetch(url + "/auth/v1/signup", {
           method: "POST",
-          headers: { apikey: key, Authorization: "Bearer " + key, "Content-Type": "application/json" },
-          body: JSON.stringify({ email, password, email_confirm: true, user_metadata: { product: "Trimémo", first_name: firstName, last_name: lastName, full_name: (firstName + " " + lastName).trim() } }),
+          headers: { apikey: signupKey, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email,
+            password,
+            data: { product: "Trimémo", first_name: firstName, last_name: lastName, full_name: (firstName + " " + lastName).trim() },
+          }),
           signal: AbortSignal.timeout(10000),
         });
         const result = await created.json().catch(() => ({}));
@@ -112,6 +122,15 @@ export default async function handler(req, res) {
           if (/already|registered|exists|duplicate/i.test(message)) return fail(res, 409, "Un compte existe déjà avec cette adresse. Connectez-vous plutôt.");
           return fail(res, created.status === 422 ? 400 : 502, "La création du compte a échoué. Vérifiez l'adresse e-mail et réessayez.");
         }
+        if (result?.user?.email_confirmed_at || result?.email_confirmed_at) {
+          return fail(res, 503, "La confirmation obligatoire des e-mails n'est pas activée dans Supabase. Activez « Confirm email » dans Authentication > Settings, puis réessayez.");
+        }
+        // Ne jamais ouvrir une session ni le tableau de bord immédiatement après l'inscription.
+        return res.status(200).json({
+          success: true,
+          needsEmailConfirmation: true,
+          message: "Votre compte a été créé. Consultez votre boîte e-mail et cliquez sur le lien de confirmation avant de vous connecter. Vérifiez aussi les courriers indésirables.",
+        });
       }
       const session = await supabase("/auth/v1/token?grant_type=password", {
         method: "POST",
@@ -236,7 +255,13 @@ export default async function handler(req, res) {
       if (membership.payment_status === "paid") {
         const orders = await supabase("/rest/v1/trimemo_orders?project_id=eq." + encodeURIComponent(projectId) + "&status=in.(paid,consumed)&select=order_id,project_id,project_snapshot,status&order=paid_at.desc&limit=1");
         const order = Array.isArray(orders) ? orders[0] : null;
-        if (order?.order_id && order.project_snapshot) {
+        const consumedAt = Date.parse(order?.consumed_at || "");
+        const consumedRetryAllowed = order?.status === "consumed" && Number.isFinite(consumedAt) && Date.now() - consumedAt <= 15 * 60 * 1000;
+        const orderClientId = String(order?.project_snapshot?.clientUserId || "").trim();
+        if (order?.order_id && order.project_snapshot && orderClientId !== "" && orderClientId !== user.id) {
+          return fail(res, 403, "Cette commande appartient à un autre compte client.");
+        }
+        if (order?.order_id && order.project_snapshot && (order.status === "paid" || consumedRetryAllowed)) {
           premiumToken = createPremiumToken(order.project_snapshot, order.order_id);
         }
       }
@@ -252,8 +277,22 @@ export default async function handler(req, res) {
       const projectId = validProjectId(body.projectId);
       if (!projectId) return fail(res, 400, "Identifiant de projet invalide.");
       const subject = String(body.subject || "Projet académique").trim().slice(0, 240) || "Projet académique";
-      const paymentStatus = body.paid === true ? "paid" : "draft";
       const { url, key } = config();
+      const existingMemberships = await supabase("/rest/v1/trimemo_client_projects?project_id=eq." + encodeURIComponent(projectId) + "&select=user_id&limit=2");
+      if (Array.isArray(existingMemberships) && existingMemberships.some((row) => row.user_id !== user.id)) {
+        return fail(res, 403, "Ce projet est déjà rattaché à un autre compte client.");
+      }
+      // Le navigateur ne peut jamais déclarer lui-même un projet comme payé.
+      const paidOrders = await supabase("/rest/v1/trimemo_orders?project_id=eq." + encodeURIComponent(projectId) + "&status=in.(paid,consumed)&select=order_id,project_id,status,project_snapshot&order=paid_at.desc&limit=1");
+      const paidOrder = Array.isArray(paidOrders) ? paidOrders[0] : null;
+      const snapshotClientId = String(paidOrder?.project_snapshot?.clientUserId || "").trim();
+      if (snapshotClientId && snapshotClientId !== user.id) {
+        return fail(res, 403, "Cette commande appartient à un autre compte client.");
+      }
+      const legacyOrderBelongsToClient = Array.isArray(existingMemberships) && existingMemberships.some((row) => row.user_id === user.id);
+      const ownsPaidOrder = snapshotClientId ? snapshotClientId === user.id : legacyOrderBelongsToClient;
+      const paymentStatus = paidOrder?.project_id === projectId && paidOrder?.project_snapshot && ownsPaidOrder ? "paid" : "draft";
+      if (body.paid === true && paymentStatus !== "paid") return fail(res, 403, "Le paiement de ce projet n’est pas confirmé dans le registre sécurisé.");
       const now = new Date().toISOString();
       const response = await fetch(url + "/rest/v1/trimemo_client_projects?on_conflict=user_id,project_id", {
         method: "POST",
@@ -273,6 +312,6 @@ export default async function handler(req, res) {
   } catch (error) {
     const status = Number(error?.status) || 500;
     console.error("TRIMEMO_CLIENT_ACCOUNT_FAILED", { action, status, message: String(error?.message || "unknown").slice(0, 180) });
-    return fail(res, status >= 400 && status < 500 ? status : 502, status === 503 ? "Le service de comptes clients est indisponible." : String(error?.message || "Opération de compte impossible."));
+    return fail(res, status === 503 ? 503 : (status >= 400 && status < 500 ? status : 502), status === 503 ? "Le service de comptes clients ou de limitation des requêtes est indisponible." : String(error?.message || "Opération de compte impossible."));
   }
 }
