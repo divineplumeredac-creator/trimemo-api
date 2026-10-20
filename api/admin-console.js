@@ -423,7 +423,10 @@ export default async function handler(req, res) {
     actor = safeStr(owner.sub || "owner", 254);
     if (action === "revisions") {
       const rows=await supabaseAdminRequest("/rest/v1/trimemo_human_revisions?select=id,user_id,project_id,client_email,document_title,instructions,attachment_name,attachment_type,status,admin_notes,delivery_name,created_at,updated_at,completed_at&order=created_at.desc&limit=500");
-      return reply(res,200,{ok:true,requests:rows.data||[]});
+      const revisions=rows.data||[];
+      const users=await getAllAuthUsers();
+      const names=new Map(users.map(user=>[String(user.id),[safeStr(user.user_metadata?.first_name||user.user_metadata?.firstName||"",100),safeStr(user.user_metadata?.last_name||user.user_metadata?.lastName||"",100)].filter(Boolean).join(" ")]));
+      return reply(res,200,{ok:true,requests:revisions.map(item=>({...item,client_name:names.get(String(item.user_id))||""}))});
     }
     if (action === "revision-file") {
       const id=safeStr(req.body?.id,30);if(!/^\d+$/.test(id))return reply(res,400,{ok:false,error:"Identifiant invalide."});
