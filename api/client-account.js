@@ -108,6 +108,22 @@ export default async function handler(req, res) {
         user: { id: session.user.id, email: session.user.email || "", firstName: String(session.user.user_metadata?.first_name || ""), lastName: String(session.user.user_metadata?.last_name || "") },
       });
     }
+    if (action === "update-profile") {
+      const token = String(body.token || "").trim();
+      const firstName = String(body.firstName || "").trim().slice(0, 100);
+      const lastName = String(body.lastName || "").trim().slice(0, 100);
+      if (!firstName || !lastName) return fail(res, 400, "Le prénom et le nom sont obligatoires.");
+      const user = await authenticate(token);
+      const { url, key } = config();
+      const response = await fetch(url + "/auth/v1/admin/users/" + encodeURIComponent(user.id), {
+        method: "PUT", headers: { apikey: key, Authorization: "Bearer " + key, "Content-Type": "application/json" },
+        body: JSON.stringify({ user_metadata: { ...(user.user_metadata || {}), first_name: firstName, last_name: lastName, full_name: firstName + " " + lastName } }),
+        signal: AbortSignal.timeout(10000),
+      });
+      const updated = await response.json().catch(() => ({}));
+      if (!response.ok) return fail(res, 502, "Impossible d'enregistrer le nom du profil.");
+      return res.status(200).json({ success: true, user: { id: updated.id || user.id, email: updated.email || user.email || "", firstName, lastName } });
+    }
     if (action === "signup" || action === "login") {
       const email = validEmail(body.email);
       const password = String(body.password || "");
