@@ -341,7 +341,7 @@ Retourne uniquement le JSON.
       },
       body: JSON.stringify({
         model:
-          getClaudeModel(),
+          getClaudeModel("light"),
 
         text: {
           format: {
@@ -392,7 +392,7 @@ Retourne uniquement le JSON.
 
   void recordOpenAIUsage({
     endpoint: "generate-problematics",
-    model: getClaudeModel(),
+    model: getClaudeModel("light"),
     usage: data?.usage,
     status: response.ok ? "success" : "error",
     durationMs: Date.now() - requestStartedAt,

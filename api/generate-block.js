@@ -397,7 +397,7 @@ Utilise des références vérifiables si elles sont nécessaires.
       user: userPrompt,
       maxTokens: 12000,
       webSearch: true,
-      maxSearches: 5
+      maxSearches: Math.max(1, Math.min(5, Number(process.env.TRIMEMO_WEB_SEARCH_MAX_USES) || 3))
     });
 
     const rawText = await response.text();
