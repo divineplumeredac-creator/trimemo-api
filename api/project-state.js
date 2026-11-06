@@ -12,29 +12,40 @@ async function db(path, init = {}) {
   const { url, key } = config();
   const response = await fetch(`${url}/rest/v1/${path}`, {
     ...init,
-    headers: {
-      apikey: key,
-      Authorization: `Bearer ${key}`,
-      "Content-Type": "application/json",
-      Prefer: "return=representation",
-      ...(init.headers || {}),
-    },
+    headers: { apikey: key, Authorization: `Bearer ${key}`, "Content-Type": "application/json", Prefer: "return=representation", ...(init.headers || {}) },
     signal: AbortSignal.timeout(8000),
   });
   const raw = await response.text();
   if (!response.ok) {
-    const diagnostic = raw.replace(/(eyJ[a-zA-Z0-9_-]{20,}\.[a-zA-Z0-9_-]{20,}\.[a-zA-Z0-9_-]{10,})/g, "[token]").slice(0, 220);
-    const error = new Error("Supabase REST HTTP " + response.status + ": " + diagnostic);
+    const error = new Error("Supabase REST HTTP " + response.status + ": " + raw.slice(0, 180));
     error.status = response.status === 404 ? 503 : 502;
     throw error;
   }
   try { return raw ? JSON.parse(raw) : []; } catch { return []; }
 }
+function getBearer(req) {
+  const value = String(req.headers?.authorization || req.headers?.Authorization || "");
+  const match = /^Bearer\s+(.+)$/i.exec(value);
+  return match ? match[1].trim() : "";
+}
+async function authorizeProject(req, id) {
+  const token = getBearer(req);
+  if (!token) { const error = new Error("Connectez-vous pour accéder à ce projet."); error.status = 401; throw error; }
+  const { url, key } = config();
+  const response = await fetch(url + "/auth/v1/user", {
+    headers: { apikey: key, Authorization: "Bearer " + token },
+    signal: AbortSignal.timeout(8000),
+  });
+  const user = await response.json().catch(() => ({}));
+  if (!response.ok || !user?.id) { const error = new Error("Votre session a expiré. Connectez-vous à nouveau."); error.status = 401; throw error; }
+  const query = new URLSearchParams({ select: "project_id", project_id: "eq." + id, user_id: "eq." + user.id, limit: "1" });
+  const membership = await db("trimemo_client_projects?" + query);
+  if (!Array.isArray(membership) || !membership.length) { const error = new Error("Ce projet n'est pas rattaché à votre compte client."); error.status = 403; throw error; }
+  return user;
+}
 function projectId(req) {
   const value = String(req.method === "GET" ? req.query?.projectId : req.body?.projectId || "").trim();
-  // Project IDs are UUID capability identifiers; do not accept arbitrary table filters.
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)) return "";
-  return value;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value) ? value : "";
 }
 export default async function handler(req, res) {
   cors(res, req);
@@ -43,6 +54,7 @@ export default async function handler(req, res) {
   const id = projectId(req);
   if (!id) return fail(res, 400, "Identifiant de projet invalide.");
   try {
+    await authorizeProject(req, id);
     if (req.method === "GET") {
       const rows = await db(`trimemo_project_state?project_id=eq.${encodeURIComponent(id)}&select=project_id,state,updated_at,expires_at&limit=1`);
       const row = rows?.[0];
@@ -55,8 +67,7 @@ export default async function handler(req, res) {
     }
     const state = req.body?.state;
     if (!state || typeof state !== "object" || Array.isArray(state)) return fail(res, 400, "État du projet invalide.");
-    const serialized = JSON.stringify(state);
-    if (serialized.length > 2_000_000) return fail(res, 413, "Le projet est trop volumineux pour être sauvegardé en une seule fois.");
+    if (JSON.stringify(state).length > 2_000_000) return fail(res, 413, "Le projet est trop volumineux pour être sauvegardé en une seule fois.");
     const now = new Date();
     const expiresAt = new Date(now.getTime() + 180 * 24 * 60 * 60 * 1000).toISOString();
     await db("trimemo_project_state?on_conflict=project_id", {
@@ -66,7 +77,8 @@ export default async function handler(req, res) {
     });
     return res.status(200).json({ success: true, savedAt: now.toISOString() });
   } catch (error) {
-    console.error("TRIMEMO_PROJECT_STATE_FAILED", { method: req.method, status: Number(error?.status) || 500, message: String(error?.message || "unknown").slice(0, 260) });
-    return fail(res, Number(error?.status) || 500, Number(error?.status) === 503 ? "Le stockage Supabase n'est pas configuré ou la table est absente." : "Impossible de sauvegarder le projet sur le serveur.");
+    const status = Number(error?.status) || 500;
+    console.error("TRIMEMO_PROJECT_STATE_FAILED", { method: req.method, status, message: String(error?.message || "unknown").slice(0, 180) });
+    return fail(res, status >= 400 && status < 500 ? status : 502, status === 503 ? "Le stockage Supabase n'est pas configuré ou la table est absente." : status === 401 || status === 403 ? error.message : "Impossible de sauvegarder ou récupérer le projet.");
   }
 }
