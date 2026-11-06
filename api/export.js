@@ -126,6 +126,14 @@ function cleanAcademicText(value) {
     // Le texte cité est conservé ; seule l'enveloppe technique est retirée.
     .replace(/<cite\b[^>]*>([\s\S]*?)<\/cite>/gi, '$1')
     .replace(/<\/?cite\b[^>]*>/gi, '')
+    // Retirer les balises HTML/XML résiduelles sans supprimer le contenu textuel.
+    .replace(/<\/?(?:citation|source|span|strong|em|b|i|p|div|br|sup|sub|ref|footnote)\b[^>]*>/gi, '')
+    .replace(/\[(?:cite|citation|source|ref)[^\]]*\]/gi, '')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&amp;/gi, '&')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
     .replace(/([?&])utm_(source|medium|campaign|term|content)=[^&\s)]+/gi, '$1')
     // Supprimer les marqueurs vides laissés par la génération des citations.
     .replace(/\(\s*\)/g, '')
