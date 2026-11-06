@@ -75,9 +75,14 @@ export default async function handler(req, res) {
     const expiresAt = new Date(now.getTime() + 180 * 24 * 60 * 60 * 1000).toISOString();
     await db("trimemo_project_state?on_conflict=project_id", {
       method: "POST",
-      headers: { Prefer: "resolution=merge-duplicates,return=representation" },
+      headers: { Prefer: "resolution=ignore-duplicates,return=representation" },
       body: JSON.stringify({ project_id: id, owner_id: user.id, state, updated_at: now.toISOString(), expires_at: expiresAt }),
     });
+    const updated = await db("trimemo_project_state?project_id=eq." + encodeURIComponent(id) + "&owner_id=eq." + encodeURIComponent(user.id), {
+      method: "PATCH",
+      body: JSON.stringify({ state, updated_at: now.toISOString(), expires_at: expiresAt }),
+    });
+    if (!Array.isArray(updated) || updated.length !== 1) return fail(res, 403, "La sauvegarde appartient à un autre compte ou doit être vérifiée.");
     return res.status(200).json({ success: true, savedAt: now.toISOString() });
   } catch (error) {
     const status = Number(error?.status) || 500;
