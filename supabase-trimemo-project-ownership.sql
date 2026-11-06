@@ -7,7 +7,7 @@ begin
     select project_id
     from public.trimemo_client_projects
     group by project_id
-    having count(distinct user_id) > 1
+    having count(*) > 1
   ) then
     raise exception 'Migration stopped: some Trimémo projects are linked to multiple users. Review trimemo_client_projects duplicates before retrying.';
   end if;
