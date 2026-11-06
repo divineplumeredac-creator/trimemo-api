@@ -21,6 +21,21 @@ import { assertFilesSize } from "../lib/limits.js";
 import { verifySources } from "../lib/verify-sources.js";
 function normalizeGeneratedAcademicContent(input) {
   let text = String(input || "").replace(/\r\n?/gu, "\n").trim();
+
+  // Convertit les balises de structure en véritables séparateurs avant de retirer le HTML.
+  text = text
+    .replace(/<\\/(?:p|div|section|article|li|h[1-6])\\s*>/giu, "\n\n")
+    .replace(/<br\\s*\\/?>/giu, "\n")
+    .replace(/<a\\b[^>]*>([\\s\\S]*?)<\\/a>/giu, "$1")
+    .replace(/<\\/?(?:p|div|span|strong|em|b|i|u|section|article|ul|ol|li|h[1-6])\\b[^>]*>/giu, "")
+    .replace(/<[^>]*>/gu, "")
+    .replace(/&nbsp;/giu, " ")
+    .replace(/&amp;/giu, "&")
+    .replace(/&lt;/giu, "<")
+    .replace(/&gt;/giu, ">")
+    .replace(/&quot;/giu, '"')
+    .replace(/&#39;|&apos;/giu, "'");
+
   // Enlève les liens Markdown de recherche sans toucher aux métadonnées de sources.
   text = text.replace(/\[\s*(?:https?:\/\/)?(?:www\.)?[a-z0-9.-]+\.[a-z]{2,}\s*\]\(https?:\/\/[^)]+\)/giu, "");
   text = text.replace(/\[([^\]]+)\]\(https?:\/\/[^)]+\)/giu, "$1");
@@ -32,7 +47,8 @@ function normalizeGeneratedAcademicContent(input) {
   // Les titres Markdown doivent commencer sur une ligne autonome.
   text = text.replace(/[ \t]+(?=#{1,6}\s+)/gu, "\n\n");
   text = text.replace(/^(#{1,6})[ \t]+(.+)$/gmu, (_, marks, title) => String(marks) + " " + String(title).trim());
-  text = text.replace(/[ \t]{2,}/gu, " ").replace(/\n{3,}/gu, "\n\n");
+  // Une seule nouvelle ligne reste un retour souple; seules les lignes vides séparent les paragraphes.
+  text = text.replace(/[ \t]{2,}/gu, " ").replace(/\n[ \t]*\n(?:[ \t]*\n)+/gu, "\n\n");
   return text.trim();
 }
 
