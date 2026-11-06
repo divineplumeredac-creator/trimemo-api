@@ -33,3 +33,20 @@ test('rejects structural headings not present in the selected plan', () => {
   blocks[1].structure.push('Chapitre fantôme');
   assert.throws(() => validateDocument({ ...validInput, blocks }), /ne peut pas être compilé/);
 });
+
+
+test('accepts planned subsections and internal titles with numbered labels', () => {
+  const input = structuredClone(validInput);
+  input.plan.parts[0].chapters[0].sections[0].subsections = [{
+    title: 'Cadre juridique',
+    internalTitles: [{ title: 'Les obligations de prévention' }]
+  }];
+  input.blocks[1].structure.push('1.1.1 Cadre juridique', '1.1.1.1 Les obligations de prévention');
+  assert.doesNotThrow(() => validateDocument(input));
+});
+
+test('rejects a subsection that is not part of the selected plan', () => {
+  const input = structuredClone(validInput);
+  input.blocks[1].structure.push('1.1.1 Sous-section inconnue');
+  assert.throws(() => validateDocument(input), /rubrique absente du plan validé/);
+});
