@@ -172,6 +172,7 @@ export default async function handler(req, res) {
       return {
         title: String(item?.title || "").slice(0, 240),
         content: excerpt,
+        structure: Array.isArray(item?.structure) ? item.structure.map((label) => String(label || "").slice(0, 240)).slice(0, 20) : [],
         sources: Array.isArray(item?.sources) ? item.sources.slice(0, 12) : []
       };
     }).filter((item) => item.title || item.content);
