@@ -157,17 +157,25 @@ export default async function handler(req, res) {
 
     const isPartStart = ["part", "partie", "part_intro", "partie_intro", "part-intro", "partie-intro"].includes(blockKind);
     const isChapterStart = ["chapter", "chapitre", "chapter_intro", "chapitre_intro", "chapter-intro", "chapitre-intro"].includes(blockKind);
-    // Conserver l'historique des blocs pour éviter qu'une suite ne reparte de l'introduction.
-    // Les blocs récents gardent leur texte intégral ; les anciens gardent un extrait pour le contexte.
-    const preceding = Array.isArray(body.preceding)
-      ? body.preceding.slice(-30).map((item, index, all) => ({
-          title: String(item?.title || "").slice(0, 240),
-          content: index >= all.length - 3
-            ? String(item?.content || "").slice(-7000)
-            : String(item?.content || "").slice(0, 1200),
-          sources: Array.isArray(item?.sources) ? item.sources.slice(0, 12) : []
-        })).filter((item) => item.title || item.content)
-      : [];
+    // Historique équilibré : les blocs anciens conservent leur début ET leur fin.
+    // Les blocs récents restent plus détaillés. Le budget global évite de dépasser
+    // la fenêtre de contexte tout en préservant la progression du document.
+    const precedingInput = Array.isArray(body.preceding) ? body.preceding.slice(-30) : [];
+    const recentStart = Math.max(0, precedingInput.length - 3);
+    const preceding = precedingInput.map((item, index) => {
+      const raw = String(item?.content || "").trim();
+      const recent = index >= recentStart;
+      const excerpt = recent
+        ? raw.slice(-5000)
+        : raw.length > 900
+          ? raw.slice(0, 450) + "\n[… extrait intermédiaire omis …]\n" + raw.slice(-450)
+          : raw;
+      return {
+        title: String(item?.title || "").slice(0, 240),
+        content: excerpt,
+        sources: Array.isArray(item?.sources) ? item.sources.slice(0, 12) : []
+      };
+    }).filter((item) => item.title || item.content);
 
     const targetWords = Number(
       body.targetWords ||
