@@ -19,6 +19,16 @@ function countWords(value) {
   return String(value || "").trim().split(/\s+/u).filter(Boolean).length;
 }
 
+function cleanPreviewText(value) {
+  return String(value || "")
+    .replace(/&lt;/giu, "<").replace(/&gt;/giu, ">").replace(/&amp;/giu, "&").replace(/&quot;/giu, '"').replace(/&#39;|&apos;/giu, "'")
+    .replace(/<\/?(?:cite|citation|source|ref|footnote)\b[^>]*>/giu, "")
+    .replace(/\[(?:cite|citation|source|ref)[^\]]*\]/giu, "")
+    .replace(/\s+([,.;:!?])/gu, "$1")
+    .replace(/[ \t]{2,}/gu, " ")
+    .trim();
+}
+
 // Conserve les paragraphes entiers. Si un paragraphe dépasse le quota restant,
 // ne conserve que ses phrases complètes qui tiennent dans la limite.
 function trimToWords(value, limit) {
@@ -221,9 +231,9 @@ export default async function handler(req, res) {
     const firstPart = result.plan.parts[0];
     const firstChapter = firstPart?.chapters?.[0];
     if (!firstChapter) throw fail("Le premier chapitre est absent du plan.",502);
-    const introductionContent = trimToWords(result.introduction.content, Math.min(PREVIEW_INTRO_WORDS, previewWordLimit));
+    const introductionContent = trimToWords(cleanPreviewText(result.introduction.content), Math.min(PREVIEW_INTRO_WORDS, previewWordLimit));
     const remainingPreviewWords = Math.max(0, previewWordLimit - introductionContent.split(/\s+/u).filter(Boolean).length);
-    const chapterContent = trimToWords(String(result.chapterOne.content).trim(), remainingPreviewWords);
+    const chapterContent = trimToWords(cleanPreviewText(result.chapterOne.content), remainingPreviewWords);
     return res.status(200).json({
       success:true,
       previewWordLimit,
