@@ -269,16 +269,13 @@ export default async function handler(req, res) {
       }
 
       let premiumToken = "";
-      if (membership.payment_status === "paid") {
-        const orders = await supabase("/rest/v1/trimemo_orders?project_id=eq." + encodeURIComponent(projectId) + "&status=in.(paid,consumed)&select=order_id,project_id,project_snapshot,status&order=paid_at.desc&limit=1");
-        const order = Array.isArray(orders) ? orders[0] : null;
-        if (order?.order_id && order.project_snapshot) {
-          premiumToken = createPremiumToken(order.project_snapshot, order.order_id);
-        }
-      }
+      const orders = await supabase("/rest/v1/trimemo_orders?project_id=eq." + encodeURIComponent(projectId) + "&status=in.(paid,consumed)&select=order_id,project_id,project_snapshot,status&order=paid_at.desc&limit=1");
+      const paidOrder = Array.isArray(orders) ? orders[0] : null;
+      const isActuallyPaid = Boolean(paidOrder?.order_id && paidOrder.project_id === projectId && paidOrder.project_snapshot);
+      if (isActuallyPaid) premiumToken = createPremiumToken(paidOrder.project_snapshot, paidOrder.order_id);
       return res.status(200).json({
         success: true,
-        project: { project_id: membership.project_id, subject: membership.subject, payment_status: membership.payment_status },
+        project: { project_id: membership.project_id, subject: membership.subject, payment_status: isActuallyPaid ? "paid" : "draft" },
         state: restoredState,
         premium_token: premiumToken || null,
         updatedAt: stateRow.updated_at,
@@ -295,7 +292,7 @@ export default async function handler(req, res) {
       const existing = Array.isArray(existingRows) ? existingRows[0] : null;
       if (existing && existing.user_id !== user.id) return fail(res, 409, "Ce projet est déjà rattaché à un autre compte client.");
 
-      let paymentStatus = existing?.payment_status === "paid" ? "paid" : "draft";
+      let paymentStatus = "draft";
       const orderId = String(body.orderId || "").trim();
       if (orderId) {
         const order = await getOrderRecord(orderId);
@@ -303,6 +300,10 @@ export default async function handler(req, res) {
           return fail(res, 403, "La commande payée ne correspond pas à ce projet. Le statut du paiement n'a pas été modifié.");
         }
         paymentStatus = "paid";
+      } else {
+        // Do not preserve legacy "paid" flags unless the private payment ledger confirms them.
+        const paidOrders = await supabase("/rest/v1/trimemo_orders?project_id=eq." + encodeURIComponent(projectId) + "&status=in.(paid,consumed)&select=order_id&limit=1");
+        if (existing?.payment_status === "paid" && Array.isArray(paidOrders) && paidOrders.length) paymentStatus = "paid";
       }
 
       const now = new Date().toISOString();
