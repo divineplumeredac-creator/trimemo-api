@@ -119,6 +119,12 @@ function stripLeadingTitle(value, title) {
 }
 function cleanAcademicText(value) {
   return text(value)
+    // Décoder les entités avant de supprimer les balises : aucune balise encodée ne doit réapparaître.
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&amp;/gi, '&')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
     .replace(/\*\*(.*?)\*\*/g, '$1')
     .replace(/\*(.*?)\*/g, '$1')
     .replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, '$1')
