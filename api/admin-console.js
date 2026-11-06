@@ -340,13 +340,25 @@ export default async function handler(req, res) {
   let actor = "owner";
   try {
     const { action } = req.body || {};
-    const revisionActions = ["revision-submit","revision-quote","revision-client-list","revision-client-file"];
+    const revisionActions = ["revision-submit","revision-quote","revision-eligibility","revision-client-list","revision-client-file"];
     if (revisionActions.includes(String(action || ""))) {
       const body=req.body||{}, token=safeStr(body.token,5000);
       const {url,key}=supabaseAdminConfig();
       const authResponse=await fetch(url+"/auth/v1/user",{headers:{apikey:key,Authorization:"Bearer "+token},signal:AbortSignal.timeout(8000)});
       const clientUser=await authResponse.json().catch(()=>({}));
       if(!authResponse.ok||!clientUser?.id) return reply(res,401,{ok:false,error:"Session client invalide. Reconnectez-vous."});
+      if(action==="revision-eligibility"){
+        const projectId=safeStr(body.projectId,80);
+        if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(projectId)) return reply(res,400,{ok:false,error:"Identifiant de projet invalide."});
+        const member=await supabaseAdminRequest("/rest/v1/trimemo_client_projects?user_id=eq."+encodeURIComponent(clientUser.id)+"&project_id=eq."+encodeURIComponent(projectId)+"&select=project_id,subject&limit=1");
+        if(!member.data?.length) return reply(res,403,{ok:false,error:"Ce document n’est pas associé à votre compte."});
+        const orders=await supabaseAdminRequest("/rest/v1/trimemo_orders?project_id=eq."+encodeURIComponent(projectId)+"&status=in.(paid,consumed)&select=order_id&limit=1");
+        if(!orders.data?.length) return reply(res,200,{ok:true,eligible:false,reason:"payment_required"});
+        const saved=await supabaseAdminRequest("/rest/v1/trimemo_project_state?project_id=eq."+encodeURIComponent(projectId)+"&select=state&limit=1");
+        const blocks=Array.isArray(saved.data?.[0]?.state?.blocks)?saved.data[0].state.blocks:[];
+        const complete=blocks.length>0&&blocks.every((block)=>block?.status==="done"&&String(block?.content||"").trim().length>0);
+        return reply(res,200,{ok:true,eligible:complete,reason:complete?null:"project_incomplete"});
+      }
       if(action==="revision-quote"){
         const file=body.file||{}, name=safeStr(file.name,180), base64=String(file.base64||"");
         const tier=String(body.revisionTier||"standard");
@@ -372,6 +384,11 @@ export default async function handler(req, res) {
         if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(projectId)) return reply(res,400,{ok:false,error:"Identifiant de projet invalide."});
         const member=await supabaseAdminRequest("/rest/v1/trimemo_client_projects?user_id=eq."+encodeURIComponent(clientUser.id)+"&project_id=eq."+encodeURIComponent(projectId)+"&select=project_id,subject&limit=1");
         if(!member.data?.length) return reply(res,403,{ok:false,error:"Ce document n’est pas associé à votre compte."});
+        const eligibilityOrders=await supabaseAdminRequest("/rest/v1/trimemo_orders?project_id=eq."+encodeURIComponent(projectId)+"&status=in.(paid,consumed)&select=order_id&limit=1");
+        if(!eligibilityOrders.data?.length) return reply(res,403,{ok:false,error:"La révision humaine est réservée aux projets payés."});
+        const projectState=await supabaseAdminRequest("/rest/v1/trimemo_project_state?project_id=eq."+encodeURIComponent(projectId)+"&select=state&limit=1");
+        const writingBlocks=Array.isArray(projectState.data?.[0]?.state?.blocks)?projectState.data[0].state.blocks:[];
+        if(!writingBlocks.length||!writingBlocks.every((block)=>block?.status==="done"&&String(block?.content||"").trim().length>0)) return reply(res,403,{ok:false,error:"Terminez la rédaction de tous les blocs avant de demander une révision humaine."});
         const rawInstructions=safeStr(body.instructions,8000), file=body.file||{}, name=safeStr(file.name,180), base64=String(file.base64||"");
         const tier=String(body.revisionTier||"standard");
         const tierLabels={essential:"Correction essentielle",standard:"Révision standard",deep:"Révision approfondie"};
@@ -520,7 +537,7 @@ export default async function handler(req, res) {
     return reply(res, 400, { ok: false, error: "Action administrateur inconnue." });
   } catch (error) {
     const status = errorStatus(error);
-    await logAdminEvent({ actor, category: "admin-api", severity: status >= 500 ? "error" : "warning", action: "admin_request_failed", message: safeStr(error?.message || "Erreur administrateur", 450), requestPath: "/api/admin-console", statusCode: status });
+    await logAdminEvent({ actor, category: "admin-api", severity: status >= 500 ? "error" : "warning", action: "admin_request_failed", message: safeStr(error?.code || error?.name || "ADMIN_REQUEST_FAILED", 100), requestPath: "/api/admin-console", statusCode: status });
     return reply(res, status, { ok: false, error: status >= 500 ? "Opération administrateur impossible pour le moment." : safeStr(error?.message || "Requête invalide.", 300) });
   }
 }

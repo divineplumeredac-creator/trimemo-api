@@ -21,15 +21,23 @@ Stocker uniquement la valeur produite dans `TRIMEMO_OWNER_PASSWORD_HASH` en prod
 
 ## Registre des commandes à usage unique
 
-Exécuter `supabase-trimemo-orders.sql` dans l'éditeur SQL du projet Supabase. Le script crée `trimemo_orders` (commandes en attente/payées/consommées avec snapshot de reprise) et `trimemo_project_files` (fichiers et contexte méthodologique privés). Ces tables doivent rester inaccessibles aux rôles anon/authenticated. L'API utilise exclusivement la clé service-role côté serveur. Planifier aussi `cleanup_expired_trimemo_project_files()` quotidiennement.
+Exécuter `supabase-trimemo-orders.sql`, `supabase-trimemo-project-ownership.sql`, puis `supabase-trimemo-project-owner-immutable.sql` dans l'éditeur SQL du projet Supabase. Le premier script crée `trimemo_orders` (commandes en attente/payées/consommées avec snapshot de reprise) et `trimemo_project_files` (fichiers et contexte méthodologique privés). Vérifier les doublons avant l'index d'appartenance unique. Ces tables doivent rester inaccessibles aux rôles anon/authenticated. L'API utilise exclusivement la clé service-role côté serveur. Planifier aussi `cleanup_expired_trimemo_project_files()` quotidiennement.
 
 ## Limitation des requêtes
 
-Configurer les deux variables Upstash Redis. En production, les endpoints coûteux échouent volontairement en mode fermé si le limiteur partagé n'est pas disponible.
+Configurer et valider les deux variables Upstash Redis en production. Les endpoints coûteux répondent maintenant 503 si Redis est absent, mal configuré ou indisponible; le repli mémoire est réservé au développement local.
 
 ## Origines autorisées
 
 `TRIMEMO_ALLOWED_ORIGINS` doit contenir les origines exactes autorisées, séparées par des virgules. Ne pas ajouter de wildcard de previews Vercel.
+
+## Identifiants et sauvegarde des projets
+
+Les nouveaux projets utilisent un UUID valide même lorsque `crypto.randomUUID()` n'est pas disponible. Les clés de projet transmises aux API Supabase doivent être des UUID, conformément au schéma des tables. Les sauvegardes cloud sont versionnées et limitées à 3,5 Mo UTF-8 par état. Le client enregistre les écritures dans l'ordre, renouvelle une session expirée une fois, et rattache d'abord le projet au compte avant de sauvegarder son contenu.
+
+## Rotation d'un secret exposé
+
+Si une valeur de clé fournisseur a déjà été enregistrée dans les journaux Vercel, révoquer cette clé auprès du fournisseur et la remplacer dans toutes les variables Vercel concernées (production, preview et développement). Les API ne journalisent plus les messages d'erreur fournisseurs bruts et rejettent les valeurs de clé manifestement mal formées avant l'appel externe. Ne pas remettre une ancienne clé compromise en service.
 
 ## Paiements
 

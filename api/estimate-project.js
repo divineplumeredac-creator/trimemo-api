@@ -103,7 +103,8 @@ export default async function handler(req, res) {
     return res.status(200).json({ success: true, estimate: quote });
   } catch (error) {
     const status = Number(error?.status) || 500;
-    console.error("TRIMEMO_PROJECT_ESTIMATE_FAILED", { status, code: String(error?.code || "ESTIMATE_ERROR"), errorName: String(error?.name || "Error"), message: String(error?.message || "Erreur inconnue").slice(0, 300) });
+    // Provider exceptions can include the full invalid header value. Never log raw messages.
+    console.error("TRIMEMO_PROJECT_ESTIMATE_FAILED", { status, code: String(error?.code || "ESTIMATE_ERROR"), errorName: String(error?.name || "Error") });
     void logAdminEvent({ category: "estimation", severity: status >= 500 ? "error" : "warning", action: "project_estimate_failed", message: String(error?.code || error?.name || "ESTIMATE_ERROR"), requestPath: "/api/estimate-project", statusCode: status });
     return fail(res, status, status >= 500 ? "Impossible d'estimer le projet pour le moment. Réessayez dans quelques instants." : (error?.message || "Requête invalide."));
   }

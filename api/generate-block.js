@@ -240,6 +240,8 @@ MISE EN FORME DU TEXTE, OBLIGATOIRE DÈS LA PREMIÈRE GÉNÉRATION :
 - Une introduction ne doit jamais être livrée comme un seul paragraphe continu.
 - Dans une introduction générale, rédige plusieurs paragraphes cohérents, chacun centré sur une idée : contexte, constat, intérêt, problématique, objectifs, méthode, délimitation et annonce du plan selon les consignes.
 - Un paragraphe développe une idée complète, avec plusieurs phrases liées. Ne fais pas un retour à la ligne après chaque phrase.
+- Regroupe les phrases qui expliquent, justifient ou illustrent la même idée. Crée un nouveau paragraphe uniquement quand le raisonnement passe à une idée distincte.
+- Évite les paragraphes d'une seule phrase; ils ne sont permis qu'en cas de transition ou d'effet argumentatif réellement utile.
 - Ne mets jamais un paragraphe explicatif en gras. Le gras ou le balisage Markdown ne sert pas à distinguer les paragraphes.
 - Les titres de parties, chapitres, sections et sous-sections doivent être séparés du texte explicatif.
 - Ne place jamais un titre et le début du paragraphe sur la même ligne.
@@ -497,14 +499,14 @@ Utilise des références vérifiables si elles sont nécessaires.
       correctedTitle = styleResult?.value?.title || correctedTitle;
       styleControl = { status: "passed", correctedFields: styleResult?.correctedFields || 0, checkedFields: styleResult?.checkedFields || 0 };
     } catch (styleError) {
-      console.error("BLOCK_STYLE_CONTROL_FAILED", { name: String(styleError?.name || "Error"), code: String(styleError?.code || ""), message: String(styleError?.message || "unknown").slice(0, 300) });
+      console.error("BLOCK_STYLE_CONTROL_FAILED", { name: String(styleError?.name || "Error"), code: String(styleError?.code || "STYLE_CONTROL_FAILED") });
     }
     const wordCount = correctedContent.split(/\s+/).filter(Boolean).length;
     let verifiedSources = [];
     try {
       verifiedSources = await verifySources(Array.isArray(result.sources) ? result.sources : []);
     } catch (sourceError) {
-      console.error("BLOCK_SOURCE_VERIFICATION_FAILED", { name: String(sourceError?.name || "Error"), code: String(sourceError?.code || ""), message: String(sourceError?.message || "unknown").slice(0, 300) });
+      console.error("BLOCK_SOURCE_VERIFICATION_FAILED", { name: String(sourceError?.name || "Error"), code: String(sourceError?.code || "SOURCE_VERIFICATION_FAILED") });
     }
     return res.status(200).json({
       id: String(body.block?.id || body.blockId || `block-${Date.now()}`),

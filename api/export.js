@@ -42,11 +42,11 @@ function paragraph(value, formatting, options = {}) {
   return new Paragraph({
     alignment: options.alignment || AlignmentType.JUSTIFIED,
     keepNext: Boolean(options.keepNext),
-    indent: options.indent ? { firstLine: options.indent } : undefined,
+    indent: { firstLine: options.indent ?? Math.round(formatting.firstLineIndentInches * 1440) },
     spacing: {
       line: Math.round(formatting.lineSpacing * 240),
       before: options.before || 0,
-      after: options.after ?? 120,
+      after: options.after ?? Math.round(formatting.paragraphAfterPoints * 20),
     },
     children: [run(value, formatting, options)],
   });
@@ -481,7 +481,6 @@ export default async function handler(req, res) {
       status: Number(error?.status) || 500,
       code: String(error?.code || 'EXPORT_ERROR'),
       name: String(error?.name || 'Error'),
-      message: String(error?.message || 'Erreur inconnue').slice(0, 700)
     });
     void logAdminEvent({ category: "export", severity: (Number(error?.status) || 500) >= 500 ? "error" : "warning", action: "word_export_failed", message: String(error?.code || error?.name || "EXPORT_ERROR"), requestPath: "/api/export", statusCode: Number(error?.status) || 500 });
     return res.status(error.status || 500).json({

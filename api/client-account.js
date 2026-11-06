@@ -42,7 +42,11 @@ function validEmail(value) {
 }
 function validProjectId(value) {
   const id = String(value || "").trim();
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id) ? id : "";
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
+  // Accept identifiers produced by the historical browser fallback so those
+  // guest projects can still be claimed and resumed after an upgrade.
+  // Both account-project links and project state use UUID keys in Supabase.
+  return isUuid ? id : "";
 }
 async function authenticate(token) {
   if (!token) {
@@ -175,7 +179,7 @@ export default async function handler(req, res) {
           signal: AbortSignal.timeout(10000),
         });
       } catch (error) {
-        console.error("TRIMEMO_PASSWORD_RECOVERY_REQUEST_FAILED", { message: String(error?.message || "unknown").slice(0, 120) });
+        console.error("TRIMEMO_PASSWORD_RECOVERY_REQUEST_FAILED", { name: String(error?.name || "Error"), code: String(error?.code || "RECOVERY_REQUEST_FAILED") });
         return fail(res, 502, "Le service de récupération est temporairement indisponible. Réessayez plus tard.");
       }
       // Réponse volontairement identique, que l'adresse existe ou non.
@@ -285,11 +289,10 @@ export default async function handler(req, res) {
       const projectId = validProjectId(body.projectId);
       if (!projectId) return fail(res, 400, "Identifiant de projet invalide.");
       const subject = String(body.subject || "Projet académique").trim().slice(0, 240) || "Projet académique";
-      const { url, key } = config();
-
       // A project may belong to exactly one client account. Never trust a browser-supplied paid flag.
-      const existingRows = await supabase("/rest/v1/trimemo_client_projects?project_id=eq." + encodeURIComponent(projectId) + "&select=user_id,payment_status&limit=2");
-      const existing = Array.isArray(existingRows) ? existingRows[0] : null;
+      // Insert with ignore-duplicates so concurrent claims cannot overwrite the first owner.
+      const existingRows = await supabase("/rest/v1/trimemo_client_projects?project_id=eq." + encodeURIComponent(projectId) + "&select=user_id,payment_status&limit=1");
+      let existing = Array.isArray(existingRows) ? existingRows[0] : null;
       if (existing && existing.user_id !== user.id) return fail(res, 409, "Ce projet est déjà rattaché à un autre compte client.");
 
       let paymentStatus = "draft";
@@ -307,24 +310,33 @@ export default async function handler(req, res) {
       }
 
       const now = new Date().toISOString();
-      const response = await fetch(url + "/rest/v1/trimemo_client_projects?on_conflict=project_id", {
-        method: "POST",
-        headers: {
-          apikey: key,
-          Authorization: "Bearer " + key,
-          "Content-Type": "application/json",
-          Prefer: "resolution=merge-duplicates,return=representation",
-        },
-        body: JSON.stringify({ user_id: user.id, project_id: projectId, subject, payment_status: paymentStatus, updated_at: now }),
-        signal: AbortSignal.timeout(8000),
+      if (!existing) {
+        const inserted = await supabase("/rest/v1/trimemo_client_projects?on_conflict=project_id", {
+          method: "POST",
+          headers: { Prefer: "resolution=ignore-duplicates,return=representation" },
+          body: JSON.stringify({ user_id: user.id, project_id: projectId, subject, payment_status: paymentStatus, updated_at: now }),
+        });
+        existing = Array.isArray(inserted) ? inserted[0] : null;
+        if (!existing) {
+          const racedRows = await supabase("/rest/v1/trimemo_client_projects?project_id=eq." + encodeURIComponent(projectId) + "&select=user_id,payment_status&limit=1");
+          existing = Array.isArray(racedRows) ? racedRows[0] : null;
+        }
+      }
+      if (!existing || existing.user_id !== user.id) return fail(res, 409, "Ce projet est déjà rattaché à un autre compte client.");
+
+      // Update only the authenticated owner's row. user_id is never changed by this path.
+      const updatedRows = await supabase("/rest/v1/trimemo_client_projects?project_id=eq." + encodeURIComponent(projectId) + "&user_id=eq." + encodeURIComponent(user.id), {
+        method: "PATCH",
+        body: JSON.stringify({ subject, payment_status: paymentStatus, updated_at: now }),
       });
-      if (!response.ok) throw new Error("Impossible d'associer ce projet à votre compte client.");
+      if (!Array.isArray(updatedRows) || !updatedRows.length) return fail(res, 409, "Le rattachement du projet a changé. Rechargez votre compte puis réessayez.");
       return res.status(200).json({ success: true, payment_status: paymentStatus });
     }
     return fail(res, 400, "Action de compte inconnue.");
   } catch (error) {
     const status = Number(error?.status) || 500;
-    console.error("TRIMEMO_CLIENT_ACCOUNT_FAILED", { action, status, message: String(error?.message || "unknown").slice(0, 180) });
-    return fail(res, status >= 400 && status < 500 ? status : 502, status === 503 ? "Le service de comptes clients est indisponible." : String(error?.message || "Opération de compte impossible."));
+    console.error("TRIMEMO_CLIENT_ACCOUNT_FAILED", { action, status, code: String(error?.code || "CLIENT_ACCOUNT_ERROR"), name: String(error?.name || "Error") });
+    const publicError = status >= 500 ? (status === 503 ? "Le service de comptes clients est indisponible." : "Opération de compte impossible. Réessayez dans quelques instants.") : String(error?.message || "Opération de compte impossible.");
+    return fail(res, status >= 400 && status < 500 ? status : 502, publicError);
   }
 }
