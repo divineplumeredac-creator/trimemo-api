@@ -305,10 +305,6 @@ export default async function handler(req, res) {
         paymentStatus = "paid";
       }
 
-      // Refuse to create phantom account links for identifiers without a saved project.
-      const stateRows = await supabase("/rest/v1/trimemo_project_state?project_id=eq." + encodeURIComponent(projectId) + "&select=project_id&limit=1");
-      if (!Array.isArray(stateRows) || !stateRows.length) return fail(res, 404, "Le contenu du projet n'a pas encore été sauvegardé.");
-
       const now = new Date().toISOString();
       const response = await fetch(url + "/rest/v1/trimemo_client_projects?on_conflict=project_id", {
         method: "POST",
