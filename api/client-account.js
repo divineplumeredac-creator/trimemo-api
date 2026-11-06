@@ -239,9 +239,10 @@ export default async function handler(req, res) {
       const memberships = await membershipResponse.json().catch(() => []);
       const membership = Array.isArray(memberships) ? memberships[0] : null;
       if (!membership) return fail(res, 404, "Ce projet n'est pas rattaché à votre compte client.");
-      const stateRows = await supabase("/rest/v1/trimemo_project_state?project_id=eq." + encodeURIComponent(projectId) + "&select=project_id,state,updated_at&limit=1");
+      const stateRows = await supabase("/rest/v1/trimemo_project_state?project_id=eq." + encodeURIComponent(projectId) + "&select=project_id,owner_id,state,updated_at&limit=1");
       const stateRow = Array.isArray(stateRows) ? stateRows[0] : null;
       if (!stateRow?.state) return fail(res, 404, "Le contenu sauvegardé de ce projet est introuvable. Contactez le support avant de créer un nouveau projet.");
+      if (stateRow.owner_id !== user.id) return fail(res, 403, "Cette sauvegarde n'appartient pas à votre compte. Contactez le support avant toute modification.");
 
       // Restaure l'introduction de l'aperçu dans le bloc de rédaction.
       // Historiquement, l'introduction restait dans state.preview, tandis que le bloc Introduction générale était vide.
@@ -289,15 +290,23 @@ export default async function handler(req, res) {
       const subject = String(body.subject || "Projet académique").trim().slice(0, 240) || "Projet académique";
       const paymentStatus = body.paid === true ? "paid" : "draft";
       const { url, key } = config();
+      const stateRows = await supabase("/rest/v1/trimemo_project_state?project_id=eq." + encodeURIComponent(projectId) + "&select=owner_id&limit=1");
+      const stateRow = Array.isArray(stateRows) ? stateRows[0] : null;
+      if (stateRow?.owner_id && stateRow.owner_id !== user.id) return fail(res, 403, "Ce projet est déjà rattaché à un autre compte client.");
+      if (stateRow && !stateRow.owner_id) {
+        const claim = await fetch(url + "/rest/v1/trimemo_project_state?project_id=eq." + encodeURIComponent(projectId) + "&owner_id=is.null", {
+          method: "PATCH",
+          headers: { apikey: key, Authorization: "Bearer " + key, "Content-Type": "application/json", Prefer: "return=representation" },
+          body: JSON.stringify({ owner_id: user.id }),
+          signal: AbortSignal.timeout(8000),
+        });
+        const claimed = await claim.json().catch(() => []);
+        if (!claim.ok || !Array.isArray(claimed) || claimed.length !== 1) return fail(res, 409, "Cette sauvegarde est déjà revendiquée ou doit être vérifiée par le support.");
+      }
       const now = new Date().toISOString();
       const response = await fetch(url + "/rest/v1/trimemo_client_projects?on_conflict=user_id,project_id", {
         method: "POST",
-        headers: {
-          apikey: key,
-          Authorization: "Bearer " + key,
-          "Content-Type": "application/json",
-          Prefer: "resolution=merge-duplicates,return=minimal",
-        },
+        headers: { apikey: key, Authorization: "Bearer " + key, "Content-Type": "application/json", Prefer: "resolution=merge-duplicates,return=minimal" },
         body: JSON.stringify({ user_id: user.id, project_id: projectId, subject, payment_status: paymentStatus, updated_at: now }),
         signal: AbortSignal.timeout(8000),
       });
