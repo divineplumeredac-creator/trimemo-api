@@ -294,6 +294,10 @@ export default async function handler(req, res) {
       const stateRow = Array.isArray(stateRows) ? stateRows[0] : null;
       if (stateRow?.owner_id && stateRow.owner_id !== user.id) return fail(res, 403, "Ce projet est déjà rattaché à un autre compte client.");
       if (stateRow && !stateRow.owner_id) {
+        const priorMemberships = await supabase("/rest/v1/trimemo_client_projects?project_id=eq." + encodeURIComponent(projectId) + "&select=user_id");
+        if (Array.isArray(priorMemberships) && priorMemberships.some((membership) => membership.user_id !== user.id)) {
+          return fail(res, 403, "Ce projet est déjà associé à un autre compte. Contactez le support pour vérifier son propriétaire.");
+        }
         const claim = await fetch(url + "/rest/v1/trimemo_project_state?project_id=eq." + encodeURIComponent(projectId) + "&owner_id=is.null", {
           method: "PATCH",
           headers: { apikey: key, Authorization: "Bearer " + key, "Content-Type": "application/json", Prefer: "return=representation" },
