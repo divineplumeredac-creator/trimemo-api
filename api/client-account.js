@@ -307,6 +307,27 @@ export default async function handler(req, res) {
         const claimed = await claim.json().catch(() => []);
         if (!claim.ok || !Array.isArray(claimed) || claimed.length !== 1) return fail(res, 409, "Cette sauvegarde est déjà revendiquée ou doit être vérifiée par le support.");
       }
+      if (!stateRow) {
+        const now = new Date();
+        const expiresAt = new Date(now.getTime() + 180 * 24 * 60 * 60 * 1000).toISOString();
+        const placeholder = await fetch(url + "/rest/v1/trimemo_project_state?on_conflict=project_id", {
+          method: "POST",
+          headers: { apikey: key, Authorization: "Bearer " + key, "Content-Type": "application/json", Prefer: "resolution=ignore-duplicates,return=representation" },
+          body: JSON.stringify({
+            project_id: projectId,
+            owner_id: user.id,
+            state: { project: { projectId, sujet: subject }, blocks: [] },
+            updated_at: now.toISOString(),
+            expires_at: expiresAt,
+          }),
+          signal: AbortSignal.timeout(8000),
+        });
+        if (!placeholder.ok) throw new Error("Impossible de créer la sauvegarde sécurisée du projet.");
+        const ownerRows = await supabase("/rest/v1/trimemo_project_state?project_id=eq." + encodeURIComponent(projectId) + "&select=owner_id&limit=1");
+        if (!Array.isArray(ownerRows) || ownerRows[0]?.owner_id !== user.id) {
+          return fail(res, 403, "Ce projet est déjà rattaché à un autre compte client.");
+        }
+      }
       const now = new Date().toISOString();
       const response = await fetch(url + "/rest/v1/trimemo_client_projects?on_conflict=user_id,project_id", {
         method: "POST",
