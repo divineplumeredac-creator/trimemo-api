@@ -58,7 +58,7 @@ const SCHEMA={
   required:["plans"]
 };
 
-async function callModel({key,system,user,schema,name,files=[],imageInputs=[],timeoutMs=45000}){
+async function callModel({key,system,user,schema,name,files=[],imageInputs=[],timeoutMs=45000,attempt=0,maxOutputTokens=12000}){
   const requestStartedAt=Date.now();
   const controller=new AbortController();
   const timer=setTimeout(()=>controller.abort(),timeoutMs);
@@ -73,7 +73,7 @@ async function callModel({key,system,user,schema,name,files=[],imageInputs=[],ti
           {role:"system",content:[{type:"input_text",text:system}]},
           {role:"user",content:[{type:"input_text",text:user},...files.map(file_id=>({type:"input_file",file_id})),...imageInputs]}
         ],
-        max_output_tokens:12000,
+        max_output_tokens:maxOutputTokens,
         text:{format:{type:"json_schema",name,strict:true,schema}}
       })
     });
@@ -104,10 +104,22 @@ async function callModel({key,system,user,schema,name,files=[],imageInputs=[],ti
   // Une réponse interrompue ne doit jamais entrer dans la validation ni être
   // présentée comme un plan exploitable. Le statut est contrôlé avant le JSON.
   if (incomplete) {
+    if (attempt < 1) {
+      console.warn("GENERATE_PLANS_INCOMPLETE_RETRY", { attempt: attempt + 1, maxOutputTokens: 20000, reason: payload?.incomplete_details?.reason || "unknown" });
+      return callModel({key,system,user,schema,name,files,imageInputs,timeoutMs,attempt:attempt+1,maxOutputTokens:20000});
+    }
     const reason = payload?.incomplete_details?.reason || "limite de génération atteinte";
-    throw fail("La génération du plan a été interrompue ("+reason+"). Aucun plan partiel n’a été enregistré. Réduisez le volume demandé ou relancez la génération.", 502);
+    throw fail("Claude a interrompu la génération du plan après deux tentatives ("+reason+"). Aucun plan partiel n’a été enregistré.", 502);
   }
-  return json(out(payload));
+  try {
+    return json(out(payload));
+  } catch (error) {
+    if (attempt < 1) {
+      console.warn("GENERATE_PLANS_INVALID_JSON_RETRY", { attempt: attempt + 1, maxOutputTokens: 20000, reason: String(error?.message || "invalid JSON").slice(0, 300) });
+      return callModel({key,system,user,schema,name,files,imageInputs,timeoutMs,attempt:attempt+1,maxOutputTokens:20000});
+    }
+    throw error;
+  }
 }
 
 async function repairPlanSet({key,system,user,schema,name,files,imageInputs,plans,reason}) {
@@ -774,7 +786,7 @@ ${TRIMEMO_STRICT_STYLE_CONTRACT}`;
     });
   }catch(e){
     await safeCleanup();
-    console.error("GENERATE_PLANS_FAILED", { stage, status: Number(e?.status) || 500, code: String(e?.code || "PLAN_GENERATION_ERROR") });
+    console.error("GENERATE_PLANS_FAILED", { stage, status: Number(e?.status) || 500, code: String(e?.code || "PLAN_GENERATION_ERROR"), errorName: String(e?.name || "Error"), errorMessage: String(e?.message || "Erreur inconnue").replace(/Bearer\\s+[A-Za-z0-9._-]+/gi, "Bearer [REDACTED]").slice(0, 1000) });
     void logAdminEvent({ category: "generation", severity: (Number(e?.status) || 500) >= 500 ? "error" : "warning", action: "plans_failed", message: String(e?.code || e?.name || "PLAN_GENERATION_ERROR"), requestPath: "/api/generate-plans", statusCode: Number(e?.status) || 500, metadata: { stage } });
     const status=Number.isInteger(e?.status)?e.status:500;
     return res.status(status).json({
