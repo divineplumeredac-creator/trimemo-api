@@ -122,6 +122,10 @@ function cleanAcademicText(value) {
     .replace(/\*\*(.*?)\*\*/g, '$1')
     .replace(/\*(.*?)\*/g, '$1')
     .replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, '$1')
+    // Les marqueurs internes de citation ne doivent jamais apparaître dans le DOCX.
+    // Le texte cité est conservé ; seule l'enveloppe technique est retirée.
+    .replace(/<cite\b[^>]*>([\s\S]*?)<\/cite>/gi, '$1')
+    .replace(/<\/?cite\b[^>]*>/gi, '')
     .replace(/([?&])utm_(source|medium|campaign|term|content)=[^&\s)]+/gi, '$1')
     // Supprimer les marqueurs vides laissés par la génération des citations.
     .replace(/\(\s*\)/g, '')
@@ -139,9 +143,26 @@ function normalizeHeadingKey(value) {
     .replace(/\s+/g, ' ')
     .trim();
 }
-function markdownHeading(line) {
-  const match = text(line).match(/^\s*(#{1,5})\s+(.+?)\s*#*\s*$/);
-  return match ? { level: match[1].length, title: cleanAcademicText(match[2].trim()) } : null;
+function markdownHeading(line, knownLabels = []) {
+  const raw = text(line);
+  const prefix = raw.match(/^\s*(#{1,5})\s+(.*)$/);
+  if (!prefix) return null;
+  const level = prefix[1].length;
+  let remainder = prefix[2].replace(/\s*#*\s*$/, '').trim();
+  // Si un titre connu est suivi de prose sur la même ligne, séparer les deux.
+  const candidates = knownLabels
+    .map((label) => cleanAcademicText(label))
+    .filter(Boolean)
+    .sort((a, b) => b.length - a.length);
+  const match = candidates.find((label) =>
+    remainder.toLocaleLowerCase('fr') === label.toLocaleLowerCase('fr') ||
+    remainder.toLocaleLowerCase('fr').startsWith(label.toLocaleLowerCase('fr') + ' ')
+  );
+  if (match && remainder.length > match.length) {
+    const body = remainder.slice(match.length).trim();
+    return { level, title: match, body };
+  }
+  return { level, title: cleanAcademicText(remainder), body: '' };
 }
 function addContent(children, content, formatting, options = {}) {
   const lines = text(content).split(/\r?\n/);
@@ -159,6 +180,7 @@ function addContent(children, content, formatting, options = {}) {
     if (h) {
       flush();
       children.push(heading(h.title, h.level, formatting));
+      if (h.body) buffer.push(h.body);
     } else {
       buffer.push(line);
     }
@@ -206,7 +228,7 @@ function addStructuredBlock(children, block, formatting, hierarchy = {}) {
       continue;
     }
 
-    const markdown = markdownHeading(line);
+    const markdown = markdownHeading(line, labels);
     const plainKey = normalizeHeadingKey(line);
     const candidateKey = markdown
       ? normalizeHeadingKey(markdown.title)
@@ -215,6 +237,7 @@ function addStructuredBlock(children, block, formatting, hierarchy = {}) {
     if (labelByKey.has(candidateKey)) {
       flush();
       emitStructuralHeading(labelByKey.get(candidateKey));
+      if (markdown?.body) buffer.push(markdown.body);
       continue;
     }
 
@@ -231,6 +254,7 @@ function addStructuredBlock(children, block, formatting, hierarchy = {}) {
         hierarchy[level] = key;
         for (let deeper = level + 1; deeper <= 5; deeper++) delete hierarchy[deeper];
       }
+      if (markdown.body) buffer.push(markdown.body);
       continue;
     }
 
