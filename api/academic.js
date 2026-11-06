@@ -209,6 +209,45 @@ import { verifyPricingQuote } from "../lib/pricing.js";
 import { assertOrderLedgerReady, recordPendingOrder, recordPaidOrder, getOrderRecord } from "../lib/order-ledger.js";
 import { hydrateProjectFiles } from "../lib/project-file-store.js";
 import { logAdminEvent } from "../lib/admin-telemetry.js";
+async function authenticateClient(token) {
+  if (!token) return null;
+  const base = String(process.env.SUPABASE_URL || "").trim();
+  const key = String(process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
+  if (!base || !key) return null;
+  const response = await fetch(base.replace(/\/$/, "") + "/auth/v1/user", {
+    headers: { apikey: key, Authorization: "Bearer " + token },
+    signal: AbortSignal.timeout(8000),
+  });
+  const user = await response.json().catch(() => ({}));
+  return response.ok && user?.id ? user : null;
+}
+
+async function assertClientOwnsProject(userId, projectId) {
+  const base = String(process.env.SUPABASE_URL || "").trim().replace(/\/$/, "");
+  const key = String(process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
+  const query = new URLSearchParams({ select: "project_id", user_id: "eq." + userId, project_id: "eq." + projectId, limit: "1" });
+  const response = await fetch(base + "/rest/v1/trimemo_client_projects?" + query, {
+    headers: { apikey: key, Authorization: "Bearer " + key },
+    signal: AbortSignal.timeout(8000),
+  });
+  const rows = await response.json().catch(() => []);
+  if (!response.ok || !Array.isArray(rows) || !rows.length) {
+    const error = new Error("Projet non rattaché à ce compte.");
+    error.status = 403;
+    throw error;
+  }
+  const stateResponse = await fetch(base + "/rest/v1/trimemo_project_state?project_id=eq." + encodeURIComponent(projectId) + "&select=owner_id&limit=1", {
+    headers: { apikey: key, Authorization: "Bearer " + key },
+    signal: AbortSignal.timeout(8000),
+  });
+  const states = await stateResponse.json().catch(() => []);
+  if (!stateResponse.ok || !Array.isArray(states) || states[0]?.owner_id !== userId) {
+    const error = new Error("La sauvegarde du projet n'appartient pas à ce compte.");
+    error.status = 403;
+    throw error;
+  }
+}
+
 
 export default async function handler(req, res) {
   cors(res, req);
@@ -228,6 +267,9 @@ export default async function handler(req, res) {
     if (action === "create-paypal-order" && Array.isArray(project.files) && project.files.length) project = await hydrateProjectFiles(project);
     if (action === "create-paypal-order") {
       if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) return fail(res, 503, "Le registre sécurisé des commandes n'est pas configuré. Le paiement est temporairement indisponible.");
+      const clientUser = await authenticateClient(String(body.clientToken || ""));
+      if (!clientUser?.id) return fail(res, 401, "Connectez-vous avant de payer.");
+      await assertClientOwnsProject(clientUser.id, String(project.projectId || project.project_id || ""));
       await assertOrderLedgerReady();
       if (!String(project.sujet || "").trim()) {
         return fail(res, 400, "Le sujet du projet est obligatoire.");
@@ -254,16 +296,18 @@ export default async function handler(req, res) {
       }
       project = { ...project, formula: formulaOf(project), paidPreviewSnapshot: normalizedPreview };
       const order = await createPaypalOrder(project);
-      await recordPendingOrder({ orderId: order.id, project, amount: order.amount, currency: order.currency });
+      await recordPendingOrder({ orderId: order.id, project, amount: order.amount, currency: order.currency, ownerId: clientUser.id });
       return res.status(200).json(order);
     }
 
     if (action === "verify-paypal") {
       const orderId = String(body.id || "").trim();
       if (!orderId) return fail(res, 400, "Identifiant PayPal manquant.");
-
+      const clientUser = await authenticateClient(String(body.clientToken || ""));
+      if (!clientUser?.id) return fail(res, 401, "Connectez-vous au compte ayant initié ce paiement.");
       await assertOrderLedgerReady();
       const savedOrder = await getOrderRecord(orderId);
+      if (!savedOrder || savedOrder.owner_id !== clientUser.id) return fail(res, 403, "Cette commande PayPal n'appartient pas au compte connecté.");
       if (!savedOrder || !["pending", "paid"].includes(savedOrder.status) || !savedOrder.project_snapshot) {
         return res.status(403).json({ status: "ORDER_NOT_AVAILABLE", error: "Cette commande n'est pas disponible ou son crédit a déjà été consommé." });
       }
@@ -323,6 +367,7 @@ export default async function handler(req, res) {
       return res.status(200).json({
         status: "PAID",
         order_id: order.id,
+        owner_id: savedOrder.owner_id,
         formula,
         premium_token: createPremiumToken({ ...project, formula }, order.id),
         capture_id: capture.id || null,

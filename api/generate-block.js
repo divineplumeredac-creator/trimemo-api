@@ -21,6 +21,11 @@ import { assertFilesSize } from "../lib/limits.js";
 import { verifySources } from "../lib/verify-sources.js";
 function normalizeGeneratedAcademicContent(input) {
   let text = String(input || "").replace(/\r\n?/gu, "\n").trim();
+  // Décoder les entités avant le nettoyage pour empêcher les balises encodées de réapparaître.
+  text = text.replace(/&lt;/giu, "<").replace(/&gt;/giu, ">").replace(/&amp;/giu, "&").replace(/&quot;/giu, '"').replace(/&#39;|&apos;/giu, "'");
+  // Supprimer les marqueurs de citation techniques tout en conservant leur contenu.
+  text = text.replace(/<\/?(?:cite|citation|source|ref|footnote)\b[^>]*>/giu, "");
+  text = text.replace(/\[(?:cite|citation|source|ref)[^\]]*\]/giu, "");
   // Enlève les liens Markdown de recherche sans toucher aux métadonnées de sources.
   text = text.replace(/\[\s*(?:https?:\/\/)?(?:www\.)?[a-z0-9.-]+\.[a-z]{2,}\s*\]\(https?:\/\/[^)]+\)/giu, "");
   text = text.replace(/\[([^\]]+)\]\(https?:\/\/[^)]+\)/giu, "$1");
@@ -157,17 +162,25 @@ export default async function handler(req, res) {
 
     const isPartStart = ["part", "partie", "part_intro", "partie_intro", "part-intro", "partie-intro"].includes(blockKind);
     const isChapterStart = ["chapter", "chapitre", "chapter_intro", "chapitre_intro", "chapter-intro", "chapitre-intro"].includes(blockKind);
-    // Conserver l'historique des blocs pour éviter qu'une suite ne reparte de l'introduction.
-    // Les blocs récents gardent leur texte intégral ; les anciens gardent un extrait pour le contexte.
-    const preceding = Array.isArray(body.preceding)
-      ? body.preceding.slice(-30).map((item, index, all) => ({
-          title: String(item?.title || "").slice(0, 240),
-          content: index >= all.length - 3
-            ? String(item?.content || "").slice(-7000)
-            : String(item?.content || "").slice(0, 1200),
-          sources: Array.isArray(item?.sources) ? item.sources.slice(0, 12) : []
-        })).filter((item) => item.title || item.content)
-      : [];
+    // Historique équilibré : les blocs anciens conservent leur début ET leur fin.
+    // Les blocs récents conservent leur ouverture et leur fin pour préserver la progression.
+    const precedingInput = Array.isArray(body.preceding) ? body.preceding.slice(-30) : [];
+    const recentStart = Math.max(0, precedingInput.length - 3);
+    const preceding = precedingInput.map((item, index) => {
+      const raw = String(item?.content || "").trim();
+      const recent = index >= recentStart;
+      const excerpt = raw.length <= (recent ? 5000 : 900)
+        ? raw
+        : recent
+          ? raw.slice(0, 2500) + "\n[… passage central omis …]\n" + raw.slice(-2500)
+          : raw.slice(0, 450) + "\n[… extrait intermédiaire omis …]\n" + raw.slice(-450);
+      return {
+        title: String(item?.title || "").slice(0, 240),
+        content: excerpt,
+        structure: Array.isArray(item?.structure) ? item.structure.map((label) => String(label || "").slice(0, 240)).slice(0, 20) : [],
+        sources: Array.isArray(item?.sources) ? item.sources.slice(0, 12) : []
+      };
+    }).filter((item) => item.title || item.content);
 
     const targetWords = Number(
       body.targetWords ||

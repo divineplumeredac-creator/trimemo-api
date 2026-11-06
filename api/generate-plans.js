@@ -58,7 +58,7 @@ const SCHEMA={
   required:["plans"]
 };
 
-async function callModel({key,system,user,schema,name,files=[],imageInputs=[],timeoutMs=45000}){
+async function callModel({key,system,user,schema,name,files=[],imageInputs=[],timeoutMs=120000,attempt=0,maxOutputTokens=12000,transientAttempt=0}){
   const requestStartedAt=Date.now();
   const controller=new AbortController();
   const timer=setTimeout(()=>controller.abort(),timeoutMs);
@@ -67,18 +67,24 @@ async function callModel({key,system,user,schema,name,files=[],imageInputs=[],ti
     response=await claudeFetch(OPENAI_URL,{
       method:"POST",
       headers:{"Content-Type":"application/json",Authorization:"Bearer "+key},
+      signal:controller.signal,
       body:JSON.stringify({
         model:getClaudeModel("light"),
         input:[
           {role:"system",content:[{type:"input_text",text:system}]},
           {role:"user",content:[{type:"input_text",text:user},...files.map(file_id=>({type:"input_file",file_id})),...imageInputs]}
         ],
-        max_output_tokens:12000,
+        max_output_tokens:maxOutputTokens,
         text:{format:{type:"json_schema",name,strict:true,schema}}
       })
     });
   }catch(e){
-    if(e?.name==="AbortError") throw fail("Le service de génération a dépassé le délai interne. La génération est arrêtée pour éviter le timeout Vercel.",504);
+    if(transientAttempt<1 && (e?.name==="AbortError" || e instanceof TypeError)){
+      console.warn("GENERATE_PLANS_TRANSPORT_RETRY",{attempt:transientAttempt+1,errorName:String(e?.name||"Error")});
+      await new Promise(resolve=>setTimeout(resolve,1200));
+      return callModel({key,system,user,schema,name,files,imageInputs,timeoutMs,attempt,maxOutputTokens,transientAttempt:transientAttempt+1});
+    }
+    if(e?.name==="AbortError") throw fail("Le service IA n’a pas répondu après deux tentatives. Réessayez dans quelques instants.",504);
     throw e;
   }finally{
     clearTimeout(timer);
@@ -87,12 +93,46 @@ async function callModel({key,system,user,schema,name,files=[],imageInputs=[],ti
   if(!response.ok){
     let detail=raw, payload={};
     try{payload=JSON.parse(raw);detail=payload?.error?.message||detail}catch{}
-    void recordOpenAIUsage({endpoint:"generate-plans",model:getClaudeModel("light"),usage:payload?.usage,status:"error",durationMs:Date.now()-requestStartedAt,requestId:payload?.id,errorCode:"OPENAI_HTTP_"+response.status});
-    throw fail("Erreur OpenAI : "+String(detail).slice(0,1200),502);
+    void recordOpenAIUsage({endpoint:"generate-plans",model:getClaudeModel("light"),usage:payload?.usage,status:"error",durationMs:Date.now()-requestStartedAt,requestId:payload?.id,errorCode:"ANTHROPIC_HTTP_"+response.status});
+    const transientStatus=[408,409,429,500,502,503,504,529].includes(response.status);
+    const billingFailure=/credit balance|billing|insufficient funds|payment required/i.test(String(detail));
+    if(transientStatus && !billingFailure && transientAttempt<1){
+      console.warn("GENERATE_PLANS_UPSTREAM_RETRY",{attempt:transientAttempt+1,status:response.status,reason:String(detail).slice(0,240)});
+      await new Promise(resolve=>setTimeout(resolve,1500));
+      return callModel({key,system,user,schema,name,files,imageInputs,timeoutMs,attempt,maxOutputTokens,transientAttempt:transientAttempt+1});
+    }
+    throw fail("Service IA indisponible (HTTP "+response.status+") : "+String(detail).slice(0,900),response.status===429?429:502);
   }
   const payload=JSON.parse(raw);
-  void recordOpenAIUsage({endpoint:"generate-plans",model:getClaudeModel("light"),usage:payload?.usage,status:payload?.status==="incomplete"?"incomplete":"success",durationMs:Date.now()-requestStartedAt,requestId:payload?.id,errorCode:payload?.status==="incomplete"?"INCOMPLETE":null});
-  return json(out(payload));
+  const incomplete = payload?.status === "incomplete";
+  void recordOpenAIUsage({
+    endpoint:"generate-plans",
+    model:getClaudeModel("light"),
+    usage:payload?.usage,
+    status:incomplete?"incomplete":"success",
+    durationMs:Date.now()-requestStartedAt,
+    requestId:payload?.id,
+    errorCode:incomplete?"INCOMPLETE":null
+  });
+  // Une réponse interrompue ne doit jamais entrer dans la validation ni être
+  // présentée comme un plan exploitable. Le statut est contrôlé avant le JSON.
+  if (incomplete) {
+    if (attempt < 1) {
+      console.warn("GENERATE_PLANS_INCOMPLETE_RETRY", { attempt: attempt + 1, maxOutputTokens: 20000, reason: payload?.incomplete_details?.reason || "unknown" });
+      return callModel({key,system,user,schema,name,files,imageInputs,timeoutMs,attempt:attempt+1,maxOutputTokens:20000});
+    }
+    const reason = payload?.incomplete_details?.reason || "limite de génération atteinte";
+    throw fail("Claude a interrompu la génération du plan après deux tentatives ("+reason+"). Aucun plan partiel n’a été enregistré.", 502);
+  }
+  try {
+    return json(out(payload));
+  } catch (error) {
+    if (attempt < 1) {
+      console.warn("GENERATE_PLANS_INVALID_JSON_RETRY", { attempt: attempt + 1, maxOutputTokens: 20000, reason: String(error?.message || "invalid JSON").slice(0, 300) });
+      return callModel({key,system,user,schema,name,files,imageInputs,timeoutMs,attempt:attempt+1,maxOutputTokens:20000});
+    }
+    throw error;
+  }
 }
 
 async function repairPlanSet({key,system,user,schema,name,files,imageInputs,plans,reason}) {
@@ -759,7 +799,7 @@ ${TRIMEMO_STRICT_STYLE_CONTRACT}`;
     });
   }catch(e){
     await safeCleanup();
-    console.error("GENERATE_PLANS_FAILED", { stage, status: Number(e?.status) || 500, code: String(e?.code || "PLAN_GENERATION_ERROR") });
+    console.error("GENERATE_PLANS_FAILED", { stage, status: Number(e?.status) || 500, code: String(e?.code || "PLAN_GENERATION_ERROR"), errorName: String(e?.name || "Error"), errorMessage: String(e?.message || "Erreur inconnue").replace(/Bearer\\s+[A-Za-z0-9._-]+/gi, "Bearer [REDACTED]").slice(0, 1000) });
     void logAdminEvent({ category: "generation", severity: (Number(e?.status) || 500) >= 500 ? "error" : "warning", action: "plans_failed", message: String(e?.code || e?.name || "PLAN_GENERATION_ERROR"), requestPath: "/api/generate-plans", statusCode: Number(e?.status) || 500, metadata: { stage } });
     const status=Number.isInteger(e?.status)?e.status:500;
     return res.status(status).json({
