@@ -400,22 +400,35 @@ export default async function handler(req, res) {
       throw error;
     }
 
-    const styleResult = await enforceAcademicStyle({
-      blocks: compiled.blocks,
-      planIntro: compiled.plan?.introductionGeneral || compiled.plan?.introduction || {},
-      planConclusion: compiled.plan?.conclusionGeneral || compiled.plan?.conclusion || {}
-    }, {
-      apiKey: process.env.TRIMEMO_CLAUDE_API_KEY,
-      timeoutMs: 60000,
-      batchSize: 2
-    });
-    compiled.blocks = styleResult.value.blocks;
-    if (compiled.plan?.introductionGeneral) compiled.plan.introductionGeneral = styleResult.value.planIntro;
-    else if (compiled.plan?.introduction) compiled.plan.introduction = styleResult.value.planIntro;
-    if (compiled.plan?.conclusionGeneral) compiled.plan.conclusionGeneral = styleResult.value.planConclusion;
-    else if (compiled.plan?.conclusion) compiled.plan.conclusion = styleResult.value.planConclusion;
-    res.setHeader('X-Trimemo-Style-Control', 'passed');
-    res.setHeader('X-Trimemo-Style-Corrected-Fields', String(styleResult.correctedFields));
+    // Le contrôle stylistique améliore le document, mais ne doit jamais empêcher
+    // l'export d'un travail déjà rédigé lorsque le fournisseur IA est indisponible
+    // ou renvoie une réponse incomplète. Le contenu original reste alors intact.
+    try {
+      const styleResult = await enforceAcademicStyle({
+        blocks: compiled.blocks,
+        planIntro: compiled.plan?.introductionGeneral || compiled.plan?.introduction || {},
+        planConclusion: compiled.plan?.conclusionGeneral || compiled.plan?.conclusion || {}
+      }, {
+        apiKey: process.env.TRIMEMO_CLAUDE_API_KEY,
+        timeoutMs: 60000,
+        batchSize: 1
+      });
+      compiled.blocks = styleResult.value.blocks;
+      if (compiled.plan?.introductionGeneral) compiled.plan.introductionGeneral = styleResult.value.planIntro;
+      else if (compiled.plan?.introduction) compiled.plan.introduction = styleResult.value.planIntro;
+      if (compiled.plan?.conclusionGeneral) compiled.plan.conclusionGeneral = styleResult.value.planConclusion;
+      else if (compiled.plan?.conclusion) compiled.plan.conclusion = styleResult.value.planConclusion;
+      res.setHeader('X-Trimemo-Style-Control', 'passed');
+      res.setHeader('X-Trimemo-Style-Corrected-Fields', String(styleResult.correctedFields));
+    } catch (styleError) {
+      console.error('TRIMEMO_EXPORT_STYLE_WARNING', {
+        name: String(styleError?.name || 'Error'),
+        code: String(styleError?.code || 'STYLE_CONTROL_FAILED'),
+        message: String(styleError?.message || 'Contrôle stylistique indisponible').slice(0, 500)
+      });
+      res.setHeader('X-Trimemo-Style-Control', 'skipped');
+      res.setHeader('X-Trimemo-Style-Warning', 'Le document a été exporté sans correction stylistique automatique.');
+    }
     const uniqueSources = Array.isArray(compiled.bibliography?.sources) ? compiled.bibliography.sources : [];
     const missingLinks = uniqueSources.filter((source) => !source.doi && !source.url).length;
     const bibliographyWarning = uniqueSources.length < 10 || missingLinks > 0;
