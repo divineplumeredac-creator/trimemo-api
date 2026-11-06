@@ -21,6 +21,11 @@ import { assertFilesSize } from "../lib/limits.js";
 import { verifySources } from "../lib/verify-sources.js";
 function normalizeGeneratedAcademicContent(input) {
   let text = String(input || "").replace(/\r\n?/gu, "\n").trim();
+  // Décoder les entités avant le nettoyage pour empêcher les balises encodées de réapparaître.
+  text = text.replace(/&lt;/giu, "<").replace(/&gt;/giu, ">").replace(/&amp;/giu, "&").replace(/&quot;/giu, '"').replace(/&#39;|&apos;/giu, "'");
+  // Supprimer les marqueurs de citation techniques tout en conservant leur contenu.
+  text = text.replace(/<\/?(?:cite|citation|source|ref|footnote)\b[^>]*>/giu, "");
+  text = text.replace(/\[(?:cite|citation|source|ref)[^\]]*\]/giu, "");
   // Enlève les liens Markdown de recherche sans toucher aux métadonnées de sources.
   text = text.replace(/\[\s*(?:https?:\/\/)?(?:www\.)?[a-z0-9.-]+\.[a-z]{2,}\s*\]\(https?:\/\/[^)]+\)/giu, "");
   text = text.replace(/\[([^\]]+)\]\(https?:\/\/[^)]+\)/giu, "$1");
