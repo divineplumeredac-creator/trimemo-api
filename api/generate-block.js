@@ -158,18 +158,17 @@ export default async function handler(req, res) {
     const isPartStart = ["part", "partie", "part_intro", "partie_intro", "part-intro", "partie-intro"].includes(blockKind);
     const isChapterStart = ["chapter", "chapitre", "chapter_intro", "chapitre_intro", "chapter-intro", "chapitre-intro"].includes(blockKind);
     // Historique équilibré : les blocs anciens conservent leur début ET leur fin.
-    // Les blocs récents restent plus détaillés. Le budget global évite de dépasser
-    // la fenêtre de contexte tout en préservant la progression du document.
+    // Les blocs récents conservent leur ouverture et leur fin pour préserver la progression.
     const precedingInput = Array.isArray(body.preceding) ? body.preceding.slice(-30) : [];
     const recentStart = Math.max(0, precedingInput.length - 3);
     const preceding = precedingInput.map((item, index) => {
       const raw = String(item?.content || "").trim();
       const recent = index >= recentStart;
-      const excerpt = recent
-        ? raw.slice(-5000)
-        : raw.length > 900
-          ? raw.slice(0, 450) + "\n[… extrait intermédiaire omis …]\n" + raw.slice(-450)
-          : raw;
+      const excerpt = raw.length <= (recent ? 5000 : 900)
+        ? raw
+        : recent
+          ? raw.slice(0, 2500) + "\n[… passage central omis …]\n" + raw.slice(-2500)
+          : raw.slice(0, 450) + "\n[… extrait intermédiaire omis …]\n" + raw.slice(-450);
       return {
         title: String(item?.title || "").slice(0, 240),
         content: excerpt,
