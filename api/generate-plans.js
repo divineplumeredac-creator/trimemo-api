@@ -22,6 +22,10 @@ function cors(res,req){ setCors(res, req, "POST, OPTIONS"); }
 function fail(m,s=400){const e=new Error(m);e.status=s;return e}
 function txt(v){return String(v??"").trim()}
 function out(d){
+  if(d?.status==="incomplete"){
+    const reason=String(d?.incomplete_details?.reason||"limite de sortie atteinte");
+    throw fail("La génération du plan a été interrompue avant la fin ("+reason+"). Relancez la génération.",502);
+  }
   if(d?.output_text?.trim()) return d.output_text.trim();
   const t=(d?.output||[]).flatMap(x=>x?.content||[]).filter(x=>x?.type==="output_text").map(x=>x.text).join("").trim();
   if(!t) throw fail("OpenAI n’a retourné aucun résultat exploitable.",502);
@@ -58,7 +62,7 @@ const SCHEMA={
   required:["plans"]
 };
 
-async function callModel({key,system,user,schema,name,files=[],imageInputs=[],timeoutMs=45000}){
+async function callModel({key,system,user,schema,name,files=[],imageInputs=[],timeoutMs=45000,maxOutputTokens=18000}){
   const requestStartedAt=Date.now();
   const controller=new AbortController();
   const timer=setTimeout(()=>controller.abort(),timeoutMs);
@@ -66,6 +70,7 @@ async function callModel({key,system,user,schema,name,files=[],imageInputs=[],ti
   try{
     response=await claudeFetch(OPENAI_URL,{
       method:"POST",
+      signal:controller.signal,
       headers:{"Content-Type":"application/json",Authorization:"Bearer "+key},
       body:JSON.stringify({
         model:getClaudeModel("light"),
@@ -73,7 +78,7 @@ async function callModel({key,system,user,schema,name,files=[],imageInputs=[],ti
           {role:"system",content:[{type:"input_text",text:system}]},
           {role:"user",content:[{type:"input_text",text:user},...files.map(file_id=>({type:"input_file",file_id})),...imageInputs]}
         ],
-        max_output_tokens:12000,
+        max_output_tokens:Math.min(24000,Math.max(12000,Number(maxOutputTokens)||18000)),
         text:{format:{type:"json_schema",name,strict:true,schema}}
       })
     });
@@ -605,7 +610,9 @@ ${TRIMEMO_STRICT_STYLE_CONTRACT}`;
       schema,
       name:"trimemo_academic_toc",
       files:ids,
-      timeoutMs:120000
+      imageInputs,
+      timeoutMs:150000,
+      maxOutputTokens:20000
     });
 
     const validateGeneratedPlans = (plans) => {
@@ -759,7 +766,17 @@ ${TRIMEMO_STRICT_STYLE_CONTRACT}`;
     });
   }catch(e){
     await safeCleanup();
-    console.error("GENERATE_PLANS_FAILED", { stage, status: Number(e?.status) || 500, code: String(e?.code || "PLAN_GENERATION_ERROR") });
+    const diagnostic = String(e?.message || e?.name || "Erreur inconnue")
+      .replace(/sk-ant-[A-Za-z0-9_-]+/g, "[CLÉ MASQUÉE]")
+      .replace(/Bearer\\s+[^\\s]+/gi, "Bearer [MASQUÉ]")
+      .slice(0, 800);
+    console.error("GENERATE_PLANS_FAILED", {
+      stage,
+      status: Number(e?.status) || 500,
+      code: String(e?.code || "PLAN_GENERATION_ERROR"),
+      errorName: String(e?.name || "Error"),
+      diagnostic
+    });
     void logAdminEvent({ category: "generation", severity: (Number(e?.status) || 500) >= 500 ? "error" : "warning", action: "plans_failed", message: String(e?.code || e?.name || "PLAN_GENERATION_ERROR"), requestPath: "/api/generate-plans", statusCode: Number(e?.status) || 500, metadata: { stage } });
     const status=Number.isInteger(e?.status)?e.status:500;
     return res.status(status).json({
