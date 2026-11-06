@@ -24,10 +24,10 @@ function normalizeGeneratedAcademicContent(input) {
 
   // Convertit les balises de structure en véritables séparateurs avant de retirer le HTML.
   text = text
-    .replace(/<\\/(?:p|div|section|article|li|h[1-6])\\s*>/giu, "\n\n")
-    .replace(/<br\\s*\\/?>/giu, "\n")
-    .replace(/<a\\b[^>]*>([\\s\\S]*?)<\\/a>/giu, "$1")
-    .replace(/<\\/?(?:p|div|span|strong|em|b|i|u|section|article|ul|ol|li|h[1-6])\\b[^>]*>/giu, "")
+    .replace(/<\/(?:p|div|section|article|li|h[1-6])\s*>/giu, "\n\n")
+    .replace(/<br\s*\/?>/giu, "\n")
+    .replace(/<a\b[^>]*>([\s\S]*?)<\/a>/giu, "$1")
+    .replace(/<\/?(?:p|div|span|strong|em|b|i|u|section|article|ul|ol|li|h[1-6])\b[^>]*>/giu, "")
     .replace(/<[^>]*>/gu, "")
     .replace(/&nbsp;/giu, " ")
     .replace(/&amp;/giu, "&")
