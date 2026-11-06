@@ -91,7 +91,22 @@ async function callModel({key,system,user,schema,name,files=[],imageInputs=[],ti
     throw fail("Erreur OpenAI : "+String(detail).slice(0,1200),502);
   }
   const payload=JSON.parse(raw);
-  void recordOpenAIUsage({endpoint:"generate-plans",model:getClaudeModel("light"),usage:payload?.usage,status:payload?.status==="incomplete"?"incomplete":"success",durationMs:Date.now()-requestStartedAt,requestId:payload?.id,errorCode:payload?.status==="incomplete"?"INCOMPLETE":null});
+  const incomplete = payload?.status === "incomplete";
+  void recordOpenAIUsage({
+    endpoint:"generate-plans",
+    model:getClaudeModel("light"),
+    usage:payload?.usage,
+    status:incomplete?"incomplete":"success",
+    durationMs:Date.now()-requestStartedAt,
+    requestId:payload?.id,
+    errorCode:incomplete?"INCOMPLETE":null
+  });
+  // Une réponse interrompue ne doit jamais entrer dans la validation ni être
+  // présentée comme un plan exploitable. Le statut est contrôlé avant le JSON.
+  if (incomplete) {
+    const reason = payload?.incomplete_details?.reason || "limite de génération atteinte";
+    throw fail("La génération du plan a été interrompue ("+reason+"). Aucun plan partiel n’a été enregistré. Réduisez le volume demandé ou relancez la génération.", 502);
+  }
   return json(out(payload));
 }
 
