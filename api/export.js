@@ -42,7 +42,9 @@ function paragraph(value, formatting, options = {}) {
   return new Paragraph({
     alignment: options.alignment || AlignmentType.JUSTIFIED,
     keepNext: Boolean(options.keepNext),
-    indent: { firstLine: options.indent ?? Math.round(formatting.firstLineIndentInches * 1440) },
+    indent: options.hanging
+      ? { left: options.indent ?? options.hanging, hanging: options.hanging }
+      : { firstLine: options.indent ?? Math.round(formatting.firstLineIndentInches * 1440) },
     spacing: {
       line: Math.round(formatting.lineSpacing * 240),
       before: options.before || 0,
@@ -70,6 +72,7 @@ function heading(value, level, formatting) {
   return new Paragraph({
     heading: headingLevels[level] || HeadingLevel.HEADING_3,
     keepNext: true,
+    keepLines: true,
     // Une nouvelle page est réservée aux grandes parties, pas à chaque titre de niveau 1.
     // Cela évite les pages blanches entre la couverture, le sommaire et l'introduction.
     pageBreakBefore: level === 1 && /^PARTIE\s+/i.test(text(value).trim()),
@@ -332,6 +335,7 @@ function addBibliography(children, compiled, formatting) {
       alignment: AlignmentType.LEFT,
       after: 180,
       indent: 360,
+      hanging: 360,
     }));
   }
 }
