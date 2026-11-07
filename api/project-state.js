@@ -45,7 +45,10 @@ async function authorizeProject(req, id) {
 }
 function projectId(req) {
   const value = String(req.method === "GET" ? req.query?.projectId : req.body?.projectId || "").trim();
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value) ? value : "";
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+  // Supabase stores project_id as UUID. Accepting a legacy text ID here only
+  // defers failure to PostgREST and can strand an in-progress save.
+  return isUuid ? value : "";
 }
 export default async function handler(req, res) {
   cors(res, req);
@@ -67,7 +70,10 @@ export default async function handler(req, res) {
     }
     const state = req.body?.state;
     if (!state || typeof state !== "object" || Array.isArray(state)) return fail(res, 400, "État du projet invalide.");
-    if (JSON.stringify(state).length > 2_000_000) return fail(res, 413, "Le projet est trop volumineux pour être sauvegardé en une seule fois.");
+    const version = Number(state.schemaVersion || 1);
+    if (!Number.isInteger(version) || version < 1 || version > 2) return fail(res, 400, "Version de projet non prise en charge. Rechargez la page avant de réessayer.");
+    const serializedState = JSON.stringify(state);
+    if (Buffer.byteLength(serializedState, "utf8") > 3_500_000) return fail(res, 413, "Le projet est trop volumineux pour être sauvegardé en une seule fois. Retirez des pièces jointes inutilisées ou contactez le support.");
     const now = new Date();
     const expiresAt = new Date(now.getTime() + 180 * 24 * 60 * 60 * 1000).toISOString();
     await db("trimemo_project_state?on_conflict=project_id", {
@@ -78,7 +84,7 @@ export default async function handler(req, res) {
     return res.status(200).json({ success: true, savedAt: now.toISOString() });
   } catch (error) {
     const status = Number(error?.status) || 500;
-    console.error("TRIMEMO_PROJECT_STATE_FAILED", { method: req.method, status, message: String(error?.message || "unknown").slice(0, 180) });
+    console.error("TRIMEMO_PROJECT_STATE_FAILED", { method: req.method, status, code: String(error?.code || "PROJECT_STATE_ERROR"), name: String(error?.name || "Error") });
     return fail(res, status >= 400 && status < 500 ? status : 502, status === 503 ? "Le stockage Supabase n'est pas configuré ou la table est absente." : status === 401 || status === 403 ? error.message : "Impossible de sauvegarder ou récupérer le projet.");
   }
 }

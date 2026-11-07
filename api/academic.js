@@ -346,7 +346,7 @@ export default async function handler(req, res) {
 
     return fail(res, 404, "Action de paiement inconnue.");
   } catch (error) {
-    console.error("TRIMEMO_PAYMENT_FAILED", { status: Number(error?.status) || 500, code: String(error?.code || "PAYMENT_ERROR"), message: String(error?.message || "Erreur inconnue").slice(0, 300), name: String(error?.name || "Error") });
+    console.error("TRIMEMO_PAYMENT_FAILED", { status: Number(error?.status) || 500, code: String(error?.code || "PAYMENT_ERROR"), name: String(error?.name || "Error") });
     void logAdminEvent({ category: "payment", severity: (Number(error?.status) || 500) >= 500 ? "error" : "warning", action: "payment_request_failed", message: String(error?.code || error?.name || "PAYMENT_ERROR"), requestPath: "/api/academic", statusCode: Number(error?.status) || 500, metadata: { paymentAction: String(req.query?.action || "") } });
     return fail(res, Number(error?.status) || 500, Number(error?.status) && Number(error.status) < 500 ? error.message : "Le service de paiement est temporairement indisponible.");
   }
