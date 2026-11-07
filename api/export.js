@@ -111,9 +111,23 @@ function structureLevel(label) {
 function stripLeadingTitle(value, title) {
   const lines = text(value).split(/\r?\n/);
   while (lines.length && !lines[0].trim()) lines.shift();
-  if (lines.length) {
-    const first = lines[0].trim().replace(/^#{1,5}\s+/, '').replace(/:$/, '').trim();
-    if (first.toLocaleLowerCase('fr') === String(title).toLocaleLowerCase('fr')) lines.shift();
+  const expected = normalizeHeadingKey(title);
+  if (lines.length && expected) {
+    const first = normalizeHeadingKey(lines[0].trim().replace(/^#{1,5}\s+/, '').replace(/:$/, ''));
+    if (first === expected) {
+      lines.shift();
+    } else if (expected.startsWith(first + ' ')) {
+      const suffix = expected.slice(first.length).trim();
+      let next = 1;
+      while (next < lines.length && !lines[next].trim()) next++;
+      if (normalizeHeadingKey(lines[next] || '') === suffix) {
+        lines.splice(0, next + 1);
+      }
+    } else if (expected.endsWith(' ' + first)) {
+      // A title suffix was split into the first body paragraph after the
+      // complete heading was already emitted by the document template.
+      lines.shift();
+    }
   }
   return lines.join('\n').trim();
 }
@@ -199,7 +213,8 @@ function addStructuredBlock(children, block, formatting, hierarchy = {}) {
     for (let deeper = level + 1; deeper <= 5; deeper++) delete hierarchy[deeper];
   };
 
-  for (const raw of lines) {
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+    const raw = lines[lineIndex];
     const line = raw.trim();
     if (!line) {
       flush();
@@ -216,6 +231,24 @@ function addStructuredBlock(children, block, formatting, hierarchy = {}) {
       flush();
       emitStructuralHeading(labelByKey.get(candidateKey));
       continue;
+    }
+
+    // A generated title can be split across two lines, leaving its last word
+    // as an ordinary indented paragraph. Rejoin only when the expected title
+    // in the block structure proves the exact missing suffix.
+    const splitLabel = candidateKey && [...labelByKey.entries()].find(([key]) =>
+      key.startsWith(candidateKey + ' ')
+    );
+    if (splitLabel) {
+      const suffix = splitLabel[0].slice(candidateKey.length).trim();
+      let nextIndex = lineIndex + 1;
+      while (nextIndex < lines.length && !lines[nextIndex].trim()) nextIndex++;
+      if (normalizeHeadingKey(lines[nextIndex] || '') === suffix) {
+        flush();
+        emitStructuralHeading(splitLabel[1]);
+        lineIndex = nextIndex;
+        continue;
+      }
     }
 
     if (markdown) {
