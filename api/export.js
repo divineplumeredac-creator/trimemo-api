@@ -434,6 +434,18 @@ export default async function handler(req, res) {
     }
 
     // L'export ne doit jamais masquer un bloc vide ou resté inachevé.
+    // Refuser aussi les blocs qui semblent s’arrêter en pleine phrase.
+    const cutOffBlocks = compiled.blocks.filter((block) => {
+      const ending = text(block.content).trim().replace(/[\\s*_\x60#]+$/g, '');
+      return ending && !/[.!?…]["'’»”)}\\]]*$/.test(ending);
+    });
+    if (cutOffBlocks.length) {
+      const titles = cutOffBlocks.slice(0, 5).map((block) => text(block.title || block.id || 'Bloc sans titre'));
+      const error = new Error('Export interrompu : certains blocs semblent incomplets. Terminez la phrase finale avant de télécharger le document. Blocs concernés : ' + titles.join(' ; '));
+      error.status = 422;
+      throw error;
+    }
+
     const incompleteBlocks = compiled.blocks.filter((block) => !text(block.content).trim());
     if (incompleteBlocks.length) {
       const titles = incompleteBlocks.slice(0, 5).map((block) => text(block.title || block.id || "Bloc sans titre"));
