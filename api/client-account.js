@@ -73,6 +73,56 @@ async function authenticate(token) {
   }
   return user;
 }
+async function ensureProjectState(projectId, userId, suppliedState) {
+  const rows = await supabase("/rest/v1/trimemo_project_state?project_id=eq." + encodeURIComponent(projectId) + "&select=owner_id,state&limit=1");
+  const current = Array.isArray(rows) ? rows[0] : null;
+  if (current?.owner_id && current.owner_id !== userId) {
+    const error = new Error("Ce projet est déjà rattaché à un autre compte client.");
+    error.status = 409;
+    throw error;
+  }
+
+  const state = suppliedState && typeof suppliedState === "object" && !Array.isArray(suppliedState)
+    ? suppliedState
+    : current?.state;
+  if (!state || typeof state !== "object" || Array.isArray(state)) {
+    const error = new Error("L’état de ce projet est introuvable. Rechargez l’aperçu et réessayez.");
+    error.status = 409;
+    throw error;
+  }
+  const embeddedProjectId = String(state.project?.projectId || state.project?.project_id || "").trim();
+  if (embeddedProjectId && embeddedProjectId !== projectId) {
+    const error = new Error("L’état transmis ne correspond pas à ce projet.");
+    error.status = 400;
+    throw error;
+  }
+  const version = Number(state.schemaVersion || 1);
+  if (!Number.isInteger(version) || version < 1 || version > 2) {
+    const error = new Error("La version de ce projet n’est pas prise en charge. Rechargez la page et réessayez.");
+    error.status = 400;
+    throw error;
+  }
+  if (Buffer.byteLength(JSON.stringify(state), "utf8") > 3_500_000) {
+    const error = new Error("Le projet est trop volumineux pour être associé au compte.");
+    error.status = 413;
+    throw error;
+  }
+
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + 180 * 24 * 60 * 60 * 1000).toISOString();
+  await supabase("/rest/v1/trimemo_project_state?on_conflict=project_id", {
+    method: "POST",
+    headers: { Prefer: "resolution=merge-duplicates,return=representation" },
+    body: JSON.stringify({
+      project_id: projectId,
+      owner_id: userId,
+      state,
+      updated_at: now.toISOString(),
+      expires_at: expiresAt,
+    }),
+  });
+}
+
 async function listProjects(userId) {
   const { url, key } = config();
   const query = new URLSearchParams({
@@ -311,6 +361,10 @@ export default async function handler(req, res) {
 
       const now = new Date().toISOString();
       if (!existing) {
+        // The account-project table has a foreign key to project_state.
+        // Save/claim the authenticated project's state first so the link can
+        // be created without dropping the guest's preview or draft.
+        await ensureProjectState(projectId, user.id, body.state);
         const inserted = await supabase("/rest/v1/trimemo_client_projects?on_conflict=project_id", {
           method: "POST",
           headers: { Prefer: "resolution=ignore-duplicates,return=representation" },
