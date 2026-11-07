@@ -381,6 +381,7 @@ export default async function handler(req, res) {
       // Update only the authenticated owner's row. user_id is never changed by this path.
       const updatedRows = await supabase("/rest/v1/trimemo_client_projects?project_id=eq." + encodeURIComponent(projectId) + "&user_id=eq." + encodeURIComponent(user.id), {
         method: "PATCH",
+        headers: { Prefer: "return=representation" },
         body: JSON.stringify({ subject, payment_status: paymentStatus, updated_at: now }),
       });
       if (!Array.isArray(updatedRows) || !updatedRows.length) return fail(res, 409, "Le rattachement du projet a changé. Rechargez votre compte puis réessayez.");
