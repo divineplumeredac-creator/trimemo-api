@@ -436,8 +436,8 @@ export default async function handler(req, res) {
     // L'export ne doit jamais masquer un bloc vide ou resté inachevé.
     // Refuser aussi les blocs qui semblent s’arrêter en pleine phrase.
     const cutOffBlocks = compiled.blocks.filter((block) => {
-      const ending = text(block.content).trim().replace(/[\\s*_\x60#]+$/g, '');
-      return ending && !/[.!?…]["'’»”)}\\]]*$/.test(ending);
+      const ending = text(block.content).trim().replace(/[\s*_#]+$/g, '');
+      return ending && !/[.!?…]$/.test(ending);
     });
     if (cutOffBlocks.length) {
       const titles = cutOffBlocks.slice(0, 5).map((block) => text(block.title || block.id || 'Bloc sans titre'));
