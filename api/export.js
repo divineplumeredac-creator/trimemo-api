@@ -15,7 +15,7 @@ import {
 import compileDocument from '../lib/compile-document.js';
 import { resolveFormatting } from '../lib/academic-format.js';
 import { requirePremiumOrOwner } from '../lib/premium-auth.js';
-import { assertOrderUsable, consumeOrderAfterExport } from '../lib/order-ledger.js';
+import { assertOrderUsable, claimOrderExportAttempt, consumeOrderAfterExport } from '../lib/order-ledger.js';
 import { enforceAcademicStyle } from '../lib/style-control.js';
 import { rateLimit } from '../lib/rate-limit.js';
 import { logAdminEvent } from '../lib/admin-telemetry.js';
@@ -434,18 +434,6 @@ export default async function handler(req, res) {
     }
 
     // L'export ne doit jamais masquer un bloc vide ou resté inachevé.
-    // Refuser aussi les blocs qui semblent s’arrêter en pleine phrase.
-    const cutOffBlocks = compiled.blocks.filter((block) => {
-      const ending = text(block.content).trim().replace(/[\s*_#]+$/g, '');
-      return ending && !/[.!?…]$/.test(ending);
-    });
-    if (cutOffBlocks.length) {
-      const titles = cutOffBlocks.slice(0, 5).map((block) => text(block.title || block.id || 'Bloc sans titre'));
-      const error = new Error('Export interrompu : certains blocs semblent incomplets. Terminez la phrase finale avant de télécharger le document. Blocs concernés : ' + titles.join(' ; '));
-      error.status = 422;
-      throw error;
-    }
-
     const incompleteBlocks = compiled.blocks.filter((block) => !text(block.content).trim());
     if (incompleteBlocks.length) {
       const titles = incompleteBlocks.slice(0, 5).map((block) => text(block.title || block.id || "Bloc sans titre"));
@@ -457,6 +445,25 @@ export default async function handler(req, res) {
       );
       error.status = 422;
       throw error;
+    }
+
+    // Vérifier côté serveur que tous les blocs envoyés sont terminés.
+    // Une fin de bloc sans point n'est pas un critère fiable d'incomplétude.
+    if (access.mode === 'premium') {
+      const submittedBlocks = Array.isArray(body.blocks) ? body.blocks : [];
+      const unfinishedBlocks = submittedBlocks.filter((block) => block?.status !== 'done' || !text(block?.content).trim());
+      if (!submittedBlocks.length || unfinishedBlocks.length) {
+        const titles = unfinishedBlocks.slice(0, 5).map((block) => text(block?.title || block?.id || 'Bloc sans titre'));
+        const error = new Error(
+          'Export indisponible : le mémoire doit être entièrement rédigé avant son export. ' +
+          (titles.length ? 'Blocs à terminer : ' + titles.join(' ; ') : 'Actualisez le document et réessayez.')
+        );
+        error.status = 422;
+        throw error;
+      }
+      const attempt = await claimOrderExportAttempt(access.token, body.project || body);
+      res.setHeader('X-Trimemo-Export-Attempt', String(attempt));
+      res.setHeader('X-Trimemo-Export-Attempts-Remaining', String(Math.max(0, 3 - attempt)));
     }
 
     // Le contrôle stylistique améliore le document, mais ne doit jamais empêcher
