@@ -14,6 +14,7 @@ import {
 } from 'docx';
 import compileDocument from '../lib/compile-document.js';
 import { resolveFormatting } from '../lib/academic-format.js';
+import { auditCitationReferences } from '../lib/citation-audit.js';
 import { requirePremiumOrOwner } from '../lib/premium-auth.js';
 import { assertOrderUsable, claimOrderExportAttempt, consumeOrderAfterExport } from '../lib/order-ledger.js';
 import { enforceAcademicStyle } from '../lib/style-control.js';
@@ -497,10 +498,13 @@ export default async function handler(req, res) {
     }
     const uniqueSources = Array.isArray(compiled.bibliography?.sources) ? compiled.bibliography.sources : [];
     const missingLinks = uniqueSources.filter((source) => !source.doi && !source.url).length;
+    const citationAudit = auditCitationReferences(compiled.blocks, uniqueSources);
     const bibliographyWarning = uniqueSources.length < 10 || missingLinks > 0;
     res.setHeader('X-Trimemo-Bibliography-Warning', bibliographyWarning ? 'true' : 'false');
     res.setHeader('X-Trimemo-Bibliography-Count', String(uniqueSources.length));
     res.setHeader('X-Trimemo-Bibliography-Missing-Links', String(missingLinks));
+    res.setHeader('X-Trimemo-Citation-Warning', citationAudit.count ? 'true' : 'false');
+    res.setHeader('X-Trimemo-Citation-Issue-Count', String(citationAudit.count));
 
     const formatting = resolveFormatting(body.formatting || {});
     const doc = new Document({
