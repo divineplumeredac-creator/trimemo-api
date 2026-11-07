@@ -253,7 +253,9 @@ function addStructuredBlock(children, block, formatting, hierarchy = {}) {
 
     if (markdown) {
       flush();
-      const level = markdown.level;
+      // Respecter le niveau académique du titre, même si le Markdown généré
+      // lui attribue un niveau différent (ex. #### SECTION 1.2 doit rester un titre de section).
+      const level = structureLevel(markdown.title) || markdown.level;
       const key = normalizeHeadingKey(markdown.title);
       const parentKey = hierarchy[level - 1] || '';
       const occurrenceKey = parentKey + '|' + level + '|' + key;
@@ -346,7 +348,7 @@ function buildChildren(compiled, formatting) {
 
   children.push(heading('Introduction générale', 1, formatting));
   const introductionBlocks = compiled.blocks.filter((block) => block.kind === 'introduction');
-  const chapterBlocks = compiled.blocks.filter((block) => block.kind === 'chapter' || block.kind === 'part' || block.kind === 'part_intro' || block.kind === 'chapter_intro' || block.kind === 'partie_intro' || block.kind === 'chapitre_intro' || !block.kind);
+  const chapterBlocks = compiled.blocks.filter((block) => block.kind === 'chapter' || block.kind === 'section' || block.kind === 'part' || block.kind === 'part_intro' || block.kind === 'chapter_intro' || block.kind === 'partie_intro' || block.kind === 'chapitre_intro' || !block.kind);
   const conclusionBlocks = compiled.blocks.filter((block) => block.kind === 'conclusion');
   const hierarchy = {};
 
@@ -418,6 +420,14 @@ export default async function handler(req, res) {
     if (body.format && body.format !== 'docx') return res.status(400).json({ error: 'Format non pris en charge. Utilisez docx.' });
 
     const compiled = compileDocument(body);
+    const supportedKinds = new Set(['introduction', 'chapter', 'section', 'part', 'part_intro', 'chapter_intro', 'partie_intro', 'chapitre_intro', 'conclusion']);
+    const unsupportedBlocks = compiled.blocks.filter((block) => block.kind && !supportedKinds.has(block.kind));
+    if (unsupportedBlocks.length) {
+      const titles = unsupportedBlocks.slice(0, 5).map((block) => text(block.title || block.id || 'Bloc sans titre'));
+      const error = new Error('Export interrompu : certains blocs ne sont pas pris en charge et risqueraient d’être omis. Vérifiez leur type avant de réessayer. Blocs concernés : ' + titles.join(' ; '));
+      error.status = 422;
+      throw error;
+    }
 
     // L'export ne doit jamais masquer un bloc vide ou resté inachevé.
     const incompleteBlocks = compiled.blocks.filter((block) => !text(block.content).trim());
