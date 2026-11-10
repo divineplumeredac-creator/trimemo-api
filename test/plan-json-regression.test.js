@@ -1,0 +1,22 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { parsePlanJson, retryMalformedPlan } from '../lib/plan-json.js';
+import handler from '../api/generate-plans.js';
+import {createOwnerToken} from '../lib/owner-auth.js';
+process.env.NODE_ENV='test';
+process.env.TRIMEMO_CLAUDE_API_KEY='test-key';
+process.env.TRIMEMO_OWNER_EMAIL='owner@example.test';
+process.env.TRIMEMO_OWNER_AUTH_SECRET='test-secret';
+process.env.SUPABASE_URL='https://database.invalid';
+process.env.SUPABASE_SERVICE_ROLE_KEY='fake';
+const originalFetch=globalThis.fetch;
+const json=value=>new Response(JSON.stringify(value),{status:200,headers:{'content-type':'application/json'}});
+function res(){return {headers:{},setHeader(k,v){this.headers[k]=v},status(code){this.statusCode=code;return this},json(body){this.body=body;return this},end(){return this}}}
+const invalid='{"plans":[{"title" "incorrect"}]}';
+const sections=[{title:'Concepts',description:'Étudier les notions.',subsections:[]},{title:'Méthodes',description:'Étudier les méthodes.',subsections:[]}];
+const chapters=[{title:'Cadre général',description:'Présenter le contexte.',sections},{title:'Cadre analytique',description:'Présenter les outils.',sections}];
+const plan={title:'Plan de recherche',approach:'Analyse du sujet',angle:'Approche descriptive',coverage:'Étude du sujet',parts:[{title:'Fondements',description:'Étudier les fondements.',chapters},{title:'Analyse',description:'Étudier les résultats.',chapters}]};
+test('invalid JSON is rejected and retried once', async()=>{let count=0;const result=await retryMalformedPlan(retry=>{count++;assert.equal(retry,count===2);return parsePlanJson(count===1?invalid:'{"plans":[]}')});assert.deepEqual(result,{plans:[]});assert.equal(count,2)});
+test('provider errors do not trigger a retry',async()=>{let count=0;const error=Object.assign(new Error('rate limit'),{status:429});await assert.rejects(retryMalformedPlan(()=>{count++;throw error}),e=>e===error);assert.equal(count,1)});
+test('two invalid responses stop after one retry',async()=>{let count=0;await assert.rejects(retryMalformedPlan(()=>{count++;return parsePlanJson(invalid)}),e=>e.code==='PLAN_JSON_INVALID'&&e.status===502);assert.equal(count,2)});
+test('plan endpoint retries malformed Claude JSON and returns a valid plan',async()=>{let calls=[];globalThis.fetch=async(input,init={})=>{let url=String(input);if(url.includes('database.invalid'))return json([]);if(url.includes('api.anthropic.com')){calls.push(JSON.parse(init.body));return json({id:'fake',stop_reason:'end_turn',content:[{type:'text',text:calls.length===1?invalid:JSON.stringify({plans:[plan]})}],usage:{input_tokens:1,output_tokens:1}})}throw Error('Unexpected network request')};try{const result=res();await handler({method:'POST',headers:{authorization:'Bearer '+createOwnerToken('owner@example.test')},body:{ownerMode:true,project:{projectId:'plan-test',sujet:'Sujet fictif',pages:30,niveau:'Licence',typeDoc:'Mémoire'},problematic:{question:'Question fictive ?'}}},result);assert.equal(result.statusCode,200,JSON.stringify(result.body));assert.equal(result.body.plan.parts.length,2);assert.equal(calls.length,2);assert.match(calls[1].system[0].text,/JSON invalide/)}finally{globalThis.fetch=originalFetch}});

@@ -14,6 +14,7 @@ import { PLAN_PARTS_SCHEMA, normalizePlanStructure } from "../lib/plan-structure
 import { extractMethodologyContract, methodologyContractText, validateMethodologyStructure } from "../lib/methodology-contract.js";
 import { enforceAcademicStyle } from "../lib/style-control.js";
 import { TRIMEMO_PLAN_WRITING_CONTRACT, TRIMEMO_STRICT_STYLE_CONTRACT } from "../lib/strict-writing-contract.js";
+import { parsePlanJson, retryMalformedPlan } from "../lib/plan-json.js";
 
 const OPENAI_URL="https://api.openai.com/v1/responses";
 const WORDS_PER_PAGE=320;
@@ -30,13 +31,6 @@ function out(d){
   const t=(d?.output||[]).flatMap(x=>x?.content||[]).filter(x=>x?.type==="output_text").map(x=>x.text).join("").trim();
   if(!t) throw fail("OpenAI n’a retourné aucun résultat exploitable.",502);
   return t;
-}
-function json(v){
-  try{return JSON.parse(v)}catch{
-    const a=v.indexOf("{"),b=v.lastIndexOf("}");
-    if(a>=0&&b>a)return JSON.parse(v.slice(a,b+1));
-    throw fail("Réponse OpenAI invalide.",502);
-  }
 }
 
 const SCHEMA={
@@ -97,7 +91,7 @@ async function callModel({key,system,user,schema,name,files=[],imageInputs=[],ti
   }
   const payload=JSON.parse(raw);
   void recordOpenAIUsage({endpoint:"generate-plans",model:getClaudeModel("light"),usage:payload?.usage,status:payload?.status==="incomplete"?"incomplete":"success",durationMs:Date.now()-requestStartedAt,requestId:payload?.id,errorCode:payload?.status==="incomplete"?"INCOMPLETE":null});
-  return json(out(payload));
+  return parsePlanJson(out(payload));
 }
 
 async function repairPlanSet({key,system,user,schema,name,files,imageInputs,plans,reason}) {
@@ -603,17 +597,17 @@ ${TRIMEMO_STRICT_STYLE_CONTRACT}`;
     // Les contraintes structurelles du guide sont injectées directement dans le JSON Schema.
     // Le modèle ne peut donc plus retourner un nombre de parties ou de chapitres incompatible.
     stage="génération initiale OpenAI";
-    let data=await callModel({
+    let data=await retryMalformedPlan(retry => callModel({
       key,
-      system:generationSystem,
+      system:generationSystem + (retry ? "\n\nLa réponse précédente avait un JSON invalide. Retourne un unique objet JSON strictement valide, avec des guillemets correctement échappés et sans texte autour." : ""),
       user:baseUser,
       schema,
       name:"trimemo_academic_toc",
       files:ids,
       imageInputs,
-      timeoutMs:150000,
+      timeoutMs:retry ? 60000 : 150000,
       maxOutputTokens:20000
-    });
+    }));
 
     const validateGeneratedPlans = (plans) => {
       if(!Array.isArray(plans) || plans.length !== count){
