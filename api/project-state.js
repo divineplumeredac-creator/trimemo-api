@@ -62,10 +62,8 @@ export default async function handler(req, res) {
       const rows = await db(`trimemo_project_state?project_id=eq.${encodeURIComponent(id)}&select=project_id,state,updated_at,expires_at&limit=1`);
       const row = rows?.[0];
       if (!row) return res.status(200).json({ success: true, found: false });
-      if (row.expires_at && Date.parse(row.expires_at) <= Date.now()) {
-        await db(`trimemo_project_state?project_id=eq.${encodeURIComponent(id)}`, { method: "DELETE" });
-        return res.status(200).json({ success: true, found: false });
-      }
+      // Keep previously saved work accessible to its authenticated owner even
+      // after its old expiry date. No retention policy is applied on reads.
       return res.status(200).json({ success: true, found: true, state: row.state, updatedAt: row.updated_at });
     }
     const state = req.body?.state;

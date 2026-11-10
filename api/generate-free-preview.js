@@ -60,11 +60,19 @@ function fail(message, status = 400) { const e = new Error(message); e.status = 
 function text(v) { return String(v ?? "").trim(); }
 function calculateAcademicIntroductionWords(pages) { return Math.max(300, Math.round(Number(pages || 1) * WORDS_PER_PAGE * 0.10)); }
 function extractOutputText(data) {
+  if (data?.status === "incomplete") throw fail("La réponse de génération a été interrompue avant sa fin. Réessayez.", 502);
   if (typeof data?.output_text === "string" && data.output_text.trim()) return data.output_text.trim();
   const parts = Array.isArray(data?.output) ? data.output.flatMap(x => Array.isArray(x?.content) ? x.content : []) : [];
   const out = parts.filter(x => x?.type === "output_text" && typeof x.text === "string").map(x => x.text).join("\n").trim();
   if (!out) throw fail("OpenAI n'a retourné aucun contenu exploitable.", 502);
   return out;
+}
+export function isPreviewPlanValid(plan) {
+  const parts = Array.isArray(plan?.parts) ? plan.parts : [];
+  return parts.length >= 2 && parts.length <= 3 && parts.every(part => {
+    const chapters = Array.isArray(part?.chapters) ? part.chapters : [];
+    return chapters.length >= 2 && chapters.length <= 3 && chapters.every(chapter => Array.isArray(chapter?.sections) && chapter.sections.length >= 1);
+  });
 }
 function parseJson(value) {
   try { return JSON.parse(value); } catch {
@@ -142,6 +150,7 @@ export default async function handler(req, res) {
     if (String(project.projectId || project.project_id || "").trim()) await rateLimitByKey("preview-project-" + String(project.projectId || project.project_id).trim(), 3, 24 * 60 * 60 * 1000);
     if (Array.isArray(project.files) && project.files.length) project = await hydrateProjectFiles(project);
     if (!verifyPricingQuote(project.pricingQuoteToken, project)) return res.status(403).json({ error: "L'analyse tarifaire du projet est absente ou expirée. Relancez l'analyse avant l'aperçu." });
+    if (req.body?.plan && !isPreviewPlanValid(req.body.plan)) return res.status(400).json({ error: "Le plan sélectionné est incomplet : vérifiez les parties, chapitres et sections avant de générer l'aperçu." });
     const files = Array.isArray(project.files) ? project.files : [];
     if (files.length) assertFilesSize(files);
     const maxPages = Math.max(1, Math.min(300, Number(settings.quotas?.maxPages) || 300));
@@ -192,20 +201,13 @@ export default async function handler(req, res) {
         lastValidationReason = "Le premier chapitre doit contenir au moins 800 mots pour permettre une véritable évaluation de la qualité.";
         continue;
       }
-      const plan=candidate?.plan;
-      const parts=Array.isArray(plan?.parts)?plan.parts:[];
-      const validStructure=parts.length>=2 && parts.length<=3 && parts.every(part=>{
-        const chapters=Array.isArray(part?.chapters)?part.chapters:[];
-        return chapters.length>=2 && chapters.length<=3 && chapters.every(chapter=>{
-          const sections=Array.isArray(chapter?.sections)?chapter.sections:[];
-          return sections.length>=2 && sections.length<=3;
-        });
-      });
-      if(!validStructure){
-        lastValidationReason="Le plan doit comporter 2 ou 3 parties, 2 ou 3 chapitres par partie et 2 ou 3 sections par chapitre.";
+      const chosenPlan = req.body?.plan;
+      const plan = Array.isArray(chosenPlan?.parts) && chosenPlan.parts.length ? chosenPlan : candidate?.plan;
+      if(!isPreviewPlanValid(plan)){
+        lastValidationReason="Le plan doit comporter 2 ou 3 parties, 2 ou 3 chapitres par partie et au moins une section par chapitre.";
         continue;
       }
-      result=candidate;
+      result={...candidate, plan};
       break;
     }
     if(!result) throw fail("L’aperçu gratuit n’a pas produit une structure académique conforme après trois tentatives : "+lastValidationReason,502);
@@ -236,7 +238,6 @@ export default async function handler(req, res) {
     await deleteOpenAIFiles(fileIds, apiKey);
     console.error("FREE_PREVIEW_FAILED", { status: Number(error?.status) || 500, code: String(error?.code || "PREVIEW_GENERATION_ERROR") });
     void logAdminEvent({ category: "generation", severity: (Number(error?.status) || 500) >= 500 ? "error" : "warning", action: "free_preview_failed", message: String(error?.code || error?.name || "PREVIEW_GENERATION_ERROR"), requestPath: "/api/generate-free-preview", statusCode: Number(error?.status) || 500 });
-    void logAdminEvent({ category: "generation", severity: "error", action: "free_preview_failed", message: String(error?.code || error?.name || "PREVIEW_GENERATION_ERROR"), requestPath: "/api/generate-free-preview", statusCode: Number(error?.status) || 500 });
     const status = error?.status || 500;
     return res.status(status).json({error: status >= 500 ? "Impossible de générer l’aperçu pour le moment. Réessayez dans quelques instants." : (error?.message || "Requête invalide.")});
   }

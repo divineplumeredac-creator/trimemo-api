@@ -11,6 +11,11 @@ import {
   Header,
   PageNumber,
   TableOfContents,
+  FootnoteReferenceRun,
+  Table,
+  TableRow,
+  TableCell,
+  WidthType,
 } from 'docx';
 import compileDocument from '../lib/compile-document.js';
 import { resolveFormatting } from '../lib/academic-format.js';
@@ -161,6 +166,31 @@ function markdownHeading(line) {
   const match = text(line).match(/^\s*(#{1,5})\s+(.+?)\s*#*\s*$/);
   return match ? { level: match[1].length, title: cleanAcademicText(match[2].trim()) } : null;
 }
+function markdownTableAt(lines, start, formatting) {
+  const splitCells = value => {
+    const line = text(value).trim();
+    if (!line.includes('|')) return null;
+    return line.replace(/^\|/, '').replace(/\|$/, '').split(/(?<!\\)\|/).map(cell => cell.replace(/\\\|/g, '|').trim());
+  };
+  const header = splitCells(lines[start]);
+  const separator = splitCells(lines[start + 1]);
+  if (!header || !separator || header.length < 2 || header.length !== separator.length || !separator.every(cell => /^:?-{3,}:?$/.test(cell))) return null;
+  const rows = [header];
+  let next = start + 2;
+  while (next < lines.length) {
+    const cells = splitCells(lines[next]);
+    if (!cells || cells.length !== header.length) break;
+    rows.push(cells);
+    next++;
+  }
+  return { next, table: new Table({
+    width: { size: 100, type: WidthType.PERCENTAGE },
+    rows: rows.map((cells, rowIndex) => new TableRow({
+      tableHeader: rowIndex === 0,
+      children: cells.map(cell => new TableCell({ children: [paragraph(cleanAcademicText(cell), formatting, { bold: rowIndex === 0, indent: 0 })] })),
+    })),
+  }) };
+}
 function addContent(children, content, formatting, options = {}) {
   const lines = text(content).split(/\r?\n/);
   let buffer = [];
@@ -170,8 +200,10 @@ function addContent(children, content, formatting, options = {}) {
     if (value) children.push(paragraph(value, formatting, options));
     buffer = [];
   };
-  for (const raw of lines) {
-    const line = raw.trim();
+  for (let index = 0; index < lines.length; index++) {
+    const table = markdownTableAt(lines, index, formatting);
+    if (table) { flush(); children.push(table.table); index = table.next - 1; continue; }
+    const line = lines[index].trim();
     if (!line) { flush(); continue; }
     const h = markdownHeading(line);
     if (h) {
@@ -218,6 +250,8 @@ function addStructuredBlock(children, block, formatting, hierarchy = {}) {
   };
 
   for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+    const table = markdownTableAt(lines, lineIndex, formatting);
+    if (table) { flush(); children.push(table.table); lineIndex = table.next - 1; continue; }
     const raw = lines[lineIndex];
     const line = raw.trim();
     if (!line) {
@@ -277,6 +311,11 @@ function addStructuredBlock(children, block, formatting, hierarchy = {}) {
   }
 
   flush();
+  addBlockFootnotes(children, block);
+}
+function addBlockFootnotes(children, block) {
+  const ids = Array.isArray(block._footnoteIds) ? block._footnoteIds : [];
+  if (ids.length) children.push(new Paragraph({ children: ids.map(id => new FootnoteReferenceRun(id)) }));
 }
 function addPlanOutline(children, plan, formatting) {
   for (const part of plan.parts || []) {
@@ -374,6 +413,7 @@ function buildChildren(compiled, formatting) {
     for (const block of conclusionBlocks) {
       const content = stripLeadingTitle(block.content, 'Conclusion générale');
       addContent(children, content, formatting);
+      addBlockFootnotes(children, block);
     }
   } else if (text(compiled.plan?.conclusionGeneral?.content || compiled.plan?.conclusion?.content)) {
     children.push(heading('Conclusion générale', 1, formatting));
@@ -507,11 +547,27 @@ export default async function handler(req, res) {
     res.setHeader('X-Trimemo-Citation-Issue-Count', String(citationAudit.count));
 
     const formatting = resolveFormatting(body.formatting || {});
+    // Generated notes have no precise text anchors. Associate them with the
+    // end of their source block rather than inventing a sentence-level citation.
+    const footnotes = {};
+    let nextFootnoteId = 1;
+    compiled.blocks = compiled.blocks.map(block => {
+      const ids = [];
+      for (const note of Array.isArray(block.footnotes) ? block.footnotes : []) {
+        const content = String(note || '').trim();
+        if (!content) continue;
+        const id = nextFootnoteId++;
+        footnotes[id] = { children: [paragraph(content, formatting, { size: 10 })] };
+        ids.push(id);
+      }
+      return { ...block, _footnoteIds: ids };
+    });
     const doc = new Document({
       creator: 'Trimémo',
       title: text(compiled.project?.sujet || 'Document académique'),
       subject: 'Document académique',
       description: 'Document académique structuré et mis en forme automatiquement.',
+      footnotes,
       settings: { updateFields: true },
       styles: {
         default: {
