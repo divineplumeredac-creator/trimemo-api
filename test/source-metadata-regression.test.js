@@ -1,0 +1,9 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {verifySources} from '../lib/verify-sources.js';
+const oldFetch=globalThis.fetch;
+const metadata={message:{title:['Does Strategic Planning Improve Organizational Performance? A Meta-Analysis'],author:[{given:'Bert',family:'George'},{given:'Richard M.',family:'Walker'},{given:'Joost',family:'Monster'}],'container-title':['Public Administration Review']}};
+function mock(value){globalThis.fetch=async()=>new Response(JSON.stringify(value),{status:200,headers:{'content-type':'application/json'}})}
+test('un DOI associé au bon titre complète tous les auteurs',async()=>{mock(metadata);try{const [r]=await verifySources([{doi:'10.1111/puar.13104',title:'Does Strategic Planning Improve Organizational Performance? A Meta-Analysis',author:'George',year:'2019'}]);assert.equal(r.verified,true);assert.equal(r.author,'George, B., Walker, R. M., & Monster, J.');assert.equal(r.venue,'Public Administration Review');assert.equal(r.year,'2019')}finally{globalThis.fetch=oldFetch}});
+test('un DOI réel associé à un autre titre est refusé, même avec une URL',async()=>{let calls=0;globalThis.fetch=async()=>{calls++;return new Response(JSON.stringify(metadata),{status:200})};try{const [r]=await verifySources([{doi:'10.1111/puar.13104',title:'Un ouvrage complètement différent',url:'https://example.org/paper'}]);assert.equal(r.verified,false);assert.equal(r.verification,'doi_title_mismatch');assert.equal(calls,1)}finally{globalThis.fetch=oldFetch}});
+test('une différence de casse ou de ponctuation ne crée pas de faux désaccord',async()=>{mock(metadata);try{const [r]=await verifySources([{doi:'10.1111/puar.13104',title:'does strategic planning improve organizational performance a meta analysis'}]);assert.equal(r.verified,true)}finally{globalThis.fetch=oldFetch}});
