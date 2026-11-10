@@ -20,6 +20,7 @@ import { buildProjectDocumentContext, buildDocumentInstructions, buildImageInput
 import { assertFilesSize } from "../lib/limits.js";
 import { verifySources } from "../lib/verify-sources.js";
 import { hasMissingPartOpening } from "../lib/part-opening-audit.js";
+import { hasClearlyIncompleteEnding } from "../lib/incomplete-ending.js";
 function normalizeGeneratedAcademicContent(input) {
   let text = String(input || "").replace(/\r\n?/gu, "\n").trim();
 
@@ -517,7 +518,10 @@ Utilise des références vérifiables si elles sont nécessaires.
       wordCount,
       sources: verifiedSources.filter((source) => source?.verified === true),
       footnotes: Array.isArray(result.footnotes) ? result.footnotes : [],
-      warnings: hasMissingPartOpening(correctedContent, structure) ? ["L’introduction de cette partie semble manquer. Vérifiez le bloc avant l’export."] : [],
+      warnings: [
+        ...(hasMissingPartOpening(correctedContent, structure) ? ["L’introduction de cette partie semble manquer. Vérifiez le bloc avant l’export."] : []),
+        ...(hasClearlyIncompleteEnding(correctedContent) ? ["La fin de ce bloc semble incomplète. Vérifiez-la avant de poursuivre."] : []),
+      ],
       styleControl
     });
   } catch (error) {
