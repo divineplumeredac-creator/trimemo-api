@@ -26,20 +26,14 @@ function normalizeText(value) {
 }
 
 function extractResponseText(data) {
+  if (data?.status === "incomplete") {
+    throw fail("La réponse de génération est incomplète. Réessayez.", 502);
+  }
   if (
     typeof data?.output_text === "string" &&
     data.output_text.trim()
   ) {
     return data.output_text.trim();
-  }
-
-  if (data?.status === "incomplete") {
-    throw fail(
-      `La réponse OpenAI est incomplète : ${
-        data?.incomplete_details?.reason || "raison inconnue"
-      }.`,
-      502
-    );
   }
 
   const output = Array.isArray(data?.output)

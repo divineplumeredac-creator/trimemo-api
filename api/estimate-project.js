@@ -4,9 +4,9 @@ import { logAdminEvent, recordOpenAIUsage } from "../lib/admin-telemetry.js";
 import { buildProjectDocumentContext, buildImageInputs } from "../lib/project-documents.js";
 import { assertFilesSize } from "../lib/limits.js";
 import { rateLimit } from "../lib/rate-limit.js";
-import { calculateQuote, marketForCountry, signPricingQuote, verifyPricingQuote } from "../lib/pricing.js";
+import { calculateQuote, marketForCountry, signPricingQuote } from "../lib/pricing.js";
 import { setCors } from "../lib/http.js";
-import { storeProjectBundle, hydrateProjectFiles } from "../lib/project-file-store.js";
+import { storeProjectBundle, hydrateProjectFiles, authorizeProjectBundleWrite } from "../lib/project-file-store.js";
 
 const OPENAI_URL = "https://api.openai.com/v1/responses";
 function cors(res, req) { setCors(res, req, "POST, OPTIONS"); }
@@ -44,9 +44,11 @@ export default async function handler(req, res) {
   if (!Number.isInteger(pages) || pages < 1 || pages > maxPages) return fail(res, 400, "Le volume doit être un nombre entier compris entre 1 et " + maxPages + " pages.");
   try {
     await rateLimit(req, "project-estimate", 5, 60 * 60 * 1000);
+    const hasFiles = Array.isArray(project.files) && project.files.length > 0;
+    const bundleWrite = hasFiles ? await authorizeProjectBundleWrite(project, req) : null;
     if (Array.isArray(project.files) && project.files.length && project.files.some((file) => !String(file?.content || "").length)) {
-      if (!verifyPricingQuote(project.pricingQuoteToken, project)) return fail(res, 403, "Pour réutiliser les documents déjà joints, reprenez le projet estimé. Pour un nouveau sujet, joignez à nouveau les fichiers.");
-      project = await hydrateProjectFiles(project);
+      if (!bundleWrite?.existing) return fail(res, 409, "Les documents sauvegardés sont introuvables. Joignez-les à nouveau.");
+      project = await hydrateProjectFiles(project, { allowExpired: bundleWrite.allowExpired });
     }
     const files = Array.isArray(project.files) ? project.files : [];
     if (files.length) assertFilesSize(files);
@@ -96,7 +98,7 @@ export default async function handler(req, res) {
     try { analysis = JSON.parse(extractText(data)); } catch { return fail(res, 502, "Le moteur n'a pas retourné une analyse exploitable."); }
     if (!["faible", "moyenne", "elevee"].includes(analysis.complexity)) return fail(res, 502, "La complexité détectée est invalide.");
     const quote = calculateQuote({ project: { ...project, pages }, country, complexity: analysis.complexity, reasons: analysis.reasons, pricingConfig: settings.pricing_config });
-    if (files.length) await storeProjectBundle(String(project.projectId || project.project_id || ""), files, documents);
+    if (files.length) await storeProjectBundle(String(project.projectId || project.project_id || ""), files, documents, bundleWrite);
     quote.detectedRequirements = Array.isArray(analysis.detectedRequirements) ? analysis.detectedRequirements.slice(0, 8) : [];
     quote.countryDetected = country !== "UNKNOWN";
     quote.pricingQuoteToken = signPricingQuote(quote, { ...project, pages });
