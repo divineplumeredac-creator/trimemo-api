@@ -29,7 +29,24 @@ import { assertClientProjectActive } from '../lib/admin-data.js';
 
 const DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
-function cors(res, req) { setCors(res, req, "POST, OPTIONS"); }
+function cors(res, req) {
+  setCors(res, req, "POST, OPTIONS");
+  // The browser calls the API across origins. Explicitly expose the export
+  // diagnostics so the client can display citation and bibliography warnings.
+  res.setHeader('Access-Control-Expose-Headers', [
+    'Content-Disposition',
+    'X-Trimemo-Bibliography-Warning',
+    'X-Trimemo-Bibliography-Count',
+    'X-Trimemo-Bibliography-Missing-Links',
+    'X-Trimemo-Citation-Warning',
+    'X-Trimemo-Citation-Issue-Count',
+    'X-Trimemo-Style-Control',
+    'X-Trimemo-Style-Corrected-Fields',
+    'X-Trimemo-Style-Warning',
+    'X-Trimemo-Export-Attempt',
+    'X-Trimemo-Export-Attempts-Remaining',
+  ].join(', '));
+}
 function text(value) { return value == null ? '' : String(value); }
 function safeFileName(value = 'trimemo-document') {
   return text(value).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').slice(0, 100) || 'trimemo-document';
