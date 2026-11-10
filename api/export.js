@@ -79,15 +79,13 @@ function heading(value, level, formatting) {
     heading: headingLevels[level] || HeadingLevel.HEADING_3,
     keepNext: true,
     keepLines: true,
-    // Une nouvelle page est réservée aux grandes parties, pas à chaque titre de niveau 1.
-    // Cela évite les pages blanches entre la couverture, le sommaire et l'introduction.
-    pageBreakBefore: level === 1 && /^PARTIE\s+/i.test(text(value).trim()),
+    pageBreakBefore: level === 1 && /^(?:PARTIE\s+|INTRODUCTION GÉNÉRALE$|CONCLUSION GÉNÉRALE$|BIBLIOGRAPHIE$)/iu.test(text(value).trim()),
     spacing: {
       before: level === 1 ? 360 : level === 2 ? 280 : 200,
       after: 120,
       line: Math.round(formatting.lineSpacing * 240),
     },
-    children: [run(value, formatting, { bold: true, size })],
+    children: [run(value, formatting, { bold: true, size, color: '000000' })],
   });
 }
 function roman(number) {
@@ -249,6 +247,13 @@ function addStructuredBlock(children, block, formatting, hierarchy = {}) {
     for (let deeper = level + 1; deeper <= 5; deeper++) delete hierarchy[deeper];
   };
 
+  // The stored plan is authoritative even when Claude omits a part heading.
+  // Only synthesize a heading if it is absent from the block's text.
+  const presentKeys = new Set(lines.map(line => normalizeHeadingKey(line.replace(/^\s*#{1,6}\s*/, ''))).filter(Boolean));
+  for (const label of labels) {
+    if ([1, 2].includes(structureLevel(label)) && !presentKeys.has(normalizeHeadingKey(label))) emitStructuralHeading(label);
+  }
+
   for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
     const table = markdownTableAt(lines, lineIndex, formatting);
     if (table) { flush(); children.push(table.table); lineIndex = table.next - 1; continue; }
@@ -383,12 +388,12 @@ function buildChildren(compiled, formatting) {
   const children = [];
   addTitlePage(children, compiled, formatting);
 
-  children.push(heading('Table des matières', 1, formatting));
+  // A table of contents should not list itself.
+  children.push(new Paragraph({ spacing: { before: 360, after: 120 }, children: [run('Table des matières', formatting, { bold: true, size: formatting.partSize, color: '000000' })] }));
   children.push(new TableOfContents('', {
     hyperlink: true,
-    headingStyleRange: '1-4',
+    headingStyleRange: '1-5',
   }));
-  children.push(new Paragraph({ children: [new PageBreak()] }));
 
   children.push(heading('Introduction générale', 1, formatting));
   const introductionBlocks = compiled.blocks.filter((block) => block.kind === 'introduction');
@@ -406,7 +411,20 @@ function buildChildren(compiled, formatting) {
     if (text(intro.content)) addContent(children, intro.content, formatting);
   }
 
-  for (const block of chapterBlocks) addStructuredBlock(children, block, formatting, hierarchy);
+  for (const block of chapterBlocks) {
+    const structure = Array.isArray(block.structure) ? [...block.structure] : [];
+    // Older saved blocks may have lost their part label. Recover it from the
+    // exact chapter ID in the selected plan without changing saved data.
+    const part = compiled.plan.parts.find(part => part.chapters.some(chapter =>
+      text(chapter.id) && text(block.id).startsWith(text(chapter.id) + '-bloc-')
+    ));
+    const chapter = part?.chapters.find(chapter => text(block.id).startsWith(text(chapter.id) + '-bloc-'));
+    if (part && chapter && text(block.id).endsWith('-bloc-1')) {
+      if (!structure.some(label => structureLevel(label) === 2)) structure.unshift(chapterTitle(chapter));
+      if (!structure.some(label => structureLevel(label) === 1)) structure.unshift(partTitle(part));
+    }
+    addStructuredBlock(children, { ...block, structure }, formatting, hierarchy);
+  }
 
   if (conclusionBlocks.length) {
     children.push(heading('Conclusion générale', 1, formatting));
