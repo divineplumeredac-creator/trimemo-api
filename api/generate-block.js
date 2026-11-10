@@ -19,6 +19,7 @@ import { hydrateProjectFiles } from "../lib/project-file-store.js";
 import { buildProjectDocumentContext, buildDocumentInstructions, buildImageInputs } from "../lib/project-documents.js";
 import { assertFilesSize } from "../lib/limits.js";
 import { verifySources } from "../lib/verify-sources.js";
+import { hasMissingPartOpening } from "../lib/part-opening-audit.js";
 function normalizeGeneratedAcademicContent(input) {
   let text = String(input || "").replace(/\r\n?/gu, "\n").trim();
 
@@ -222,7 +223,7 @@ INSTRUCTIONS SPÉCIFIQUES DU BLOC :
 10. Privilégie les articles scientifiques, ouvrages universitaires, rapports d’institutions reconnues et documents officiels accessibles.
 11. Vérifie que chaque source retenue dispose d’un DOI ou d’une URL issue de la recherche.
 12. Évite les sources anciennes lorsque des travaux plus récents et pertinents existent.
-13. N’utilise pas de doublons parmi les sources déjà transmises dans les blocs précédents.
+13. Ne duplique pas les notices dans la bibliographie finale. Si ce bloc cite à nouveau une source antérieure, retourne néanmoins sa notice complète dans SOURCES afin de préserver le lien entre citation et référence ; les doublons seront fusionnés lors de l'assemblage.
 9. Si une information manque, formule une analyse prudente.
 10. Ne répète pas les idées déjà développées dans le bloc.
 11. Les blocs précédents sont une mémoire de continuité, pas une matière à recopier.
@@ -516,6 +517,7 @@ Utilise des références vérifiables si elles sont nécessaires.
       wordCount,
       sources: verifiedSources.filter((source) => source?.verified === true),
       footnotes: Array.isArray(result.footnotes) ? result.footnotes : [],
+      warnings: hasMissingPartOpening(correctedContent, structure) ? ["L’introduction de cette partie semble manquer. Vérifiez le bloc avant l’export."] : [],
       styleControl
     });
   } catch (error) {
