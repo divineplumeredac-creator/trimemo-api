@@ -19,6 +19,7 @@ import { hydrateProjectFiles } from "../lib/project-file-store.js";
 import { buildProjectDocumentContext, buildDocumentInstructions, buildImageInputs } from "../lib/project-documents.js";
 import { assertFilesSize } from "../lib/limits.js";
 import { verifySources } from "../lib/verify-sources.js";
+import { requireOwnedProject } from "../lib/owned-project-gate.js";
 import { hasMissingPartOpening } from "../lib/part-opening-audit.js";
 import { hasClearlyIncompleteEnding } from "../lib/incomplete-ending.js";
 import { previewWordLimit } from "../lib/preview-limit.js";
@@ -87,7 +88,8 @@ export default async function handler(req, res) {
     await rateLimit(req, "generate-block", 30, 60 * 60 * 1000);
     const previewMode = body.previewMode === true;
     if (body.ownerMode === true) requireOwner(req);
-    else if (previewMode) {
+    else await requireOwnedProject(req, project);
+    if (body.ownerMode !== true && previewMode) {
       // Aperçu public : rédaction progressive bloc par bloc, limitée à 2 500 mots cumulés.
       const previewBlocks = Array.isArray(body.previewBlocks) ? body.previewBlocks : [];
       const previewWords = previewBlocks.reduce((sum, item) => sum + String(item?.content || "").trim().split(/\s+/u).filter(Boolean).length, 0);
@@ -97,7 +99,7 @@ export default async function handler(req, res) {
         const e = new Error("La limite de l’aperçu est atteinte. Consultez l’aperçu pour poursuivre."); e.status = 402; throw e;
       }
       body.targetWords = Math.min(Number(body.targetWords) || 900, limit - previewWords, 1000);
-    } else {
+    } else if (body.ownerMode !== true) {
       const access = requirePremiumOrOwner(req, body);
       if (access.mode === "premium") {
         await assertClientProjectActive(project.projectId || project.project_id);

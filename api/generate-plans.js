@@ -8,6 +8,7 @@ import { requirePremiumOrOwner } from "../lib/premium-auth.js";
 import { readAdminSettings, assertGenerationQuota, recordGenerationQuotaUse, assertClientProjectActive } from "../lib/admin-data.js";
 import { logAdminEvent, recordOpenAIUsage } from "../lib/admin-telemetry.js";
 import { verifyPricingQuote } from "../lib/pricing.js";
+import { requireOwnedProject } from "../lib/owned-project-gate.js";
 import { buildProjectDocumentContext, buildDocumentInstructions, uploadProjectFiles, deleteOpenAIFiles, extractFileText, buildImageInputs } from "../lib/project-documents.js";
 import { clampPages, assertFilesSize } from "../lib/limits.js";
 import { PLAN_PARTS_SCHEMA, normalizePlanStructure } from "../lib/plan-structure.js";
@@ -251,10 +252,11 @@ export default async function handler(req,res){
     await rateLimit(req, "generate-plans", 8, 60 * 60 * 1000);
     const b=req.body||{};
     let p=b.project||b.projet||b;
+    if(b.ownerMode===true) requireOwner(req);
+    else await requireOwnedProject(req,p);
     if (String(p.projectId || p.project_id || "").trim()) await rateLimitByKey("plan-project-" + String(p.projectId || p.project_id).trim(), 30, 24 * 60 * 60 * 1000);
     if (Array.isArray(p.files) && p.files.length) p = await hydrateProjectFiles(p);
-    if(b.ownerMode===true) requireOwner(req);
-    else {
+    if(b.ownerMode!==true) {
       const quote=verifyPricingQuote(p.pricingQuoteToken,p);
       if(!quote) {
         const access = requirePremiumOrOwner(req,b);

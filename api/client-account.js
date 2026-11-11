@@ -73,11 +73,18 @@ async function authenticate(token) {
   }
   return user;
 }
-async function ensureProjectState(projectId, userId, suppliedState) {
+export async function ensureProjectState(projectId, userId, suppliedState) {
   const rows = await supabase("/rest/v1/trimemo_project_state?project_id=eq." + encodeURIComponent(projectId) + "&select=owner_id,state&limit=1");
   const current = Array.isArray(rows) ? rows[0] : null;
   if (current?.owner_id && current.owner_id !== userId) {
     const error = new Error("Ce projet est déjà rattaché à un autre compte client.");
+    error.status = 409;
+    throw error;
+  }
+  // A legacy row without an owner needs a separately verified recovery; it
+  // must not be silently claimed by whichever account arrives first.
+  if (current && !current.owner_id) {
+    const error = new Error("Ce brouillon nécessite une vérification avant son rattachement. Contactez le support.");
     error.status = 409;
     throw error;
   }
@@ -108,11 +115,13 @@ async function ensureProjectState(projectId, userId, suppliedState) {
     throw error;
   }
 
+  if (current) return;
+
   const now = new Date();
   const expiresAt = new Date(now.getTime() + 180 * 24 * 60 * 60 * 1000).toISOString();
   await supabase("/rest/v1/trimemo_project_state?on_conflict=project_id", {
     method: "POST",
-    headers: { Prefer: "resolution=merge-duplicates,return=representation" },
+    headers: { Prefer: "resolution=ignore-duplicates,return=representation" },
     body: JSON.stringify({
       project_id: projectId,
       owner_id: userId,
@@ -121,6 +130,13 @@ async function ensureProjectState(projectId, userId, suppliedState) {
       expires_at: expiresAt,
     }),
   });
+  const verifiedRows = await supabase("/rest/v1/trimemo_project_state?project_id=eq." + encodeURIComponent(projectId) + "&select=owner_id,state&limit=1");
+  const verified = Array.isArray(verifiedRows) ? verifiedRows[0] : null;
+  if (!verified || verified.owner_id !== userId) {
+    const error = new Error("Ce projet est déjà rattaché à un autre compte client.");
+    error.status = 409;
+    throw error;
+  }
 }
 
 async function listProjects(userId) {
