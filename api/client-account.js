@@ -310,9 +310,10 @@ export default async function handler(req, res) {
       const memberships = await membershipResponse.json().catch(() => []);
       const membership = Array.isArray(memberships) ? memberships[0] : null;
       if (!membership) return fail(res, 404, "Ce projet n'est pas rattaché à votre compte client.");
-      const stateRows = await supabase("/rest/v1/trimemo_project_state?project_id=eq." + encodeURIComponent(projectId) + "&select=project_id,state,updated_at&limit=1");
+      const stateRows = await supabase("/rest/v1/trimemo_project_state?project_id=eq." + encodeURIComponent(projectId) + "&select=project_id,owner_id,state,updated_at&limit=1");
       const stateRow = Array.isArray(stateRows) ? stateRows[0] : null;
       if (!stateRow?.state) return fail(res, 404, "Le contenu sauvegardé de ce projet est introuvable. Contactez le support avant de créer un nouveau projet.");
+      if (stateRow.owner_id && stateRow.owner_id !== user.id) return fail(res, 409, "La propriété de ce projet doit être vérifiée. Contactez le support ; le document reste conservé.");
 
       // Restaure l'introduction de l'aperçu dans le bloc de rédaction.
       // Historiquement, l'introduction restait dans state.preview, tandis que le bloc Introduction générale était vide.

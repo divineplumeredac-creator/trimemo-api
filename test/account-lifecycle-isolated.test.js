@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import handler from '../api/client-account.js';
+import stateHandler from '../api/project-state.js';
 process.env.NODE_ENV='test';
 process.env.SUPABASE_URL='https://database.invalid';
 process.env.SUPABASE_SERVICE_ROLE_KEY='synthetic';
@@ -36,4 +37,37 @@ test('création puis reprise : seul le propriétaire peut ouvrir le projet',asyn
   assert.equal(restored.body.project.payment_status,'paid');assert.ok(restored.body.premium_token);
   const deniedPaid=await call({action:'resume',token:'token-b',projectId});assert.equal(deniedPaid.code,404);assert.equal(deniedPaid.body.premium_token,undefined);
  } finally {globalThis.fetch=old}
+});
+
+test('une propriété contradictoire bloque lecture, reprise et sauvegarde sans modifier le document',async()=>{
+ const old=globalThis.fetch;let writes=0;
+ const saved={project_id:projectId,owner_id:'user-b',state:{project:{projectId,sujet:'Document privé'},blocks:[]}};
+ globalThis.fetch=async(input,options={})=>{
+  const url=new URL(String(input));const method=options.method||'GET';
+  if(url.pathname==='/auth/v1/user')return json({id:'user-a'});
+  if(url.pathname.endsWith('/trimemo_client_projects'))return json([{project_id:projectId,user_id:'user-a'}]);
+  if(url.pathname.endsWith('/trimemo_project_state')){if(method==='POST')writes++;return json([saved]);}
+  throw new Error('Unexpected synthetic request '+url.pathname);
+ };
+ try {
+  const resume=result();await handler({method:'POST',headers:{},body:{action:'resume',token:'a',projectId}},resume);assert.equal(resume.code,409);assert.equal(resume.body.state,undefined);
+  for(const method of ['GET','POST']){
+   const res=result();await stateHandler({method,headers:{authorization:'Bearer a'},query:{projectId},body:{projectId,state:{project:{projectId},blocks:[]}}},res);
+   assert.equal(res.code,409);assert.equal(res.body.state,undefined);
+  }
+  assert.equal(writes,0);assert.equal(saved.state.project.sujet,'Document privé');
+ } finally {globalThis.fetch=old}
+});
+
+test('une sauvegarde ne peut pas mélanger deux projets',async()=>{
+ const old=globalThis.fetch;let writes=0;
+ globalThis.fetch=async(input,options={})=>{
+  const url=new URL(String(input));
+  if(url.pathname==='/auth/v1/user')return json({id:'user-a'});
+  if(url.pathname.endsWith('/trimemo_client_projects'))return json([{project_id:projectId}]);
+  if(url.pathname.endsWith('/trimemo_project_state')){if(options.method==='POST')writes++;return json([{owner_id:'user-a'}]);}
+  throw new Error('Unexpected synthetic request '+url.pathname);
+ };
+ try { const res=result();await stateHandler({method:'POST',headers:{authorization:'Bearer a'},body:{projectId,state:{project:{projectId:'22222222-2222-4222-8222-222222222222'}}}},res);assert.equal(res.code,400);assert.equal(writes,0); }
+ finally {globalThis.fetch=old}
 });
