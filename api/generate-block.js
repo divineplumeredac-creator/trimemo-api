@@ -21,6 +21,7 @@ import { assertFilesSize } from "../lib/limits.js";
 import { verifySources } from "../lib/verify-sources.js";
 import { hasMissingPartOpening } from "../lib/part-opening-audit.js";
 import { hasClearlyIncompleteEnding } from "../lib/incomplete-ending.js";
+import { previewWordLimit } from "../lib/preview-limit.js";
 function normalizeGeneratedAcademicContent(input) {
   let text = String(input || "").replace(/\r\n?/gu, "\n").trim();
 
@@ -90,11 +91,12 @@ export default async function handler(req, res) {
       // Aperçu public : rédaction progressive bloc par bloc, limitée à 2 500 mots cumulés.
       const previewBlocks = Array.isArray(body.previewBlocks) ? body.previewBlocks : [];
       const previewWords = previewBlocks.reduce((sum, item) => sum + String(item?.content || "").trim().split(/\s+/u).filter(Boolean).length, 0);
-      if (previewWords >= 2500) {
-        const e = new Error("L’aperçu de 2 500 mots est atteint. Consultez l’aperçu et payez pour poursuivre la rédaction."); e.status = 402; throw e;
+      const limit = previewWordLimit(project.pages);
+      if (!limit) { const e = new Error("Indiquez le nombre de pages du projet avant de générer l’aperçu."); e.status = 400; throw e; }
+      if (previewWords >= limit) {
+        const e = new Error("La limite de l’aperçu est atteinte. Consultez l’aperçu pour poursuivre."); e.status = 402; throw e;
       }
-      body.targetWords = Math.min(Number(body.targetWords) || 900, 2500 - previewWords, 1000);
-      if (body.targetWords < 250) body.targetWords = 250;
+      body.targetWords = Math.min(Number(body.targetWords) || 900, limit - previewWords, 1000);
     } else {
       const access = requirePremiumOrOwner(req, body);
       if (access.mode === "premium") {
