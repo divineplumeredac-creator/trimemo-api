@@ -195,6 +195,24 @@ export default async function handler(req, res) {
       if (!response.ok) return fail(res, 502, "Impossible d'enregistrer le nom du profil.");
       return res.status(200).json({ success: true, user: { id: updated.id || user.id, email: updated.email || user.email || "", firstName, lastName } });
     }
+    if (action === "confirm-session") {
+      const user = await authenticate(String(body.token || "").trim());
+      if (!user.email_confirmed_at) return fail(res, 403, "Confirmez votre adresse e-mail avant de continuer.");
+      return res.status(200).json({ success: true, user: { id: user.id, email: user.email || "", firstName: String(user.user_metadata?.first_name || ""), lastName: String(user.user_metadata?.last_name || "") } });
+    }
+    if (action === "resend-confirmation") {
+      const email = validEmail(body.email);
+      if (!email) return fail(res, 400, "Saisissez une adresse e-mail valide.");
+      const { url, key } = config();
+      const frontendUrl = String(process.env.TRIMEMO_FRONTEND_URL || "https://trimemo-frontend.vercel.app").trim().replace(/\/$/, "");
+      const redirectTo = frontendUrl + "/?account=confirmed" + (body.startProject === true ? "&start=1" : "");
+      const response = await fetch(url + "/auth/v1/resend?redirect_to=" + encodeURIComponent(redirectTo), {
+        method: "POST", headers: { apikey: key, "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "signup", email }), signal: AbortSignal.timeout(10000),
+      });
+      if (!response.ok) return fail(res, response.status === 429 ? 429 : 502, "Le renvoi du lien n’a pas pu être effectué. Réessayez plus tard.");
+      return res.status(200).json({ success: true, message: "Si ce compte attend une confirmation, un nouveau lien sera envoyé." });
+    }
     if (action === "signup" || action === "login") {
       const email = validEmail(body.email);
       const password = String(body.password || "");
@@ -205,10 +223,12 @@ export default async function handler(req, res) {
       if (action === "signup" && (!firstName || !lastName)) return fail(res, 400, "Le prénom et le nom sont obligatoires pour créer un compte.");
       if (action === "signup") {
         const { url, key } = config();
-        const created = await fetch(url + "/auth/v1/admin/users", {
+        const frontendUrl = String(process.env.TRIMEMO_FRONTEND_URL || "https://trimemo-frontend.vercel.app").trim().replace(/\/$/, "");
+        const redirectTo = frontendUrl + "/?account=confirmed" + (body.startProject === true ? "&start=1" : "");
+        const created = await fetch(url + "/auth/v1/signup?redirect_to=" + encodeURIComponent(redirectTo), {
           method: "POST",
           headers: { apikey: key, Authorization: "Bearer " + key, "Content-Type": "application/json" },
-          body: JSON.stringify({ email, password, email_confirm: true, user_metadata: { product: "Trimémo", first_name: firstName, last_name: lastName, full_name: (firstName + " " + lastName).trim() } }),
+          body: JSON.stringify({ email, password, data: { product: "Trimémo", first_name: firstName, last_name: lastName, full_name: (firstName + " " + lastName).trim() } }),
           signal: AbortSignal.timeout(10000),
         });
         const result = await created.json().catch(() => ({}));
@@ -217,6 +237,8 @@ export default async function handler(req, res) {
           if (/already|registered|exists|duplicate/i.test(message)) return fail(res, 409, "Un compte existe déjà avec cette adresse. Connectez-vous plutôt.");
           return fail(res, created.status === 422 ? 400 : 502, "La création du compte a échoué. Vérifiez l'adresse e-mail et réessayez.");
         }
+        if (result?.access_token || result?.session?.access_token) return fail(res, 503, "La confirmation par e-mail n’est pas configurée. Contactez le support.");
+        return res.status(200).json({ success: true, confirmation_required: true, message: "Consultez votre messagerie et cliquez sur le lien de confirmation pour activer votre compte." });
       }
       const session = await supabase("/auth/v1/token?grant_type=password", {
         method: "POST",
