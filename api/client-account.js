@@ -73,11 +73,18 @@ async function authenticate(token) {
   }
   return user;
 }
-async function ensureProjectState(projectId, userId, suppliedState) {
+export async function ensureProjectState(projectId, userId, suppliedState) {
   const rows = await supabase("/rest/v1/trimemo_project_state?project_id=eq." + encodeURIComponent(projectId) + "&select=owner_id,state&limit=1");
   const current = Array.isArray(rows) ? rows[0] : null;
   if (current?.owner_id && current.owner_id !== userId) {
     const error = new Error("Ce projet est déjà rattaché à un autre compte client.");
+    error.status = 409;
+    throw error;
+  }
+  // A legacy row without an owner needs a separately verified recovery; it
+  // must not be silently claimed by whichever account arrives first.
+  if (current && !current.owner_id) {
+    const error = new Error("Ce brouillon nécessite une vérification avant son rattachement. Contactez le support.");
     error.status = 409;
     throw error;
   }
@@ -108,11 +115,13 @@ async function ensureProjectState(projectId, userId, suppliedState) {
     throw error;
   }
 
+  if (current) return;
+
   const now = new Date();
   const expiresAt = new Date(now.getTime() + 180 * 24 * 60 * 60 * 1000).toISOString();
   await supabase("/rest/v1/trimemo_project_state?on_conflict=project_id", {
     method: "POST",
-    headers: { Prefer: "resolution=merge-duplicates,return=representation" },
+    headers: { Prefer: "resolution=ignore-duplicates,return=representation" },
     body: JSON.stringify({
       project_id: projectId,
       owner_id: userId,
@@ -121,6 +130,13 @@ async function ensureProjectState(projectId, userId, suppliedState) {
       expires_at: expiresAt,
     }),
   });
+  const verifiedRows = await supabase("/rest/v1/trimemo_project_state?project_id=eq." + encodeURIComponent(projectId) + "&select=owner_id,state&limit=1");
+  const verified = Array.isArray(verifiedRows) ? verifiedRows[0] : null;
+  if (!verified || verified.owner_id !== userId) {
+    const error = new Error("Ce projet est déjà rattaché à un autre compte client.");
+    error.status = 409;
+    throw error;
+  }
 }
 
 async function listProjects(userId) {
@@ -179,6 +195,24 @@ export default async function handler(req, res) {
       if (!response.ok) return fail(res, 502, "Impossible d'enregistrer le nom du profil.");
       return res.status(200).json({ success: true, user: { id: updated.id || user.id, email: updated.email || user.email || "", firstName, lastName } });
     }
+    if (action === "confirm-session") {
+      const user = await authenticate(String(body.token || "").trim());
+      if (!user.email_confirmed_at) return fail(res, 403, "Confirmez votre adresse e-mail avant de continuer.");
+      return res.status(200).json({ success: true, user: { id: user.id, email: user.email || "", firstName: String(user.user_metadata?.first_name || ""), lastName: String(user.user_metadata?.last_name || "") } });
+    }
+    if (action === "resend-confirmation") {
+      const email = validEmail(body.email);
+      if (!email) return fail(res, 400, "Saisissez une adresse e-mail valide.");
+      const { url, key } = config();
+      const frontendUrl = String(process.env.TRIMEMO_FRONTEND_URL || "https://trimemo-frontend.vercel.app").trim().replace(/\/$/, "");
+      const redirectTo = frontendUrl + "/?account=confirmed" + (body.startProject === true ? "&start=1" : "");
+      const response = await fetch(url + "/auth/v1/resend?redirect_to=" + encodeURIComponent(redirectTo), {
+        method: "POST", headers: { apikey: key, "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "signup", email }), signal: AbortSignal.timeout(10000),
+      });
+      if (!response.ok) return fail(res, response.status === 429 ? 429 : 502, "Le renvoi du lien n’a pas pu être effectué. Réessayez plus tard.");
+      return res.status(200).json({ success: true, message: "Si ce compte attend une confirmation, un nouveau lien sera envoyé." });
+    }
     if (action === "signup" || action === "login") {
       const email = validEmail(body.email);
       const password = String(body.password || "");
@@ -189,10 +223,12 @@ export default async function handler(req, res) {
       if (action === "signup" && (!firstName || !lastName)) return fail(res, 400, "Le prénom et le nom sont obligatoires pour créer un compte.");
       if (action === "signup") {
         const { url, key } = config();
-        const created = await fetch(url + "/auth/v1/admin/users", {
+        const frontendUrl = String(process.env.TRIMEMO_FRONTEND_URL || "https://trimemo-frontend.vercel.app").trim().replace(/\/$/, "");
+        const redirectTo = frontendUrl + "/?account=confirmed" + (body.startProject === true ? "&start=1" : "");
+        const created = await fetch(url + "/auth/v1/signup?redirect_to=" + encodeURIComponent(redirectTo), {
           method: "POST",
           headers: { apikey: key, Authorization: "Bearer " + key, "Content-Type": "application/json" },
-          body: JSON.stringify({ email, password, email_confirm: true, user_metadata: { product: "Trimémo", first_name: firstName, last_name: lastName, full_name: (firstName + " " + lastName).trim() } }),
+          body: JSON.stringify({ email, password, data: { product: "Trimémo", first_name: firstName, last_name: lastName, full_name: (firstName + " " + lastName).trim() } }),
           signal: AbortSignal.timeout(10000),
         });
         const result = await created.json().catch(() => ({}));
@@ -201,6 +237,8 @@ export default async function handler(req, res) {
           if (/already|registered|exists|duplicate/i.test(message)) return fail(res, 409, "Un compte existe déjà avec cette adresse. Connectez-vous plutôt.");
           return fail(res, created.status === 422 ? 400 : 502, "La création du compte a échoué. Vérifiez l'adresse e-mail et réessayez.");
         }
+        if (result?.access_token || result?.session?.access_token) return fail(res, 503, "La confirmation par e-mail n’est pas configurée. Contactez le support.");
+        return res.status(200).json({ success: true, confirmation_required: true, message: "Consultez votre messagerie et cliquez sur le lien de confirmation pour activer votre compte." });
       }
       const session = await supabase("/auth/v1/token?grant_type=password", {
         method: "POST",
@@ -294,9 +332,10 @@ export default async function handler(req, res) {
       const memberships = await membershipResponse.json().catch(() => []);
       const membership = Array.isArray(memberships) ? memberships[0] : null;
       if (!membership) return fail(res, 404, "Ce projet n'est pas rattaché à votre compte client.");
-      const stateRows = await supabase("/rest/v1/trimemo_project_state?project_id=eq." + encodeURIComponent(projectId) + "&select=project_id,state,updated_at&limit=1");
+      const stateRows = await supabase("/rest/v1/trimemo_project_state?project_id=eq." + encodeURIComponent(projectId) + "&select=project_id,owner_id,state,updated_at&limit=1");
       const stateRow = Array.isArray(stateRows) ? stateRows[0] : null;
       if (!stateRow?.state) return fail(res, 404, "Le contenu sauvegardé de ce projet est introuvable. Contactez le support avant de créer un nouveau projet.");
+      if (stateRow.owner_id && stateRow.owner_id !== user.id) return fail(res, 409, "La propriété de ce projet doit être vérifiée. Contactez le support ; le document reste conservé.");
 
       // Restaure l'introduction de l'aperçu dans le bloc de rédaction.
       // Historiquement, l'introduction restait dans state.preview, tandis que le bloc Introduction générale était vide.

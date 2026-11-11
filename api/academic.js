@@ -240,6 +240,7 @@ export default async function handler(req, res) {
       if (!String(project.projectId || project.project_id || '').trim()) {
         return fail(res, 400, "Identifiant de projet manquant.");
       }
+      await requireClientProject(req, String(project.projectId || project.project_id));
       if (!String(project.paymentProblematicId || "").trim() || !String(project.paymentPlanId || "").trim()) {
         return fail(res, 400, "Validez une problématique et un plan avant de payer.");
       }

@@ -57,10 +57,12 @@ export default async function handler(req, res) {
   const id = projectId(req);
   if (!id) return fail(res, 400, "Identifiant de projet invalide.");
   try {
-    await authorizeProject(req, id);
+    const user = await authorizeProject(req, id);
+    const rows = await db(`trimemo_project_state?project_id=eq.${encodeURIComponent(id)}&select=project_id,owner_id,state,updated_at,expires_at&limit=1`);
+    const row = rows?.[0];
+    // An inconsistent legacy association is not proof of ownership.
+    if (row?.owner_id && row.owner_id !== user.id) return fail(res, 409, "La propriété de ce projet doit être vérifiée. Contactez le support ; le document reste conservé.");
     if (req.method === "GET") {
-      const rows = await db(`trimemo_project_state?project_id=eq.${encodeURIComponent(id)}&select=project_id,state,updated_at,expires_at&limit=1`);
-      const row = rows?.[0];
       if (!row) return res.status(200).json({ success: true, found: false });
       // Keep previously saved work accessible to its authenticated owner even
       // after its old expiry date. No retention policy is applied on reads.
@@ -68,6 +70,8 @@ export default async function handler(req, res) {
     }
     const state = req.body?.state;
     if (!state || typeof state !== "object" || Array.isArray(state)) return fail(res, 400, "État du projet invalide.");
+    const stateProjectId = String(state.project?.projectId || state.project?.project_id || "").trim();
+    if (!stateProjectId || stateProjectId !== id) return fail(res, 400, "L’état transmis ne correspond pas à ce projet.");
     const version = Number(state.schemaVersion || 1);
     if (!Number.isInteger(version) || version < 1 || version > 2) return fail(res, 400, "Version de projet non prise en charge. Rechargez la page avant de réessayer.");
     const serializedState = JSON.stringify(state);

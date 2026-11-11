@@ -20,6 +20,7 @@ import {
 import compileDocument from '../lib/compile-document.js';
 import { resolveFormatting } from '../lib/academic-format.js';
 import { auditCitationReferences } from '../lib/citation-audit.js';
+import { sourceFootnotes } from '../lib/source-footnotes.js';
 import { requirePremiumOrOwner } from '../lib/premium-auth.js';
 import { assertOrderUsable, claimOrderExportAttempt, consumeOrderAfterExport } from '../lib/order-ledger.js';
 import { enforceAcademicStyle } from '../lib/style-control.js';
@@ -588,7 +589,9 @@ export default async function handler(req, res) {
     let nextFootnoteId = 1;
     compiled.blocks = compiled.blocks.map(block => {
       const ids = [];
-      for (const note of Array.isArray(block.footnotes) ? block.footnotes : []) {
+      const supplied = (Array.isArray(block.footnotes) ? block.footnotes : []).filter(note => typeof note === 'string' && note.trim());
+      const notes = supplied.length ? supplied : sourceFootnotes(block.content, uniqueSources);
+      for (const note of notes) {
         const content = String(note || '').trim();
         if (!content) continue;
         const id = nextFootnoteId++;

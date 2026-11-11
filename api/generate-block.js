@@ -19,6 +19,9 @@ import { hydrateProjectFiles } from "../lib/project-file-store.js";
 import { buildProjectDocumentContext, buildDocumentInstructions, buildImageInputs } from "../lib/project-documents.js";
 import { assertFilesSize } from "../lib/limits.js";
 import { verifySources } from "../lib/verify-sources.js";
+import { auditCitationReferences } from "../lib/citation-audit.js";
+import { sourceFootnotes } from "../lib/source-footnotes.js";
+import { requireOwnedProject } from "../lib/owned-project-gate.js";
 import { hasMissingPartOpening } from "../lib/part-opening-audit.js";
 import { hasClearlyIncompleteEnding } from "../lib/incomplete-ending.js";
 import { previewWordLimit } from "../lib/preview-limit.js";
@@ -87,7 +90,8 @@ export default async function handler(req, res) {
     await rateLimit(req, "generate-block", 30, 60 * 60 * 1000);
     const previewMode = body.previewMode === true;
     if (body.ownerMode === true) requireOwner(req);
-    else if (previewMode) {
+    else await requireOwnedProject(req, project);
+    if (body.ownerMode !== true && previewMode) {
       // Aperçu public : rédaction progressive bloc par bloc, limitée à 2 500 mots cumulés.
       const previewBlocks = Array.isArray(body.previewBlocks) ? body.previewBlocks : [];
       const previewWords = previewBlocks.reduce((sum, item) => sum + String(item?.content || "").trim().split(/\s+/u).filter(Boolean).length, 0);
@@ -97,7 +101,7 @@ export default async function handler(req, res) {
         const e = new Error("La limite de l’aperçu est atteinte. Consultez l’aperçu pour poursuivre."); e.status = 402; throw e;
       }
       body.targetWords = Math.min(Number(body.targetWords) || 900, limit - previewWords, 1000);
-    } else {
+    } else if (body.ownerMode !== true) {
       const access = requirePremiumOrOwner(req, body);
       if (access.mode === "premium") {
         await assertClientProjectActive(project.projectId || project.project_id);
@@ -514,16 +518,25 @@ Utilise des références vérifiables si elles sont nécessaires.
     } catch (sourceError) {
       console.error("BLOCK_SOURCE_VERIFICATION_FAILED", { name: String(sourceError?.name || "Error"), code: String(sourceError?.code || "SOURCE_VERIFICATION_FAILED") });
     }
+    const retainedSources = verifiedSources.filter((source) => source?.verified === true);
+    const unmatchedCitations = auditCitationReferences([{ content: correctedContent }], retainedSources);
+    const notes = (Array.isArray(result.footnotes) ? result.footnotes : []).filter(note => typeof note === "string" && note.trim());
+    // When the model supplies no notes, use only already-retained source
+    // metadata that corresponds to a citation in this block. No source is
+    // fabricated, and export attaches these notes at the end of this block.
+    if (!notes.length) notes.push(...sourceFootnotes(correctedContent, retainedSources));
     return res.status(200).json({
       id: String(body.block?.id || body.blockId || `block-${Date.now()}`),
       title: correctedTitle,
       content: correctedContent,
       wordCount,
-      sources: verifiedSources.filter((source) => source?.verified === true),
-      footnotes: Array.isArray(result.footnotes) ? result.footnotes : [],
+      sources: retainedSources,
+      footnotes: notes,
       warnings: [
         ...(hasMissingPartOpening(correctedContent, structure) ? ["L’introduction de cette partie semble manquer. Vérifiez le bloc avant l’export."] : []),
         ...(hasClearlyIncompleteEnding(correctedContent) ? ["La fin de ce bloc semble incomplète. Vérifiez-la avant de poursuivre."] : []),
+        ...(unmatchedCitations.count ? [`${unmatchedCitations.count} citation(s) de ce bloc n’ont pas de référence vérifiée correspondante. Vérifiez les sources avant remise.`] : []),
+        ...(styleControl.status !== "passed" ? ["Le contrôle stylistique automatique de ce bloc n’a pas abouti ; le texte initial a été conservé."] : []),
       ],
       styleControl
     });

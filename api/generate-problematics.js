@@ -8,6 +8,7 @@ import { requirePremiumOrOwner } from "../lib/premium-auth.js";
 import { readAdminSettings, assertGenerationQuota, recordGenerationQuotaUse, assertClientProjectActive } from "../lib/admin-data.js";
 import { logAdminEvent, recordOpenAIUsage } from "../lib/admin-telemetry.js";
 import { verifyPricingQuote } from "../lib/pricing.js";
+import { requireOwnedProject } from "../lib/owned-project-gate.js";
 import { buildProjectDocumentContext, buildDocumentInstructions, uploadProjectFiles, deleteOpenAIFiles, buildImageInputs } from "../lib/project-documents.js";
 import { assertFilesSize } from "../lib/limits.js";
 import { enforceAcademicStyle } from "../lib/style-control.js";
@@ -482,12 +483,13 @@ export default async function handler(req, res) {
     await rateLimit(req, "generate-problematics", 8, 60 * 60 * 1000);
     const body = req.body || {};
     let project = body.project || body;
+    if (body.ownerMode === true) requireOwner(req);
+    else await requireOwnedProject(req, project);
     if (String(project.projectId || project.project_id || "").trim()) {
       await rateLimitByKey("problematic-project-" + String(project.projectId || project.project_id).trim(), 30, 24 * 60 * 60 * 1000);
     }
     if (Array.isArray(project.files) && project.files.length) project = await hydrateProjectFiles(project);
-    if (body.ownerMode === true) requireOwner(req);
-    else {
+    if (body.ownerMode !== true) {
       const quote = verifyPricingQuote(project.pricingQuoteToken, project);
       if (!quote) {
         const access = requirePremiumOrOwner(req, body);
