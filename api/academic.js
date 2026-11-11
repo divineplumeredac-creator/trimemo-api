@@ -209,6 +209,7 @@ import { verifyPricingQuote } from "../lib/pricing.js";
 import { assertOrderLedgerReady, recordPendingOrder, recordPaidOrder, getOrderRecord } from "../lib/order-ledger.js";
 import { hydrateProjectFiles } from "../lib/project-file-store.js";
 import { logAdminEvent } from "../lib/admin-telemetry.js";
+import { requireClientProject } from "../lib/client-project-auth.js";
 
 export default async function handler(req, res) {
   cors(res, req);
@@ -267,6 +268,9 @@ export default async function handler(req, res) {
       if (!savedOrder || !["pending", "paid"].includes(savedOrder.status) || !savedOrder.project_snapshot) {
         return res.status(403).json({ status: "ORDER_NOT_AVAILABLE", error: "Cette commande n'est pas disponible ou son crédit a déjà été consommé." });
       }
+      // The provider order reference is not an account credential. Confirm
+      // ownership before contacting PayPal or returning the project or token.
+      await requireClientProject(req, savedOrder.project_id);
       if (!String(project.sujet || project.subject || "").trim() || String(project.projectId || project.project_id || "") !== savedOrder.project_id || projectFingerprint(project) !== savedOrder.project_fingerprint) {
         // The server snapshot is authoritative; never bind the payment to browser-edited project data.
         project = savedOrder.project_snapshot;
