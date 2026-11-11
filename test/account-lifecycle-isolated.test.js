@@ -71,3 +71,25 @@ test('une sauvegarde ne peut pas mélanger deux projets',async()=>{
  try { const res=result();await stateHandler({method:'POST',headers:{authorization:'Bearer a'},body:{projectId,state:{project:{projectId:'22222222-2222-4222-8222-222222222222'}}}},res);assert.equal(res.code,400);assert.equal(writes,0); }
  finally {globalThis.fetch=old}
 });
+
+test('la sauvegarde complète est reprise seulement dans le compte propriétaire',async()=>{
+ const old=globalThis.fetch;
+ let saved={project_id:projectId,owner_id:'user-a',state:{schemaVersion:2,project:{projectId,sujet:'Sujet'},blocks:[]}};
+ globalThis.fetch=async(input,options={})=>{
+  const url=new URL(String(input)); const token=options.headers?.Authorization;
+  if(url.pathname==='/auth/v1/user')return json({id:token==='Bearer token-a'?'user-a':'user-b'});
+  if(url.pathname.endsWith('/trimemo_client_projects'))return json(url.searchParams.get('user_id')==='eq.user-a'?[{project_id:projectId}]:[]);
+  if(url.pathname.endsWith('/trimemo_project_state')){
+   if(options.method==='POST') saved={...saved,...JSON.parse(options.body)};
+   return json([saved]);
+  }
+  throw new Error('Unexpected synthetic request '+url.pathname);
+ };
+ try {
+  const next={schemaVersion:2,project:{projectId,sujet:'Sujet enregistré',files:[{name:'guide.pdf',content:''}]},selectedPlan:{id:'plan-1'},blocks:[{id:'intro',content:'Un texte complet.',status:'done'}]};
+  const write=result();await stateHandler({method:'POST',headers:{authorization:'Bearer token-a'},body:{projectId,state:next}},write);assert.equal(write.code,200);
+  const read=result();await stateHandler({method:'GET',headers:{authorization:'Bearer token-a'},query:{projectId}},read);assert.equal(read.code,200);assert.deepEqual(read.body.state,next);
+  const denied=result();await stateHandler({method:'GET',headers:{authorization:'Bearer token-b'},query:{projectId}},denied);assert.equal(denied.code,403);assert.equal(denied.body.state,undefined);
+  const deniedWrite=result();await stateHandler({method:'POST',headers:{authorization:'Bearer token-b'},body:{projectId,state:{project:{projectId},blocks:[]}}},deniedWrite);assert.equal(deniedWrite.code,403);assert.deepEqual(saved.state,next);
+ } finally {globalThis.fetch=old}
+});
