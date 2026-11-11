@@ -7,6 +7,8 @@ import { rateLimit } from "../lib/rate-limit.js";
 import { calculateQuote, marketForCountry, signPricingQuote } from "../lib/pricing.js";
 import { setCors } from "../lib/http.js";
 import { storeProjectBundle, hydrateProjectFiles, authorizeProjectBundleWrite } from "../lib/project-file-store.js";
+import { requireOwnedProject } from "../lib/owned-project-gate.js";
+import { requireOwner } from "../lib/owner-auth.js";
 
 const OPENAI_URL = "https://api.openai.com/v1/responses";
 function cors(res, req) { setCors(res, req, "POST, OPTIONS"); }
@@ -43,6 +45,8 @@ export default async function handler(req, res) {
   const pages = Number(project.pages);
   if (!Number.isInteger(pages) || pages < 1 || pages > maxPages) return fail(res, 400, "Le volume doit être un nombre entier compris entre 1 et " + maxPages + " pages.");
   try {
+    if (req.body?.ownerMode === true) requireOwner(req);
+    else await requireOwnedProject(req, project);
     await rateLimit(req, "project-estimate", 5, 60 * 60 * 1000);
     const hasFiles = Array.isArray(project.files) && project.files.length > 0;
     const bundleWrite = hasFiles ? await authorizeProjectBundleWrite(project, req) : null;

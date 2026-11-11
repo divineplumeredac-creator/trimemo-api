@@ -28,6 +28,10 @@ test('vérification autorisée seulement au propriétaire, avant tout appel four
  };
  try {
   for(const [token,status] of [['',401],['other-token',403]]){
+   calls=[];const res=result();await handler({method:'POST',headers:token?{authorization:'Bearer '+token}:{},query:{action:'create-paypal-order'},body:{project}},res);
+   assert.equal(res.code,status);assert.equal(calls.some(u=>u.includes('paypal.com')),false);
+  }
+  for(const [token,status] of [['',401],['other-token',403]]){
    calls=[];const res=result();await handler({method:'POST',headers:token?{authorization:'Bearer '+token}:{},query:{action:'verify-paypal'},body:{id:'synthetic-order'}},res);
    assert.equal(res.code,status);assert.equal(Boolean(res.body?.premium_token),false);assert.equal(Boolean(res.body?.project),false);assert.equal(calls.some(u=>u.includes('paypal.com')),false);
   }

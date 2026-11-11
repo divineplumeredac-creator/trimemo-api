@@ -13,6 +13,7 @@ import { PLAN_PARTS_SCHEMA, normalizePlanStructure } from "../lib/plan-structure
 const OPENAI_URL = "https://api.openai.com/v1/responses";
 const WORDS_PER_PAGE = 320;
 import { previewWordLimit as proportionalPreviewLimit } from '../lib/preview-limit.js';
+import { requireOwnedProject } from '../lib/owned-project-gate.js';
 const FREE_PREVIEW_WORDS = 2500;
 const PREVIEW_INTRO_WORDS = 500;
 
@@ -145,6 +146,7 @@ export default async function handler(req, res) {
     previewWordLimit = Math.max(0, Math.min(2500, Number(settings.quotas?.freePreviewWords ?? FREE_PREVIEW_WORDS)));
     if (previewWordLimit < 1) throw fail("L’aperçu gratuit est désactivé par l’administrateur.", 403);
     let project = req.body?.project || req.body || {};
+    await requireOwnedProject(req, project);
     const proportionalLimit = proportionalPreviewLimit(project.pages);
     if (!proportionalLimit) throw fail("Indiquez le nombre de pages du projet avant de générer l’aperçu.", 400);
     previewWordLimit = Math.min(previewWordLimit, proportionalLimit);
