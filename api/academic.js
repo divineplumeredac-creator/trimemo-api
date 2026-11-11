@@ -41,12 +41,12 @@ function limitByParagraphs(value, limit) {
   return kept.join(sentenceFallback ? " " : "\n\n");
 }
 
-function normalizePreviewWordLimit(preview) {
+export function normalizePreviewWordLimit(preview) {
   const limitedIntroduction = limitByParagraphs(preview?.introduction?.content, 2500);
   const remaining = Math.max(0, 2500 - countWords(limitedIntroduction));
   const limitedChapter = limitByParagraphs(preview?.chapterOne?.content, remaining);
-  if (!limitedIntroduction || !limitedChapter) {
-    throw new Error("L’aperçu dépasse 2 500 mots et ne peut pas être ajusté sans couper un paragraphe. Régénérez l’aperçu avant le paiement.");
+  if (!limitedIntroduction || (countWords(preview?.chapterOne?.content) > 0 && !limitedChapter)) {
+    throw new Error("L’aperçu ne peut pas être ajusté sans couper un paragraphe. Vérifiez son contenu avant de poursuivre.");
   }
   return {
     ...preview,
@@ -243,7 +243,7 @@ export default async function handler(req, res) {
         return fail(res, 400, "Validez une problématique et un plan avant de payer.");
       }
       const preview = project.paidPreviewSnapshot;
-      if (!preview?.problematic?.question || preview.problematic.id !== project.paymentProblematicId || !Array.isArray(preview.plan?.parts) || !preview.plan.parts.length || preview.plan.id !== project.paymentPlanId || !String(preview.introduction?.content || "").trim() || !String(preview.chapterOne?.content || "").trim()) {
+      if (!preview?.problematic?.question || preview.problematic.id !== project.paymentProblematicId || !Array.isArray(preview.plan?.parts) || !preview.plan.parts.length || preview.plan.id !== project.paymentPlanId || !String(preview.introduction?.content || "").trim()) {
         return fail(res, 400, "L'aperçu de 2 500 mots doit être généré à partir de la problématique et du plan retenus avant le paiement.");
       }
       let normalizedPreview;
