@@ -401,6 +401,7 @@ Si plusieurs sections consécutives forment une unité argumentative cohérente,
 
 OBJECTIF DE LONGUEUR :
 Environ ${safeWordTarget} mots.
+Termine impérativement le bloc et ferme l'objet JSON. Ne prolonge pas artificiellement la réponse pour atteindre une longueur cible.
 
 TÂCHE
 
@@ -416,7 +417,7 @@ Utilise des références vérifiables si elles sont nécessaires.
       apiKey,
       system: fullSystemPrompt + JSON_OUTPUT_INSTRUCTION,
       user: userPrompt,
-      maxTokens: 12000,
+      maxTokens: 16000,
       webSearch: true,
       task: "writing"
     });
