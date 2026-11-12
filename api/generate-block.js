@@ -26,6 +26,7 @@ import { hasMissingPartOpening } from "../lib/part-opening-audit.js";
 import { hasClearlyIncompleteEnding } from "../lib/incomplete-ending.js";
 import { previewWordLimit } from "../lib/preview-limit.js";
 import { verifyPricingQuote } from "../lib/pricing.js";
+import { splitPreviewText, savePreviewContinuation } from "../lib/preview-continuation.js";
 function normalizeGeneratedAcademicContent(input) {
   let text = String(input || "").replace(/\r\n?/gu, "\n").trim();
 
@@ -90,8 +91,10 @@ export default async function handler(req, res) {
     }
     await rateLimit(req, "generate-block", 30, 60 * 60 * 1000);
     const previewMode = body.previewMode === true;
+    let previewRemaining = null;
+    let projectOwner = null;
     if (body.ownerMode === true) requireOwner(req);
-    else await requireOwnedProject(req, project);
+    else projectOwner = await requireOwnedProject(req, project);
     if (body.ownerMode !== true && previewMode) {
       // Les pages et les pièces jointes doivent correspondre à l'analyse signée.
       // Une modification du corps HTTP ne doit pas augmenter le quota gratuit.
@@ -107,6 +110,7 @@ export default async function handler(req, res) {
       if (previewWords >= limit) {
         const e = new Error("La limite de l’aperçu est atteinte. Consultez l’aperçu pour poursuivre."); e.status = 402; throw e;
       }
+      previewRemaining = limit - previewWords;
       body.targetWords = Math.min(Number(body.targetWords) || 900, limit - previewWords);
     } else if (body.ownerMode !== true) {
       const access = requirePremiumOrOwner(req, body);
@@ -517,7 +521,24 @@ Utilise des références vérifiables si elles sont nécessaires.
     } catch (styleError) {
       console.error("BLOCK_STYLE_CONTROL_FAILED", { name: String(styleError?.name || "Error"), code: String(styleError?.code || "STYLE_CONTROL_FAILED") });
     }
-    const wordCount = correctedContent.split(/\s+/).filter(Boolean).length;
+    let publicContent = correctedContent;
+    let continuationId;
+    if (previewRemaining !== null) {
+      const split = splitPreviewText(correctedContent, previewRemaining);
+      if (split.remainder) {
+        continuationId = await savePreviewContinuation({
+          projectId: project.projectId || project.project_id,
+          ownerId: projectOwner.id,
+          blockId: String(body.block?.id || body.blockId || ''),
+          planId: String(body.plan?.id || ''),
+          problematicId: String(body.problematic?.id || ''),
+          visible: split.visible,
+          remainder: split.remainder,
+        });
+        publicContent = split.visible;
+      }
+    }
+    const wordCount = publicContent.split(/\s+/).filter(Boolean).length;
     let verifiedSources = [];
     try {
       verifiedSources = await verifySources(Array.isArray(result.sources) ? result.sources : []);
@@ -534,8 +555,9 @@ Utilise des références vérifiables si elles sont nécessaires.
     return res.status(200).json({
       id: String(body.block?.id || body.blockId || `block-${Date.now()}`),
       title: correctedTitle,
-      content: correctedContent,
+      content: publicContent,
       wordCount,
+      ...(continuationId ? { continuationId, previewLimitReached: true } : {}),
       sources: retainedSources,
       footnotes: notes,
       warnings: [
