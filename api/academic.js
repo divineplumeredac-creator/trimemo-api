@@ -227,6 +227,7 @@ export default async function handler(req, res) {
     if (action === "verify-mobile-money") await rateLimit(req, "verify-mobile-money", 10, 60 * 60 * 1000);
     if (action === "create-paypal-order" && Array.isArray(project.files) && project.files.length) project = await hydrateProjectFiles(project);
     if (action === "create-paypal-order") {
+      if (process.env.VERCEL_ENV === "preview" && process.env.FEDAPAY_SANDBOX_ENABLED === "true") return fail(res, 503, "PayPal est désactivé dans cet environnement de test FedaPay.");
       if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) return fail(res, 503, "Le registre sécurisé des commandes n'est pas configuré. Le paiement est temporairement indisponible.");
       await assertOrderLedgerReady();
       if (!String(project.sujet || "").trim()) {
