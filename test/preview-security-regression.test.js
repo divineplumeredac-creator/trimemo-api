@@ -1,7 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import generateBlock from '../api/generate-block.js';
+import generateLegacyPreview from '../api/generate-free-preview.js';
 import { calculateQuote, signPricingQuote } from '../lib/pricing.js';
+import { previewLedgerMock } from './preview-ledger-mock.js';
+import { reservePreview, completePreview } from '../lib/preview-ledger.js';
 
 process.env.NODE_ENV = 'test';
 process.env.TRIMEMO_CLAUDE_API_KEY = 'synthetic';
@@ -16,8 +19,10 @@ const makeRes = () => ({ setHeader() {}, status(code) { this.code = code; return
 async function withMocks(run) {
   const originalFetch = globalThis.fetch;
   let calls = 0;
+  const ledger = previewLedgerMock();
   globalThis.fetch = async (input, options = {}) => {
     const url = String(input);
+    const ledgerResponse = await ledger(input, options); if (ledgerResponse) return ledgerResponse;
     if (url.includes('api.anthropic.com')) {
       const body = JSON.parse(options.body);
       if (body.tools) {
@@ -53,9 +58,28 @@ test('sécurité : le quota ne doit pas pouvoir être réinitialisé par le navi
   await withMocks(async (calls) => {
     const first = await request({ previewBlocks: [] });
     assert.equal(first.code, 200);
-    const second = await request({ previewBlocks: [] });
+    const second = await request({ previewBlocks: [], block: {id:'autre-bloc'} });
     assert.equal(second.code, 402);
     assert.equal(calls(), 1);
+  });
+});
+
+test('un bloc retrouvé après une interruption ne provoque pas un nouvel appel au moteur', async () => {
+  await withMocks(async (calls) => {
+    const first = await request({previewBlocks:[]});
+    const retry = await request({previewBlocks:[]});
+    assert.equal(first.code,200);
+    assert.equal(retry.code,200);
+    assert.deepEqual(retry.body,first.body);
+    assert.equal(calls(),1);
+  });
+});
+
+test('deux générations simultanées ne consomment pas deux fois le quota', async () => {
+  await withMocks(async (calls) => {
+    const [a,b] = await Promise.all([request({block:{id:'premier'}}),request({block:{id:'deuxieme'}})]);
+    assert.deepEqual([a.code,b.code].sort(),[200,409]);
+    assert.equal(calls(),1);
   });
 });
 
@@ -64,5 +88,16 @@ test('sécurité : la réponse publique ne doit pas dépasser le quota du projet
     const res = await request({ previewBlocks: [] });
     assert.equal(res.code, 200);
     assert.ok(res.body.content.trim().split(/\s+/u).length <= 1250);
+  });
+});
+
+test('l’ancien chemin d’aperçu respecte le même quota que la rédaction par blocs', async () => {
+  await withMocks(async (calls) => {
+    const reservation = await reservePreview({projectId:project.projectId,ownerId:'client-test',blockId:'previous',planId:'plan-test',problematicId:'question-test',limit:1250});
+    await completePreview(reservation,{response:{content:'aperçu'},visible:Array(1250).fill('mot').join(' '),remainder:'',blockId:'previous',planId:'plan-test',problematicId:'question-test'});
+    const res = makeRes();
+    await generateLegacyPreview({method:'POST',headers:{'x-trimemo-client-token':'synthetic'},body:{project}},res);
+    assert.equal(res.code,402);
+    assert.equal(calls(),0);
   });
 });
