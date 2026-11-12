@@ -26,7 +26,8 @@ import { hasMissingPartOpening } from "../lib/part-opening-audit.js";
 import { hasClearlyIncompleteEnding } from "../lib/incomplete-ending.js";
 import { previewWordLimit } from "../lib/preview-limit.js";
 import { verifyPricingQuote } from "../lib/pricing.js";
-import { splitPreviewText, savePreviewContinuation } from "../lib/preview-continuation.js";
+import { splitPreviewText } from "../lib/preview-continuation.js";
+import { reservePreview, completePreview, releasePreview } from "../lib/preview-ledger.js";
 function normalizeGeneratedAcademicContent(input) {
   let text = String(input || "").replace(/\r\n?/gu, "\n").trim();
 
@@ -81,6 +82,7 @@ export default async function handler(req, res) {
     });
   }
 
+  let previewReservation;
   try {
     const body = req.body || {};
     let project = body.project || body;
@@ -102,16 +104,13 @@ export default async function handler(req, res) {
       if (!verifyPricingQuote(project.pricingQuoteToken, project)) {
         const e = new Error("L’analyse du projet est absente, modifiée ou expirée. Relancez l’analyse avant la rédaction."); e.status = 403; throw e;
       }
-      // Aperçu public : rédaction progressive bloc par bloc, limitée à 2 500 mots cumulés.
-      const previewBlocks = Array.isArray(body.previewBlocks) ? body.previewBlocks : [];
-      const previewWords = previewBlocks.reduce((sum, item) => sum + String(item?.content || "").trim().split(/\s+/u).filter(Boolean).length, 0);
       const limit = previewWordLimit(project.pages);
       if (!limit) { const e = new Error("Indiquez le nombre de pages du projet avant de générer l’aperçu."); e.status = 400; throw e; }
-      if (previewWords >= limit) {
-        const e = new Error("La limite de l’aperçu est atteinte. Consultez l’aperçu pour poursuivre."); e.status = 402; throw e;
-      }
-      previewRemaining = limit - previewWords;
-      body.targetWords = Math.min(Number(body.targetWords) || 900, limit - previewWords);
+      previewReservation = await reservePreview({projectId:project.projectId || project.project_id, ownerId:projectOwner.id,
+        blockId:String(body.block?.id || body.blockId || ''), planId:String(body.plan?.id || ''), problematicId:String(body.problematic?.id || ''), limit});
+      if (previewReservation.cached) return res.status(200).json(previewReservation.cached);
+      previewRemaining = previewReservation.remaining;
+      body.targetWords = Math.min(Number(body.targetWords) || 900, previewRemaining);
     } else if (body.ownerMode !== true) {
       const access = requirePremiumOrOwner(req, body);
       if (access.mode === "premium") {
@@ -522,21 +521,11 @@ Utilise des références vérifiables si elles sont nécessaires.
       console.error("BLOCK_STYLE_CONTROL_FAILED", { name: String(styleError?.name || "Error"), code: String(styleError?.code || "STYLE_CONTROL_FAILED") });
     }
     let publicContent = correctedContent;
-    let continuationId;
+    let privateRemainder = '';
     if (previewRemaining !== null) {
       const split = splitPreviewText(correctedContent, previewRemaining);
-      if (split.remainder) {
-        continuationId = await savePreviewContinuation({
-          projectId: project.projectId || project.project_id,
-          ownerId: projectOwner.id,
-          blockId: String(body.block?.id || body.blockId || ''),
-          planId: String(body.plan?.id || ''),
-          problematicId: String(body.problematic?.id || ''),
-          visible: split.visible,
-          remainder: split.remainder,
-        });
-        publicContent = split.visible;
-      }
+      publicContent = split.visible;
+      privateRemainder = split.remainder;
     }
     const wordCount = publicContent.split(/\s+/).filter(Boolean).length;
     let verifiedSources = [];
@@ -552,14 +541,13 @@ Utilise des références vérifiables si elles sont nécessaires.
     // metadata that corresponds to a citation in this block. No source is
     // fabricated, and export attaches these notes at the end of this block.
     if (!notes.length) notes.push(...sourceFootnotes(correctedContent, retainedSources));
-    return res.status(200).json({
+    let publicResponse = {
       id: String(body.block?.id || body.blockId || `block-${Date.now()}`),
       title: correctedTitle,
       content: publicContent,
       wordCount,
-      ...(continuationId ? { continuationId, previewLimitReached: true } : {}),
       sources: retainedSources,
-      footnotes: notes,
+      footnotes: privateRemainder ? [] : notes,
       warnings: [
         ...(hasMissingPartOpening(correctedContent, structure) ? ["L’introduction de cette partie semble manquer. Vérifiez le bloc avant l’export."] : []),
         ...(hasClearlyIncompleteEnding(correctedContent) ? ["La fin de ce bloc semble incomplète. Vérifiez-la avant de poursuivre."] : []),
@@ -567,14 +555,19 @@ Utilise des références vérifiables si elles sont nécessaires.
         ...(styleControl.status !== "passed" ? ["Le contrôle stylistique automatique de ce bloc n’a pas abouti ; le texte initial a été conservé."] : []),
       ],
       styleControl
-    });
+    };
+    if (previewReservation) publicResponse = await completePreview(previewReservation, {response:publicResponse, remainder:privateRemainder, visible:publicContent,
+      blockId:String(body.block?.id || body.blockId || ''), planId:String(body.plan?.id || ''), problematicId:String(body.problematic?.id || ''), privateFootnotes:privateRemainder ? notes : []});
+    return res.status(200).json(publicResponse);
   } catch (error) {
     console.error("GENERATE_BLOCK_FAILED", { status: Number(error?.status) || 500, code: String(error?.code || "BLOCK_GENERATION_ERROR") });
     void logAdminEvent({ category: "generation", severity: (Number(error?.status) || 500) >= 500 ? "error" : "warning", action: "block_generation_failed", message: String(error?.code || error?.name || "BLOCK_GENERATION_ERROR"), requestPath: "/api/generate-block", statusCode: Number(error?.status) || 500 });
     return res.status(Number.isInteger(error?.status) ? error.status : 500).json({
-      error: error?.status === 401 || error?.status === 402 || error?.status === 403 || error?.status === 413 || error?.status === 429
+      error: error?.status === 400 || error?.status === 401 || error?.status === 402 || error?.status === 403 || error?.status === 409 || error?.status === 413 || error?.status === 429
         ? error.message
         : "Une erreur interne est survenue pendant la rédaction du bloc."
     });
+  } finally {
+    await releasePreview(previewReservation);
   }
 }
