@@ -11,5 +11,5 @@ export default async function handler(req,res) {
     key ? check(`${base}/rest/v1/trimemo_orders?select=order_id&limit=0`,{apikey:key,Authorization:`Bearer ${key}`}) : 'missing',
     feda ? check('https://sandbox-api.fedapay.com/v1/transactions?per_page=1',{Authorization:`Bearer ${feda}`,Accept:'application/json'}) : 'missing',
   ]);
-  return res.status(database==='ok'&&fedapay==='ok'?200:503).json({test_only:true,database,fedapay});
+  return res.status(database==='ok'&&fedapay==='ok'?200:503).json({test_only:true,database,fedapay,key_format:feda.startsWith('sk_sandbox')?'sandbox_secret':feda.startsWith('pk_')?'public_key':feda.startsWith('sk_live')?'live_secret':'other'});
 }
