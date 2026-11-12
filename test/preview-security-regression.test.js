@@ -1,13 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import generateBlock from '../api/generate-block.js';
+import { calculateQuote, signPricingQuote } from '../lib/pricing.js';
 
 process.env.NODE_ENV = 'test';
 process.env.TRIMEMO_CLAUDE_API_KEY = 'synthetic';
 process.env.SUPABASE_URL = 'https://database.invalid';
 process.env.SUPABASE_SERVICE_ROLE_KEY = 'synthetic';
+process.env.TRIMEMO_PRICING_SECRET = 'synthetic-pricing-secret';
 
 const project = { projectId: 'projet-test', sujet: 'Sujet fictif', pages: 15, files: [] };
+project.pricingQuoteToken = signPricingQuote(calculateQuote({ project }), project);
 const makeRes = () => ({ setHeader() {}, status(code) { this.code = code; return this; }, json(body) { this.body = body; return this; }, end() { return this; } });
 
 async function withMocks(run) {
@@ -36,6 +39,14 @@ async function request(body) {
   await generateBlock({ method: 'POST', headers: { 'x-trimemo-client-token': 'synthetic' }, body: { project, previewMode: true, targetWords: 1250, ...body } }, res);
   return res;
 }
+
+test('un nombre de pages falsifié ne peut pas augmenter le quota', async () => {
+  await withMocks(async (calls) => {
+    const res = await request({ project: { ...project, pages: 300 }, previewBlocks: [] });
+    assert.equal(res.code, 403);
+    assert.equal(calls(), 0);
+  });
+});
 
 test('sécurité : le quota ne doit pas pouvoir être réinitialisé par le navigateur', async () => {
   await withMocks(async (calls) => {
