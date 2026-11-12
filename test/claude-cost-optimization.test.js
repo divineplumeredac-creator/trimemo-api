@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { callClaude, claudeFetch } from '../lib/claude-client.js';
-import { cachedWritingPrompt, needsWritingSearch } from '../lib/writing-context.js';
+import { cachedWritingPrompt, needsWritingSearch, writingCacheTtl } from '../lib/writing-context.js';
 import { usageBreakdown, estimateUsageCost } from '../lib/usage-accounting.js';
 const response = () => Response.json({id:'synthetic',stop_reason:'end_turn',content:[{type:'text',text:'{"content":"Texte."}'}],usage:{input_tokens:100,output_tokens:80,cache_creation_input_tokens:40,cache_read_input_tokens:400,cache_creation:{ephemeral_5m_input_tokens:10,ephemeral_1h_input_tokens:30},server_tool_use:{web_search_requests:2}}});
 test('le cache préserve chaque caractère des documents et du plan quand seul le bloc change',async()=>{
@@ -59,4 +59,13 @@ test('la recherche reste active sauf conclusion documentée ou courte ouverture 
  assert.equal(needsWritingSearch({kind:'chapter_intro',targetWords:150,preceding}),false);
  assert.equal(needsWritingSearch({kind:'chapter_intro',targetWords:900,preceding}),true);
  assert.equal(needsWritingSearch({kind:'chapter',targetWords:150,preceding}),true);
+});
+
+test('les projets courts évitent le surcoût du cache d’une heure',()=>{
+ assert.equal(writingCacheTtl(2),'5m');
+ assert.equal(writingCacheTtl(30),'1h');
+ const text='Documents\n\nPLAN : Plan\n\nBLOC À RÉDIGER : Introduction';
+ const parts=cachedWritingPrompt(text,'Documents\n\n',writingCacheTtl(2));
+ assert.equal(parts[0].cache_control.ttl,'5m');
+ assert.equal(parts.map(p=>p.text).join(''),text);
 });

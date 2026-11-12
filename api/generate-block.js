@@ -1,4 +1,4 @@
-import { cachedWritingPrompt, needsWritingSearch } from "../lib/writing-context.js";
+import { cachedWritingPrompt, needsWritingSearch, writingCacheTtl } from "../lib/writing-context.js";
 import { setCors } from "../lib/http.js";
 import { callClaude, getClaudeModel } from "../lib/claude-client.js";
 
@@ -433,8 +433,8 @@ Utilise des références vérifiables si elles sont nécessaires.
     const response = await callClaude({
       apiKey,
       system: fullSystemPrompt + JSON_OUTPUT_INSTRUCTION,
-      user: cachedWritingPrompt(userPrompt, documentPrefix),
-      cacheTtl: "1h",
+      user: cachedWritingPrompt(userPrompt, documentPrefix, writingCacheTtl(project.pages)),
+      cacheTtl: writingCacheTtl(project.pages),
       maxTokens: 16000,
       webSearch: needsWritingSearch({title:blockTitle,kind:blockKind,targetWords:safeWordTarget,preceding,instructions:[consignes,documentPrefix].join("\n")}),
       task: "writing"
