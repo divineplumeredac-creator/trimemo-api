@@ -25,6 +25,9 @@ import { requireOwnedProject } from "../lib/owned-project-gate.js";
 import { hasMissingPartOpening } from "../lib/part-opening-audit.js";
 import { hasClearlyIncompleteEnding } from "../lib/incomplete-ending.js";
 import { previewWordLimit } from "../lib/preview-limit.js";
+import { verifyPricingQuote } from "../lib/pricing.js";
+import { splitPreviewText } from "../lib/preview-continuation.js";
+import { reservePreview, completePreview, releasePreview } from "../lib/preview-ledger.js";
 function normalizeGeneratedAcademicContent(input) {
   let text = String(input || "").replace(/\r\n?/gu, "\n").trim();
 
@@ -79,6 +82,7 @@ export default async function handler(req, res) {
     });
   }
 
+  let previewReservation;
   try {
     const body = req.body || {};
     let project = body.project || body;
@@ -89,18 +93,24 @@ export default async function handler(req, res) {
     }
     await rateLimit(req, "generate-block", 30, 60 * 60 * 1000);
     const previewMode = body.previewMode === true;
+    let previewRemaining = null;
+    let projectOwner = null;
     if (body.ownerMode === true) requireOwner(req);
-    else await requireOwnedProject(req, project);
+    else projectOwner = await requireOwnedProject(req, project);
     if (body.ownerMode !== true && previewMode) {
-      // Aperçu public : rédaction progressive bloc par bloc, limitée à 2 500 mots cumulés.
-      const previewBlocks = Array.isArray(body.previewBlocks) ? body.previewBlocks : [];
-      const previewWords = previewBlocks.reduce((sum, item) => sum + String(item?.content || "").trim().split(/\s+/u).filter(Boolean).length, 0);
+      // Les pages et les pièces jointes doivent correspondre à l'analyse signée.
+      // Une modification du corps HTTP ne doit pas augmenter le quota gratuit.
+      if (Array.isArray(project.files) && project.files.length) project = await hydrateProjectFiles(project);
+      if (!verifyPricingQuote(project.pricingQuoteToken, project)) {
+        const e = new Error("L’analyse du projet est absente, modifiée ou expirée. Relancez l’analyse avant la rédaction."); e.status = 403; throw e;
+      }
       const limit = previewWordLimit(project.pages);
       if (!limit) { const e = new Error("Indiquez le nombre de pages du projet avant de générer l’aperçu."); e.status = 400; throw e; }
-      if (previewWords >= limit) {
-        const e = new Error("La limite de l’aperçu est atteinte. Consultez l’aperçu pour poursuivre."); e.status = 402; throw e;
-      }
-      body.targetWords = Math.min(Number(body.targetWords) || 900, limit - previewWords, 1000);
+      previewReservation = await reservePreview({projectId:project.projectId || project.project_id, ownerId:projectOwner.id,
+        blockId:String(body.block?.id || body.blockId || ''), planId:String(body.plan?.id || ''), problematicId:String(body.problematic?.id || ''), limit});
+      if (previewReservation.cached) return res.status(200).json(previewReservation.cached);
+      previewRemaining = previewReservation.remaining;
+      body.targetWords = Math.min(Number(body.targetWords) || 900, previewRemaining);
     } else if (body.ownerMode !== true) {
       const access = requirePremiumOrOwner(req, body);
       if (access.mode === "premium") {
@@ -111,7 +121,7 @@ export default async function handler(req, res) {
         }
       }
     }
-    if (Array.isArray(project.files) && project.files.length) project = await hydrateProjectFiles(project);
+    if (!(body.ownerMode !== true && previewMode) && Array.isArray(project.files) && project.files.length) project = await hydrateProjectFiles(project);
     assertFilesSize(project.files);
     const documentContext = project.documentContext || await buildProjectDocumentContext(project.files);
     const imageInputs = buildImageInputs(project.files);
@@ -207,7 +217,7 @@ export default async function handler(req, res) {
 
     const safeWordTarget =
       Number.isFinite(targetWords) && targetWords > 0
-        ? (previewMode ? Math.min(Math.max(targetWords, 1), 1000) : Math.min(Math.max(targetWords, 300), 1500))
+        ? targetWords
         : 900;
 
     const systemPrompt = `
@@ -259,14 +269,14 @@ MISE EN FORME DU TEXTE, OBLIGATOIRE DÈS LA PREMIÈRE GÉNÉRATION :
 
 RÈGLE ABSOLUE DE STRUCTURATION DES BLOCS :
 Le bloc est une unité technique de génération. Il ne remplace jamais les unités scientifiques du plan.
-Un objectif d’environ 900 mots ne doit jamais produire un texte continu de 900 mots sans structuration.
+La longueur demandée ne doit jamais conduire à négliger la structuration du texte.
 Toute section, sous-section ou titre interne présent dans STRUCTURE DU BLOC doit rester identifiable dans le contenu final.
 Pour chaque unité, reproduis son intitulé comme intertitre, puis développe son contenu sous cet intertitre.
 Si plusieurs sections sont regroupées, chacune conserve son propre titre et son développement.
 Une section entière peut constituer un bloc lorsque sa cohérence scientifique le justifie.
 Plusieurs sections peuvent être regroupées lorsqu’elles forment une même unité argumentative.
-Une section ne doit jamais être découpée artificiellement pour atteindre 900 mots.
-Les 900 mots constituent une cible indicative. Ils ne priment jamais sur la cohérence scientifique, la hiérarchie du plan et la continuité argumentative.
+Une section ne doit jamais être découpée artificiellement pour atteindre un nombre de mots prédéfini.
+La longueur demandée est indicative et ne prime jamais sur la cohérence scientifique, la hiérarchie du plan et la continuité argumentative.
 Ordre de priorité : cohérence scientifique > structure du plan > continuité argumentative > volume indicatif.
 16. Assure une transition naturelle entre les unités regroupées. Ne crée pas de rupture artificielle pour respecter un nombre de mots.
 17. Lorsque le bloc correspond au début d'une PARTIE, rédige d'abord un court paragraphe d'ouverture sous le titre de la partie. Ce paragraphe présente la logique, les enjeux et la progression de la partie vers ses chapitres. N'ajoute jamais un titre tel que « Introduction de la partie ».
@@ -399,10 +409,9 @@ Recherchez les références nécessaires avant la rédaction. Retenez uniquement
 Ne réutilisez pas inutilement une source déjà présente dans les blocs précédents.
 Les citations dans le texte doivent utiliser le nom de l’auteur ou de l’institution et l’année. Les domaines Web ne doivent jamais remplacer une citation auteur-date.
 La rédaction finale doit permettre au document complet d’atteindre au minimum 10 références bibliographiques distinctes.
-900 mots constitue une cible de confort, pas une limite ni une obligation.
 Le bloc doit suivre la cohérence scientifique du plan. Il peut contenir plusieurs sections, plusieurs sous-sections et leurs titres internes. Chaque SECTION doit commencer par sa brève introduction avant ses sous-sections.
-Une section ne doit pas être artificiellement découpée uniquement pour atteindre 900 mots.
-Si une section est dense et scientifiquement cohérente, elle peut dépasser 900 mots.
+Une section ne doit pas être artificiellement découpée pour atteindre un nombre de mots prédéfini.
+Si une section est dense et scientifiquement cohérente, sa longueur peut s'adapter à son contenu.
 Si plusieurs sections consécutives forment une unité argumentative cohérente, elles peuvent être regroupées dans un même bloc.
 
 OBJECTIF DE LONGUEUR :
@@ -511,7 +520,14 @@ Utilise des références vérifiables si elles sont nécessaires.
     } catch (styleError) {
       console.error("BLOCK_STYLE_CONTROL_FAILED", { name: String(styleError?.name || "Error"), code: String(styleError?.code || "STYLE_CONTROL_FAILED") });
     }
-    const wordCount = correctedContent.split(/\s+/).filter(Boolean).length;
+    let publicContent = correctedContent;
+    let privateRemainder = '';
+    if (previewRemaining !== null) {
+      const split = splitPreviewText(correctedContent, previewRemaining);
+      publicContent = split.visible;
+      privateRemainder = split.remainder;
+    }
+    const wordCount = publicContent.split(/\s+/).filter(Boolean).length;
     let verifiedSources = [];
     try {
       verifiedSources = await verifySources(Array.isArray(result.sources) ? result.sources : []);
@@ -525,13 +541,13 @@ Utilise des références vérifiables si elles sont nécessaires.
     // metadata that corresponds to a citation in this block. No source is
     // fabricated, and export attaches these notes at the end of this block.
     if (!notes.length) notes.push(...sourceFootnotes(correctedContent, retainedSources));
-    return res.status(200).json({
+    let publicResponse = {
       id: String(body.block?.id || body.blockId || `block-${Date.now()}`),
       title: correctedTitle,
-      content: correctedContent,
+      content: publicContent,
       wordCount,
       sources: retainedSources,
-      footnotes: notes,
+      footnotes: privateRemainder ? [] : notes,
       warnings: [
         ...(hasMissingPartOpening(correctedContent, structure) ? ["L’introduction de cette partie semble manquer. Vérifiez le bloc avant l’export."] : []),
         ...(hasClearlyIncompleteEnding(correctedContent) ? ["La fin de ce bloc semble incomplète. Vérifiez-la avant de poursuivre."] : []),
@@ -539,14 +555,19 @@ Utilise des références vérifiables si elles sont nécessaires.
         ...(styleControl.status !== "passed" ? ["Le contrôle stylistique automatique de ce bloc n’a pas abouti ; le texte initial a été conservé."] : []),
       ],
       styleControl
-    });
+    };
+    if (previewReservation) publicResponse = await completePreview(previewReservation, {response:publicResponse, remainder:privateRemainder, visible:publicContent,
+      blockId:String(body.block?.id || body.blockId || ''), planId:String(body.plan?.id || ''), problematicId:String(body.problematic?.id || ''), privateFootnotes:privateRemainder ? notes : []});
+    return res.status(200).json(publicResponse);
   } catch (error) {
     console.error("GENERATE_BLOCK_FAILED", { status: Number(error?.status) || 500, code: String(error?.code || "BLOCK_GENERATION_ERROR") });
     void logAdminEvent({ category: "generation", severity: (Number(error?.status) || 500) >= 500 ? "error" : "warning", action: "block_generation_failed", message: String(error?.code || error?.name || "BLOCK_GENERATION_ERROR"), requestPath: "/api/generate-block", statusCode: Number(error?.status) || 500 });
     return res.status(Number.isInteger(error?.status) ? error.status : 500).json({
-      error: error?.status === 401 || error?.status === 402 || error?.status === 403 || error?.status === 413 || error?.status === 429
+      error: error?.status === 400 || error?.status === 401 || error?.status === 402 || error?.status === 403 || error?.status === 409 || error?.status === 413 || error?.status === 429
         ? error.message
         : "Une erreur interne est survenue pendant la rédaction du bloc."
     });
+  } finally {
+    await releasePreview(previewReservation);
   }
 }

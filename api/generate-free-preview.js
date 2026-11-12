@@ -14,6 +14,7 @@ const OPENAI_URL = "https://api.openai.com/v1/responses";
 const WORDS_PER_PAGE = 320;
 import { previewWordLimit as proportionalPreviewLimit } from '../lib/preview-limit.js';
 import { requireOwnedProject } from '../lib/owned-project-gate.js';
+import { reservePreview, completePreview, releasePreview } from '../lib/preview-ledger.js';
 const FREE_PREVIEW_WORDS = 2500;
 const PREVIEW_INTRO_WORDS = 500;
 
@@ -141,12 +142,13 @@ export default async function handler(req, res) {
 
   let fileIds = [];
   let previewWordLimit = FREE_PREVIEW_WORDS;
+  let previewReservation;
   try {
     const settings = await readAdminSettings();
     previewWordLimit = Math.max(0, Math.min(2500, Number(settings.quotas?.freePreviewWords ?? FREE_PREVIEW_WORDS)));
     if (previewWordLimit < 1) throw fail("L’aperçu gratuit est désactivé par l’administrateur.", 403);
     let project = req.body?.project || req.body || {};
-    await requireOwnedProject(req, project);
+    const projectOwner = await requireOwnedProject(req, project);
     const proportionalLimit = proportionalPreviewLimit(project.pages);
     if (!proportionalLimit) throw fail("Indiquez le nombre de pages du projet avant de générer l’aperçu.", 400);
     previewWordLimit = Math.min(previewWordLimit, proportionalLimit);
@@ -157,6 +159,11 @@ export default async function handler(req, res) {
     if (Array.isArray(project.files) && project.files.length) project = await hydrateProjectFiles(project);
     if (!verifyPricingQuote(project.pricingQuoteToken, project)) return res.status(403).json({ error: "L'analyse tarifaire du projet est absente ou expirée. Relancez l'analyse avant l'aperçu." });
     if (req.body?.plan && !isPreviewPlanValid(req.body.plan)) return res.status(400).json({ error: "Le plan sélectionné est incomplet : vérifiez les parties, chapitres et sections avant de générer l'aperçu." });
+    const legacyPlanId = String(req.body?.plan?.id || 'legacy-plan');
+    const legacyProblematicId = String(req.body?.problematic?.id || 'legacy-problematic');
+    previewReservation = await reservePreview({projectId:project.projectId || project.project_id,ownerId:projectOwner.id,blockId:'legacy-free-preview',planId:legacyPlanId,problematicId:legacyProblematicId,limit:previewWordLimit});
+    if (previewReservation.cached) return res.status(200).json(previewReservation.cached);
+    previewWordLimit = previewReservation.remaining;
     const files = Array.isArray(project.files) ? project.files : [];
     if (files.length) assertFilesSize(files);
     const maxPages = Math.max(1, Math.min(300, Number(settings.quotas?.maxPages) || 300));
@@ -232,19 +239,23 @@ export default async function handler(req, res) {
     const introductionContent = trimToWords(result.introduction.content, Math.min(PREVIEW_INTRO_WORDS, previewWordLimit));
     const remainingPreviewWords = Math.max(0, previewWordLimit - introductionContent.split(/\s+/u).filter(Boolean).length);
     const chapterContent = trimToWords(String(result.chapterOne.content).trim(), remainingPreviewWords);
-    return res.status(200).json({
+    const output = {
       success:true,
       previewWordLimit,
       problematic:result.problematic,
       plan:normalizedPlan,
       introduction:{...result.introduction,content:introductionContent,wordCount:introductionContent.split(/\s+/u).filter(Boolean).length,incomplete:true,previewWords:previewWordLimit,targetWords:introductionWords},
       chapterOne:{...result.chapterOne,title:firstChapter.title || result.chapterOne.title,content:chapterContent,wordCount:chapterContent.split(/\s+/u).filter(Boolean).length,partTitle:firstPart.title || "",chapterNumber:firstChapter.number || 1,sectionTitles:(firstChapter.sections || []).map(section=>section.title)}
-    });
+    };
+    const saved = await completePreview(previewReservation, {response:output,remainder:'',visible:[introductionContent,chapterContent].filter(Boolean).join('\n\n'),blockId:'legacy-free-preview',planId:legacyPlanId,problematicId:legacyProblematicId});
+    return res.status(200).json(saved);
   } catch(error) {
     await deleteOpenAIFiles(fileIds, apiKey);
     console.error("FREE_PREVIEW_FAILED", { status: Number(error?.status) || 500, code: String(error?.code || "PREVIEW_GENERATION_ERROR") });
     void logAdminEvent({ category: "generation", severity: (Number(error?.status) || 500) >= 500 ? "error" : "warning", action: "free_preview_failed", message: String(error?.code || error?.name || "PREVIEW_GENERATION_ERROR"), requestPath: "/api/generate-free-preview", statusCode: Number(error?.status) || 500 });
     const status = error?.status || 500;
     return res.status(status).json({error: status >= 500 ? "Impossible de générer l’aperçu pour le moment. Réessayez dans quelques instants." : (error?.message || "Requête invalide.")});
+  } finally {
+    await releasePreview(previewReservation);
   }
 }
