@@ -22,7 +22,7 @@ async function withMocks(run) {
       const body = JSON.parse(options.body);
       if (body.tools) {
         calls++;
-        const content = Array(1300).fill('mot').join(' ') + '.';
+        const content = Array(130).fill('Une phrase complète possède ici dix mots pour notre vérification.').join(' ');
         return Response.json({ id: 'synthetic', stop_reason: 'end_turn', usage: {}, content: [{ type: 'text', text: JSON.stringify({ title: 'Introduction', content, sources: [], footnotes: [] }) }] });
       }
       return new Response('{}', { status: 500 });
@@ -30,13 +30,14 @@ async function withMocks(run) {
     if (url.includes('/auth/v1/user')) return Response.json({ id: 'client-test' });
     if (url.includes('/trimemo_client_projects')) return Response.json([{ project_id: 'projet-test' }]);
     if (url.includes('/trimemo_project_state')) return Response.json([{ owner_id: 'client-test' }]);
+    if (url.includes('/trimemo_preview_continuations') && options.method === 'POST') return Response.json([JSON.parse(options.body)]);
     return Response.json([]);
   };
   try { await run(() => calls); } finally { globalThis.fetch = originalFetch; }
 }
 async function request(body) {
   const res = makeRes();
-  await generateBlock({ method: 'POST', headers: { 'x-trimemo-client-token': 'synthetic' }, body: { project, previewMode: true, targetWords: 1250, ...body } }, res);
+  await generateBlock({ method: 'POST', headers: { 'x-trimemo-client-token': 'synthetic' }, body: { project, previewMode: true, targetWords: 1250, block: {id:'bloc-test'}, plan: {id:'plan-test'}, problematic: {id:'question-test'}, ...body } }, res);
   return res;
 }
 
