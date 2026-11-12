@@ -23,6 +23,8 @@ test('sépare à une fin de phrase et reconstitue exactement le contenu', () => 
   assert.equal(split.visible, 'Première phrase complète.');
   assert.equal(split.visible + split.remainder, original);
   assert.deepEqual(splitPreviewText('Une seule phrase longue.', 2), {visible:'', remainder:'Une seule phrase longue.'});
+  assert.deepEqual(splitPreviewText('Selon M. Dupont, les résultats sont clairs. Une suite complète.', 3), {visible:'', remainder:'Selon M. Dupont, les résultats sont clairs. Une suite complète.'});
+  assert.equal(splitPreviewText('La première phrase est complète. Selon M. Dupont, les résultats sont clairs.', 8).visible, 'La première phrase est complète.');
 });
 
 test('la suite reste privée et seul le compte avec commande payée peut la récupérer', async () => {
