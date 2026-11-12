@@ -222,7 +222,7 @@ export default async function handler(req, res) {
   // PayPal, while retaining the sandbox adapter and atomic payment ledger.
   if (action === "create-mobile-money" || action === "verify-mobile-money") {
     const { default: fedapayHandler } = await import("./fedapay-sandbox.js");
-    return fedapayHandler({ ...req, body: { ...body, action: action === "create-mobile-money" ? "create" : "verify" } }, res);
+    return fedapayHandler({ method: req.method, headers: req.headers, socket: req.socket, query: req.query, body: { ...body, action: action === "create-mobile-money" ? "create" : "verify" } }, res);
   }
   let project = body.project || {};
 

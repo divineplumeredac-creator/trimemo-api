@@ -24,7 +24,7 @@ test('parcours Mobile Money commun : création, propriétaire et confirmation Fe
  try {
   const project={projectId:'p1',sujet:'Sujet',pages:10,typeDoc:'Mémoire',niveau:'Master',formula:'MASTER',files:[],paymentProblematicId:'q',paymentPlanId:'p',paidPreviewSnapshot:{problematic:{id:'q',question:'Question ?'},plan:{id:'p',parts:[{}]},introduction:{content:'Première phrase.'}}};
   project.pricingQuoteToken=signPricingQuote(calculateQuote({project,country:'BJ'}),project);
-  const call=async(body,token='user1')=>{const r=response();await handler({method:'POST',query:{action:body.action==='create'?'create-mobile-money':'verify-mobile-money'},headers:{authorization:'Bearer '+token},socket:{remoteAddress:'127.0.0.4'},body},r);return r};
+  const call=async(body,token='user1')=>{const r=response();const req={method:'POST',query:{action:body.action==='create'?'create-mobile-money':'verify-mobile-money'},socket:{remoteAddress:'127.0.0.4'},body};Object.defineProperty(req,'headers',{get:()=>({authorization:'Bearer '+token}),enumerable:false});await handler(req,r);return r};
   const made=await call({action:'create',project});assert.equal(made.code,200);assert.equal(made.body.id,'42');assert.equal(row.state,'ready');
   const dup=await call({action:'create',project});assert.equal(dup.code,409);
   const wrong=await call({action:'verify',id:'42'},'user2');assert.equal(wrong.code,403);assert.equal(grant,0);
