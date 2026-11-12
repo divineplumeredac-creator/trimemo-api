@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import generateBlock from '../api/generate-block.js';
 import { createOwnerToken } from '../lib/owner-auth.js';
 import { calculateQuote, signPricingQuote } from '../lib/pricing.js';
+import { previewLedgerMock } from './preview-ledger-mock.js';
 
 process.env.NODE_ENV = 'test';
 process.env.TRIMEMO_CLAUDE_API_KEY = 'synthetic';
@@ -18,8 +19,10 @@ function response() {
 test('la cible suit le plan au-delà de 1 000 mots tout en respectant le quota d’aperçu', async () => {
   const oldFetch = globalThis.fetch;
   const prompts = [];
+  const ledger = previewLedgerMock();
   globalThis.fetch = async (input, options = {}) => {
     const url = String(input);
+    const ledgerResponse = await ledger(input, options); if (ledgerResponse) return ledgerResponse;
     if (url.includes('api.anthropic.com')) {
       const body = JSON.parse(options.body);
       if (body.tools) {
@@ -30,7 +33,7 @@ test('la cible suit le plan au-delà de 1 000 mots tout en respectant le quota d
     }
     if (url.includes('/auth/v1/user')) return Response.json({ id: 'client-test' });
     if (url.includes('/trimemo_client_projects')) return Response.json([{ project_id: 'projet-test' }]);
-    if (url.includes('/trimemo_project_state')) return Response.json([{ owner_id: 'client-test' }]);
+    if (url.includes('/trimemo_project_state')) return Response.json([{ owner_id: 'client-test', ...(url.includes('limited-project') ? {state:{blocks:[{status:'done',content:Array(1000).fill('mot').join(' ')}]}} : {}) }]);
     return Response.json([]);
   };
   try {
@@ -41,17 +44,20 @@ test('la cible suit le plan au-delà de 1 000 mots tout en respectant le quota d
     assert.equal(owner.code, 200);
     assert.match(prompts[0], /Environ 2400 mots/);
     const preview = response();
-    await generateBlock({ method: 'POST', headers: { 'x-trimemo-client-token': 'synthetic' }, body: { project, previewMode: true, targetWords: 2400, previewBlocks: [] } }, preview);
+    const ids = {block:{id:'bloc-test'},plan:{id:'plan-test'},problematic:{id:'question-test'}};
+    await generateBlock({ method: 'POST', headers: { 'x-trimemo-client-token': 'synthetic' }, body: { project, ...ids, previewMode: true, targetWords: 2400, previewBlocks: [] } }, preview);
     assert.equal(preview.code, 200);
     assert.match(prompts[1], /Environ 2400 mots/);
     const limited = response();
-    await generateBlock({ method: 'POST', headers: { 'x-trimemo-client-token': 'synthetic' }, body: { project, previewMode: true, targetWords: 2400, previewBlocks: [{ content: Array(1000).fill('mot').join(' ') }] } }, limited);
+    const existing = { ...project, projectId: 'limited-project' };
+    existing.pricingQuoteToken = signPricingQuote(calculateQuote({ project: existing }), existing);
+    await generateBlock({ method: 'POST', headers: { 'x-trimemo-client-token': 'synthetic' }, body: { project: existing, ...ids, previewMode: true, targetWords: 2400, previewBlocks: [] } }, limited);
     assert.equal(limited.code, 200);
     assert.match(prompts[2], /Environ 1500 mots/);
     const shortProject = response();
-    const short = { ...project, pages: 15 };
+    const short = { ...project, projectId:'short-project', pages: 15 };
     short.pricingQuoteToken = signPricingQuote(calculateQuote({ project: short }), short);
-    await generateBlock({ method: 'POST', headers: { 'x-trimemo-client-token': 'synthetic' }, body: { project: short, previewMode: true, targetWords: 2400 } }, shortProject);
+    await generateBlock({ method: 'POST', headers: { 'x-trimemo-client-token': 'synthetic' }, body: { project: short, ...ids, previewMode: true, targetWords: 2400 } }, shortProject);
     assert.equal(shortProject.code, 200);
     assert.match(prompts[3], /Environ 1250 mots/);
   } finally { globalThis.fetch = oldFetch; }
