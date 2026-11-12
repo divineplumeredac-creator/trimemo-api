@@ -6,7 +6,7 @@ export default async function handler(req,res) {
   if(!/^[a-z0-9]{20}$/.test(ref)||ref==='myzaepudoqnqnvpbopoy'||base!==`https://${ref}.supabase.co`) return res.status(503).json({test_only:true,database:'isolation_failed',fedapay:'not_tested'});
   const key=String(process.env.SUPABASE_SERVICE_ROLE_KEY||'');
   const feda=String(process.env.FEDAPAY_SANDBOX_SECRET_KEY||'');
-  async function check(url,headers){try {const response=await fetch(url,{headers,signal:AbortSignal.timeout(8000)});return response.ok?'ok':response.status===401||response.status===403?'credentials_rejected':'unavailable';}catch{return 'unavailable';}}
+  async function check(url,headers){try {const response=await fetch(url,{headers,signal:AbortSignal.timeout(8000)});return response.ok?'ok':response.status===401||response.status===403?'credentials_rejected':`http_${response.status}`;}catch(error){return error?.name==='TimeoutError'?'timeout':'network_error';}}
   const [database,fedapay]=await Promise.all([
     key ? check(`${base}/rest/v1/trimemo_orders?select=order_id&limit=0`,{apikey:key,Authorization:`Bearer ${key}`}) : 'missing',
     feda ? check('https://sandbox-api.fedapay.com/v1/transactions?per_page=1',{Authorization:`Bearer ${feda}`,Accept:'application/json'}) : 'missing',
