@@ -13,7 +13,7 @@ test('le parcours simulé utilise exclusivement le serveur de test FedaPay',asyn
   throw Error('Appel inattendu');
  };
  try {
-  const tx=await createSandboxTransaction({key:'synthetic',amount:5000,reference:'reference_test_123',callbackUrl:'https://trimemo-redac.company/?payment=mobile-money'});
+  const tx=await createSandboxTransaction({key:'synthetic',amount:5000,reference:'reference_test_123',callbackUrl:'https://trimemo-frontend-sandbox.vercel.app/?payment=fedapay'});
   assert.equal(tx.id,'42');assert.equal(await sandboxPaymentLink({key:'synthetic',transactionId:tx.id}),'https://fpay.li/test-token');
   const verified=await sandboxTransaction({key:'synthetic',transactionId:tx.id});
   assert.equal(validateSandboxPayment(verified,{id:'42',amount:5000,reference:'reference_test_123',currency:'XOF'}),true);
