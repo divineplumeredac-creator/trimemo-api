@@ -1,6 +1,5 @@
 import { rateLimit } from "../lib/rate-limit.js";
-import { setCors } from "../lib/http.js";
-const FRONTEND_URL = process.env.TRIMEMO_FRONTEND_URL || "https://trimemo-frontend.vercel.app";
+import { setCors, getFrontendOrigin } from "../lib/http.js";
 
 function cors(res, req) {
   setCors(res, req, "POST, OPTIONS");
@@ -105,11 +104,11 @@ async function paypalAccessToken() {
   return data.access_token;
 }
 
-async function createPaypalOrder(project) {
+async function createPaypalOrder(project, frontendUrl) {
   const token = await paypalAccessToken();
   const price = priceForProject(project);
-  const returnUrl = FRONTEND_URL + "/?payment=paypal";
-  const cancelUrl = FRONTEND_URL + "/?payment=paypal_cancelled";
+  const returnUrl = frontendUrl + "/?payment=paypal";
+  const cancelUrl = frontendUrl + "/?payment=paypal_cancelled";
 
   const response = await fetch(paypalBaseUrl() + "/v2/checkout/orders", {
     method: "POST",
@@ -255,7 +254,7 @@ export default async function handler(req, res) {
         return fail(res, 400, error instanceof Error ? error.message : "Régénérez l’aperçu avant le paiement.");
       }
       project = { ...project, formula: formulaOf(project), paidPreviewSnapshot: normalizedPreview };
-      const order = await createPaypalOrder(project);
+      const order = await createPaypalOrder(project, getFrontendOrigin(req));
       await recordPendingOrder({ orderId: order.id, project, amount: order.amount, currency: order.currency });
       return res.status(200).json(order);
     }
