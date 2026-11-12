@@ -1,4 +1,4 @@
-import { setCors } from "../lib/http.js";
+import { setCors, getFrontendOrigin } from "../lib/http.js";
 import { createPremiumToken } from "../lib/premium-auth.js";
 import { getOrderRecord } from "../lib/order-ledger.js";
 
@@ -204,7 +204,7 @@ export default async function handler(req, res) {
       const email = validEmail(body.email);
       if (!email) return fail(res, 400, "Saisissez une adresse e-mail valide.");
       const { url, key } = config();
-      const frontendUrl = String(process.env.TRIMEMO_FRONTEND_URL || "https://trimemo-frontend.vercel.app").trim().replace(/\/$/, "");
+      const frontendUrl = getFrontendOrigin(req);
       const redirectTo = frontendUrl + "/?account=confirmed" + (body.startProject === true ? "&start=1" : "");
       const response = await fetch(url + "/auth/v1/resend?redirect_to=" + encodeURIComponent(redirectTo), {
         method: "POST", headers: { apikey: key, "Content-Type": "application/json" },
@@ -223,7 +223,7 @@ export default async function handler(req, res) {
       if (action === "signup" && (!firstName || !lastName)) return fail(res, 400, "Le prénom et le nom sont obligatoires pour créer un compte.");
       if (action === "signup") {
         const { url, key } = config();
-        const frontendUrl = String(process.env.TRIMEMO_FRONTEND_URL || "https://trimemo-frontend.vercel.app").trim().replace(/\/$/, "");
+        const frontendUrl = getFrontendOrigin(req);
         const redirectTo = frontendUrl + "/?account=confirmed" + (body.startProject === true ? "&start=1" : "");
         const created = await fetch(url + "/auth/v1/signup?redirect_to=" + encodeURIComponent(redirectTo), {
           method: "POST",
@@ -257,7 +257,7 @@ export default async function handler(req, res) {
       const email = validEmail(body.email);
       if (!email) return fail(res, 400, "Saisissez une adresse e-mail valide.");
       const { url, key } = config();
-      const frontendUrl = String(process.env.TRIMEMO_FRONTEND_URL || "https://trimemo-frontend.vercel.app").trim().replace(/\/$/, "");
+      const frontendUrl = getFrontendOrigin(req);
       const redirectTo = frontendUrl + "/?reset-password=1";
       try {
         await fetch(url + "/auth/v1/recover?redirect_to=" + encodeURIComponent(redirectTo), {
