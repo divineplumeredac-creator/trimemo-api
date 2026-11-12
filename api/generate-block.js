@@ -100,7 +100,7 @@ export default async function handler(req, res) {
       if (previewWords >= limit) {
         const e = new Error("La limite de l’aperçu est atteinte. Consultez l’aperçu pour poursuivre."); e.status = 402; throw e;
       }
-      body.targetWords = Math.min(Number(body.targetWords) || 900, limit - previewWords, 1000);
+      body.targetWords = Math.min(Number(body.targetWords) || 900, limit - previewWords);
     } else if (body.ownerMode !== true) {
       const access = requirePremiumOrOwner(req, body);
       if (access.mode === "premium") {
@@ -207,7 +207,7 @@ export default async function handler(req, res) {
 
     const safeWordTarget =
       Number.isFinite(targetWords) && targetWords > 0
-        ? (previewMode ? Math.min(Math.max(targetWords, 1), 1000) : Math.min(Math.max(targetWords, 300), 1500))
+        ? targetWords
         : 900;
 
     const systemPrompt = `
@@ -259,14 +259,14 @@ MISE EN FORME DU TEXTE, OBLIGATOIRE DÈS LA PREMIÈRE GÉNÉRATION :
 
 RÈGLE ABSOLUE DE STRUCTURATION DES BLOCS :
 Le bloc est une unité technique de génération. Il ne remplace jamais les unités scientifiques du plan.
-Un objectif d’environ 900 mots ne doit jamais produire un texte continu de 900 mots sans structuration.
+La longueur demandée ne doit jamais conduire à négliger la structuration du texte.
 Toute section, sous-section ou titre interne présent dans STRUCTURE DU BLOC doit rester identifiable dans le contenu final.
 Pour chaque unité, reproduis son intitulé comme intertitre, puis développe son contenu sous cet intertitre.
 Si plusieurs sections sont regroupées, chacune conserve son propre titre et son développement.
 Une section entière peut constituer un bloc lorsque sa cohérence scientifique le justifie.
 Plusieurs sections peuvent être regroupées lorsqu’elles forment une même unité argumentative.
-Une section ne doit jamais être découpée artificiellement pour atteindre 900 mots.
-Les 900 mots constituent une cible indicative. Ils ne priment jamais sur la cohérence scientifique, la hiérarchie du plan et la continuité argumentative.
+Une section ne doit jamais être découpée artificiellement pour atteindre un nombre de mots prédéfini.
+La longueur demandée est indicative et ne prime jamais sur la cohérence scientifique, la hiérarchie du plan et la continuité argumentative.
 Ordre de priorité : cohérence scientifique > structure du plan > continuité argumentative > volume indicatif.
 16. Assure une transition naturelle entre les unités regroupées. Ne crée pas de rupture artificielle pour respecter un nombre de mots.
 17. Lorsque le bloc correspond au début d'une PARTIE, rédige d'abord un court paragraphe d'ouverture sous le titre de la partie. Ce paragraphe présente la logique, les enjeux et la progression de la partie vers ses chapitres. N'ajoute jamais un titre tel que « Introduction de la partie ».
@@ -399,10 +399,9 @@ Recherchez les références nécessaires avant la rédaction. Retenez uniquement
 Ne réutilisez pas inutilement une source déjà présente dans les blocs précédents.
 Les citations dans le texte doivent utiliser le nom de l’auteur ou de l’institution et l’année. Les domaines Web ne doivent jamais remplacer une citation auteur-date.
 La rédaction finale doit permettre au document complet d’atteindre au minimum 10 références bibliographiques distinctes.
-900 mots constitue une cible de confort, pas une limite ni une obligation.
 Le bloc doit suivre la cohérence scientifique du plan. Il peut contenir plusieurs sections, plusieurs sous-sections et leurs titres internes. Chaque SECTION doit commencer par sa brève introduction avant ses sous-sections.
-Une section ne doit pas être artificiellement découpée uniquement pour atteindre 900 mots.
-Si une section est dense et scientifiquement cohérente, elle peut dépasser 900 mots.
+Une section ne doit pas être artificiellement découpée pour atteindre un nombre de mots prédéfini.
+Si une section est dense et scientifiquement cohérente, sa longueur peut s'adapter à son contenu.
 Si plusieurs sections consécutives forment une unité argumentative cohérente, elles peuvent être regroupées dans un même bloc.
 
 OBJECTIF DE LONGUEUR :
