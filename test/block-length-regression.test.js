@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import generateBlock from '../api/generate-block.js';
 import { createOwnerToken } from '../lib/owner-auth.js';
+import { calculateQuote, signPricingQuote } from '../lib/pricing.js';
 
 process.env.NODE_ENV = 'test';
 process.env.TRIMEMO_CLAUDE_API_KEY = 'synthetic';
@@ -34,6 +35,7 @@ test('la cible suit le plan au-delà de 1 000 mots tout en respectant le quota d
   };
   try {
     const project = { projectId: 'projet-test', sujet: 'Sujet fictif', pages: 30, files: [] };
+    project.pricingQuoteToken = signPricingQuote(calculateQuote({ project }), project);
     const owner = response();
     await generateBlock({ method: 'POST', headers: { authorization: `Bearer ${createOwnerToken('owner@example.invalid')}` }, body: { project, ownerMode: true, targetWords: 2400 } }, owner);
     assert.equal(owner.code, 200);
@@ -47,7 +49,9 @@ test('la cible suit le plan au-delà de 1 000 mots tout en respectant le quota d
     assert.equal(limited.code, 200);
     assert.match(prompts[2], /Environ 1500 mots/);
     const shortProject = response();
-    await generateBlock({ method: 'POST', headers: { 'x-trimemo-client-token': 'synthetic' }, body: { project: { ...project, pages: 15 }, previewMode: true, targetWords: 2400 } }, shortProject);
+    const short = { ...project, pages: 15 };
+    short.pricingQuoteToken = signPricingQuote(calculateQuote({ project: short }), short);
+    await generateBlock({ method: 'POST', headers: { 'x-trimemo-client-token': 'synthetic' }, body: { project: short, previewMode: true, targetWords: 2400 } }, shortProject);
     assert.equal(shortProject.code, 200);
     assert.match(prompts[3], /Environ 1250 mots/);
   } finally { globalThis.fetch = oldFetch; }
