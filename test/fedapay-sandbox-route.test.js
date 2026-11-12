@@ -10,12 +10,12 @@ test('création, propriétaire et confirmation côté serveur dans un environnem
  let row=null,tx=null,grant=0;
  globalThis.fetch=async(url,opts={})=>{
   const u=String(url),method=opts.method||'GET',body=opts.body?JSON.parse(opts.body):{};
-  if(u.includes('/auth/v1/user'))return Response.json({id:opts.headers.Authorization==='Bearer user1'?'00000000-0000-4000-8000-000000000001':'00000000-0000-4000-8000-000000000002'});
+  if(u.includes('/auth/v1/user'))return Response.json({id:opts.headers.Authorization==='Bearer user1'?'00000000-0000-4000-8000-000000000001':'00000000-0000-4000-8000-000000000002',email:'client@example.test'});
   if(u.includes('/trimemo_client_projects'))return Response.json([{project_id:'p1'}]);
   if(u.endsWith('/trimemo_payment_intents')&&method==='POST'){if(row)return Response.json({}, {status:409});row={...body,state:'creating'};return Response.json([row]);}
   if(u.includes('/trimemo_payment_intents?')&&method==='PATCH'){Object.assign(row,body);return Response.json([row]);}
   if(u.includes('/trimemo_payment_intents?')&&method==='GET')return Response.json(row?[row]:[]);
-  if(u.endsWith('/v1/transactions')){tx={id:42,status:'pending',amount:body.amount,currency:{iso:'XOF'},custom_metadata:body.custom_metadata};return Response.json({'v1/transaction':tx});}
+  if(u.endsWith('/v1/transactions')){assert.equal(body.customer?.email,'client@example.test');tx={id:42,status:'pending',amount:body.amount,currency:{iso:'XOF'},custom_metadata:body.custom_metadata};return Response.json({'v1/transaction':tx});}
   if(u.endsWith('/42/token'))return Response.json({url:'https://fpay.li/sandbox'});
   if(u.includes('/v1/transactions/42?'))return Response.json({'v1/transaction':{...tx,status:'approved'}});
   if(u.endsWith('/rpc/confirm_trimemo_fedapay_sandbox')){grant++;return Response.json({status:'PAID',order_id:'fedapay-sandbox:42',project:row.project_snapshot});}
