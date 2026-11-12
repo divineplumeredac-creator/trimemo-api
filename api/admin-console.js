@@ -197,7 +197,11 @@ async function loadOrders() {
 }
 async function loadUsage() {
   const rows = await getAllRows("/rest/v1/trimemo_openai_usage?select=id,endpoint,model,input_tokens,output_tokens,total_tokens,estimated_cost_usd,status,duration_ms,request_id,error_code,metadata,created_at&order=created_at.desc", 1000, 5000);
+  const counters = ["uncached_input_tokens","cache_creation_input_tokens","cache_read_input_tokens","web_search_requests"];
   const summary = rows.reduce((acc, row) => {
+    if (row.metadata?.provider === "anthropic") acc.detailed_requests += 1;
+    if (row.status === "incomplete") acc.incomplete += 1;
+    for (const key of counters) acc[key] += Number(row.metadata?.[key] || 0);
     acc.requests += 1;
     acc.input_tokens += Number(row.input_tokens || 0);
     acc.output_tokens += Number(row.output_tokens || 0);
@@ -210,6 +214,8 @@ async function loadUsage() {
     const key = safeStr(row.endpoint || "unknown", 100);
     acc.by_endpoint[key] ||= { endpoint: key, calls: 0, input_tokens: 0, output_tokens: 0, total_tokens: 0, estimated_cost_usd: 0, priced_calls: 0, errors: 0 };
     const entry = acc.by_endpoint[key];
+    for (const counter of counters) entry[counter] = (entry[counter] || 0) + Number(row.metadata?.[counter] || 0);
+    if (row.status === "incomplete") entry.incomplete = (entry.incomplete || 0) + 1;
     entry.calls += 1; entry.input_tokens += Number(row.input_tokens || 0); entry.output_tokens += Number(row.output_tokens || 0);
     entry.total_tokens += Number(row.total_tokens || 0);
     if (row.status === "error") entry.errors += 1;
@@ -217,7 +223,7 @@ async function loadUsage() {
       entry.estimated_cost_usd += money(row.estimated_cost_usd); entry.priced_calls += 1;
     }
     return acc;
-  }, { requests: 0, input_tokens: 0, output_tokens: 0, total_tokens: 0, estimated_cost_usd: 0, cost_coverage: 0, errors: 0, by_endpoint: {} });
+  }, { detailed_requests: 0, incomplete: 0, uncached_input_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0, web_search_requests: 0, requests: 0, input_tokens: 0, output_tokens: 0, total_tokens: 0, estimated_cost_usd: 0, cost_coverage: 0, errors: 0, by_endpoint: {} });
   summary.estimated_cost_usd = Number(summary.estimated_cost_usd.toFixed(6));
   return { summary, by_endpoint: Object.values(summary.by_endpoint).map(v => ({ ...v, estimated_cost_usd: Number(v.estimated_cost_usd.toFixed(6)) })), records: rows.slice(0, 300).map(row => ({ ...row, metadata: row.metadata || {} })) };
 }

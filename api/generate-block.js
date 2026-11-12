@@ -1,3 +1,4 @@
+import { cachedWritingPrompt, needsWritingSearch } from "../lib/writing-context.js";
 import { setCors } from "../lib/http.js";
 import { callClaude, getClaudeModel } from "../lib/claude-client.js";
 
@@ -336,7 +337,8 @@ Lorsque le contexte ou les consignes manquent, rédige à partir des information
 Cette exception prévaut sur toute règle générale de vérification préalable qui pourrait empêcher la rédaction.
 `;
 
-    const userPrompt = `${buildDocumentInstructions(documentContext)}\n\n` + `
+    const documentPrefix = `${buildDocumentInstructions(documentContext)}\n\n`;
+    const userPrompt = documentPrefix + `
 PRIORITÉ DES CONSIGNES DU PROJET : le guide méthodologique et les instructions explicites du client priment sur les règles génériques. Applique-les à la rédaction de ce bloc, pas seulement au plan. Ne transforme jamais ces consignes en commentaires visibles dans le texte final.
 
 DONNÉES DU PROJET
@@ -431,9 +433,10 @@ Utilise des références vérifiables si elles sont nécessaires.
     const response = await callClaude({
       apiKey,
       system: fullSystemPrompt + JSON_OUTPUT_INSTRUCTION,
-      user: userPrompt,
+      user: cachedWritingPrompt(userPrompt, documentPrefix),
+      cacheTtl: "1h",
       maxTokens: 16000,
-      webSearch: true,
+      webSearch: needsWritingSearch({title:blockTitle,kind:blockKind,targetWords:safeWordTarget,preceding,instructions:[consignes,documentPrefix].join("\n")}),
       task: "writing"
     });
 
@@ -513,7 +516,7 @@ Utilise des références vérifiables si elles sont nécessaires.
     let correctedTitle = String(result.title || blockTitle);
     let styleControl = { status: "warning", correctedFields: 0, checkedFields: 0 };
     try {
-      const styleResult = await enforceAcademicStyle({ title: correctedTitle, content: correctedContent }, { apiKey, timeoutMs: 25000 });
+      const styleResult = await enforceAcademicStyle({ title: correctedTitle, content: correctedContent }, { apiKey, timeoutMs: 25000, projectId: project.projectId || project.project_id });
       correctedContent = styleResult?.value?.content || correctedContent;
       correctedTitle = styleResult?.value?.title || correctedTitle;
       styleControl = { status: "passed", correctedFields: styleResult?.correctedFields || 0, checkedFields: styleResult?.checkedFields || 0 };

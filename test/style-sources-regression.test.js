@@ -58,13 +58,17 @@ test('un chiffre supprimé par une révision stylistique est refusé', async () 
   finally { globalThis.fetch=originalFetch; }
 });
 test('une réponse tronquée même au format JSON valide est retentée', async () => {
-  const originalFetch=globalThis.fetch; let calls=0;
+  const originalFetch=globalThis.fetch; let calls=0; const limits=[];
   globalThis.fetch=async (_url,options)=>{
     calls++;
-    const user=JSON.parse(options.body).messages[0].content[0].text;
+    const request=JSON.parse(options.body);
+    limits.push(request.max_tokens);
+    assert.deepEqual(request.thinking,{type:'disabled'});
+    assert.equal(request.output_config.format.type,'json_schema');
+    const user=request.messages[0].content[0].text;
     const fields=JSON.parse(user.slice(user.indexOf('[')));
     return responseFor(fields.map(({id})=>({id,text:'Ce résultat nécessite une analyse précise. Elle porte sur la production des données dans cette région et sur leurs effets.'})), calls===1?'max_tokens':'end_turn');
   };
-  try { const result=await enforceAcademicStyle({content:long},{apiKey:'test-key'});assert.equal(result.value.content,'Ce résultat nécessite une analyse précise. Elle porte sur la production des données dans cette région et sur leurs effets.');assert.equal(calls,2); }
+  try { const result=await enforceAcademicStyle({content:long},{apiKey:'test-key'});assert.equal(result.value.content,'Ce résultat nécessite une analyse précise. Elle porte sur la production des données dans cette région et sur leurs effets.');assert.equal(calls,2);assert.ok(limits[1]>limits[0]); }
   finally {globalThis.fetch=originalFetch;}
 });
