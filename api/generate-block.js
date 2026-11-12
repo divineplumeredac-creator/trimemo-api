@@ -25,6 +25,7 @@ import { requireOwnedProject } from "../lib/owned-project-gate.js";
 import { hasMissingPartOpening } from "../lib/part-opening-audit.js";
 import { hasClearlyIncompleteEnding } from "../lib/incomplete-ending.js";
 import { previewWordLimit } from "../lib/preview-limit.js";
+import { verifyPricingQuote } from "../lib/pricing.js";
 function normalizeGeneratedAcademicContent(input) {
   let text = String(input || "").replace(/\r\n?/gu, "\n").trim();
 
@@ -92,6 +93,12 @@ export default async function handler(req, res) {
     if (body.ownerMode === true) requireOwner(req);
     else await requireOwnedProject(req, project);
     if (body.ownerMode !== true && previewMode) {
+      // Les pages et les pièces jointes doivent correspondre à l'analyse signée.
+      // Une modification du corps HTTP ne doit pas augmenter le quota gratuit.
+      if (Array.isArray(project.files) && project.files.length) project = await hydrateProjectFiles(project);
+      if (!verifyPricingQuote(project.pricingQuoteToken, project)) {
+        const e = new Error("L’analyse du projet est absente, modifiée ou expirée. Relancez l’analyse avant la rédaction."); e.status = 403; throw e;
+      }
       // Aperçu public : rédaction progressive bloc par bloc, limitée à 2 500 mots cumulés.
       const previewBlocks = Array.isArray(body.previewBlocks) ? body.previewBlocks : [];
       const previewWords = previewBlocks.reduce((sum, item) => sum + String(item?.content || "").trim().split(/\s+/u).filter(Boolean).length, 0);
@@ -111,7 +118,7 @@ export default async function handler(req, res) {
         }
       }
     }
-    if (Array.isArray(project.files) && project.files.length) project = await hydrateProjectFiles(project);
+    if (!(body.ownerMode !== true && previewMode) && Array.isArray(project.files) && project.files.length) project = await hydrateProjectFiles(project);
     assertFilesSize(project.files);
     const documentContext = project.documentContext || await buildProjectDocumentContext(project.files);
     const imageInputs = buildImageInputs(project.files);
