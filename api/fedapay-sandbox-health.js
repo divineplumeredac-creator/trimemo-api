@@ -10,7 +10,7 @@ export default async function handler(req,res) {
   const base=String(process.env.SUPABASE_URL).replace(/\/$/,'');
   const serviceKey=process.env.SUPABASE_SERVICE_ROLE_KEY;
   const results=await Promise.all([
-   fetch(base+'/rest/v1/trimemo_payment_intents?select=reference&limit=0',{headers:{apikey:serviceKey,Authorization:'Bearer '+serviceKey},signal:AbortSignal.timeout(8000)}),
+   fetch(base+'/rest/v1/trimemo_payment_intents?select=reference&limit=1',{headers:{apikey:serviceKey,Authorization:'Bearer '+serviceKey},signal:AbortSignal.timeout(8000)}),
    fetch('https://sandbox-api.fedapay.com/v1/transactions/search',{headers:{Authorization:'Bearer '+key,Accept:'application/json'},signal:AbortSignal.timeout(8000)})
   ]);
   const database=results[0].ok?'ok':'unavailable',fedapay=results[1].ok?'ok':'unavailable';
