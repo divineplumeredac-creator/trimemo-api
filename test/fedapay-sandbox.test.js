@@ -52,3 +52,8 @@ test('signature de webhook : message brut, horodatage et secret doivent correspo
  assert.equal(verifySandboxWebhook(raw,header,secret,now-301),false);
  assert.equal(verifySandboxWebhook(raw,`t=${now},t=${now},s=${signature}`,secret,now),false);
 });
+
+test('un identifiant numérique dont la précision est perdue est refusé', async () => {
+  const { sandboxTransaction } = await import('../lib/fedapay-sandbox.js');
+  await assert.rejects(sandboxTransaction({key:'test',transactionId:9007199254740992}), {status:400});
+});
