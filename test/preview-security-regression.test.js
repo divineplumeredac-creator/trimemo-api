@@ -16,13 +16,20 @@ const project = { projectId: 'projet-test', sujet: 'Sujet fictif', pages: 15, fi
 project.pricingQuoteToken = signPricingQuote(calculateQuote({ project }), project);
 const makeRes = () => ({ setHeader() {}, status(code) { this.code = code; return this; }, json(body) { this.body = body; return this; }, end() { return this; } });
 
-async function withMocks(run) {
+async function withMocks(run, {dropCommitResponse = false} = {}) {
   const originalFetch = globalThis.fetch;
   let calls = 0;
   const ledger = previewLedgerMock();
   globalThis.fetch = async (input, options = {}) => {
     const url = String(input);
-    const ledgerResponse = await ledger(input, options); if (ledgerResponse) return ledgerResponse;
+    const ledgerResponse = await ledger(input, options);
+    if (ledgerResponse) {
+      if (dropCommitResponse && options.method === 'PATCH' && JSON.parse(options.body).receipts) {
+        dropCommitResponse = false;
+        throw new Error('synthetic connection interruption after commit');
+      }
+      return ledgerResponse;
+    }
     if (url.includes('api.anthropic.com')) {
       const body = JSON.parse(options.body);
       if (body.tools) {
@@ -73,6 +80,17 @@ test('un bloc retrouvé après une interruption ne provoque pas un nouvel appel 
     assert.deepEqual(retry.body,first.body);
     assert.equal(calls(),1);
   });
+});
+
+test('une réponse perdue après sauvegarde permet de retrouver le bloc sans régénération', async () => {
+  await withMocks(async (calls) => {
+    const interrupted = await request({previewBlocks:[]});
+    assert.equal(interrupted.code,500);
+    const recovered = await request({previewBlocks:[]});
+    assert.equal(recovered.code,200);
+    assert.ok(recovered.body.continuationId);
+    assert.equal(calls(),1);
+  }, {dropCommitResponse:true});
 });
 
 test('deux générations simultanées ne consomment pas deux fois le quota', async () => {
