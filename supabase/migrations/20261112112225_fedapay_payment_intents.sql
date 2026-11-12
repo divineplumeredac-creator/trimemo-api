@@ -1,4 +1,4 @@
--- Preparation only: apply in an isolated test database after integration.
+-- Sandbox provider ledger, shared with the public site's authenticated projects.
 -- A single unresolved attempt per project must be shared by both providers.
 create table public.trimemo_payment_intents (
   reference text primary key check (reference ~ '^[A-Za-z0-9_-]{10,100}$'),
@@ -49,7 +49,7 @@ begin
   if existing.project_id is distinct from intent.project_id or existing.owner_id is distinct from intent.user_id
     or existing.project_fingerprint is distinct from p_fingerprint or existing.amount::numeric is distinct from intent.amount
     or existing.currency is distinct from intent.currency or existing.status <> 'paid'
-    or existing.refund_status <> 'none' or existing.consumed_at is not null then
+    or coalesce(existing.refund_status,'none') <> 'none' or existing.consumed_at is not null then
     raise exception 'Payment order conflict';
   end if;
   update public.trimemo_payment_intents set state='paid', updated_at=now() where reference=p_reference;

@@ -1,3 +1,4 @@
+import { sandboxEnabled, publicSandboxEnabled } from '../lib/fedapay-sandbox-config.js';
 import crypto from 'node:crypto';
 import { setCors } from '../lib/http.js';
 import { requireClientProject } from '../lib/client-project-auth.js';
@@ -13,11 +14,11 @@ export default async function handler(req,res) {
   setCors(res,req,'POST, OPTIONS');
   if(req.method==='OPTIONS') return res.status(204).end();
   if(req.method!=='POST') return res.status(405).json({error:'Méthode non autorisée.'});
-  if(process.env.VERCEL_ENV!=='preview'||process.env.FEDAPAY_SANDBOX_ENABLED!=='true') return res.status(404).json({error:'Service indisponible.'});
+  if(!sandboxEnabled()) return res.status(404).json({error:'Service indisponible.'});
   try {
     const key=String(process.env.FEDAPAY_SANDBOX_SECRET_KEY||'');
     const callbackUrl=String(process.env.FEDAPAY_SANDBOX_CALLBACK_URL||'');
-    const repo=sandboxRepository({url:process.env.SUPABASE_URL,serviceKey:process.env.SUPABASE_SERVICE_ROLE_KEY,testProjectRef:process.env.FEDAPAY_SANDBOX_SUPABASE_REF});
+    const repo=sandboxRepository({url:process.env.SUPABASE_URL,serviceKey:process.env.SUPABASE_SERVICE_ROLE_KEY,testProjectRef:process.env.FEDAPAY_SANDBOX_SUPABASE_REF,publicSite:publicSandboxEnabled()});
     const flow=createSandboxPaymentFlow({repository:repo,key,callbackUrl});
     const action=String(req.body?.action||'');
     if(action==='create') {
