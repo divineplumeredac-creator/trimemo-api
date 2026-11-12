@@ -218,6 +218,12 @@ export default async function handler(req, res) {
 
   const action = String(req.query?.action || "").trim();
   const body = req.body || {};
+  // FedaPay follows the same public checkout actions and response contract as
+  // PayPal, while retaining the sandbox adapter and atomic payment ledger.
+  if (action === "create-mobile-money" || action === "verify-mobile-money") {
+    const { default: fedapayHandler } = await import("./fedapay-sandbox.js");
+    return fedapayHandler({ ...req, body: { ...body, action: action === "create-mobile-money" ? "create" : "verify" } }, res);
+  }
   let project = body.project || {};
 
   try {
@@ -336,18 +342,6 @@ export default async function handler(req, res) {
       });
     }
 
-    if (action === "create-mobile-money") {
-      return fail(
-        res,
-        501,
-        "Le paiement Mobile Money n'est pas encore raccordé à un prestataire.",
-        "Configurez un prestataire de paiement avant d'activer ce bouton."
-      );
-    }
-
-    if (action === "verify-mobile-money") {
-      return fail(res, 501, "La vérification Mobile Money n'est pas configurée.");
-    }
 
     return fail(res, 404, "Action de paiement inconnue.");
   } catch (error) {
