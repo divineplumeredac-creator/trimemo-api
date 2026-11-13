@@ -221,7 +221,8 @@ export default async function handler(req, res) {
   // FedaPay follows the same public checkout actions and response contract as
   // PayPal, while retaining the sandbox adapter and atomic payment ledger.
   if (action === "create-mobile-money" || action === "verify-mobile-money") {
-    const { default: fedapayHandler } = await import("./fedapay-sandbox.js");
+    const { default: fedapayHandler } = process.env.FEDAPAY_ENV === "live"
+      ? await import("./fedapay-live.js") : await import("./fedapay-sandbox.js");
     return fedapayHandler({ method: req.method, headers: req.headers, socket: req.socket, query: req.query, body: { ...body, action: action === "create-mobile-money" ? "create" : "verify" } }, res);
   }
   let project = body.project || {};
