@@ -45,6 +45,7 @@ export default async function handler(req,res) {
       if(!intent) return res.status(403).json({error:'Commande indisponible.'});
       const user=await requireClientProject(req,intent.projectId);
       const result=await flow.verify({userId:String(user.id),providerId});
+      if(result.status==='CANCELLED') return res.status(200).json({status:'CANCELLED',message:'Paiement annulé ou refusé. Aucun accès payant n’a été activé. Vous pouvez réessayer depuis votre projet.'});
       if(result.status!=='PAID') return res.status(202).json({status:'PENDING',error:'Paiement en cours de confirmation.'});
       return res.status(200).json({...result,premium_token:createPremiumToken(result.project,result.order_id),preview:result.project?.paidPreviewSnapshot||null});
     }
