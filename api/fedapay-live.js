@@ -34,7 +34,7 @@ export default async function handler(req,res) {
       const preview=project.paidPreviewSnapshot;
       if(!String(project.sujet||'').trim()||!['LICENCE','MASTER','DOCTORAT'].includes(formula)||!preview?.problematic?.question||preview.problematic.id!==project.paymentProblematicId||!preview?.plan?.parts?.length||preview.plan.id!==project.paymentPlanId||!String(preview?.introduction?.content||'').trim()) return res.status(400).json({error:'Validez le projet, le plan et l’aperçu avant le paiement.'});
       project={...project,formula,paidPreviewSnapshot:normalizePreviewWordLimit(preview)};
-      const result=await flow.begin({userId:String(user.id),projectId,reference:'trimemo_'+crypto.randomUUID(),project,quote,customer:{email:String(user.email||'')}});
+      const result=await flow.begin({userId:String(user.id),projectId,reference:'trimemo_'+crypto.randomUUID(),project,quote,customer:{email:String(user.email||''),firstname:String(user.user_metadata?.first_name||user.user_metadata?.firstName||''),lastname:String(user.user_metadata?.last_name||user.user_metadata?.lastName||'')}});
       return res.status(200).json(result);
     }
     if(action==='verify') {
