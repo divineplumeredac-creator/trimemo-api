@@ -52,6 +52,6 @@ export default async function handler(req,res) {
   } catch(error) {
     console.error('FEDAPAY_LIVE_ERROR',{code:String(error?.code||error?.name||'ERROR'),status:Number(error?.status)||500});
     const status=Number(error?.status)||500;
-    return res.status(status).json({error:status<500?error.message:'Le service de paiement de test est indisponible.'});
+    return res.status(status).json({error:status<500?error.message:(error.publicMessage||'Le service de paiement FedaPay live est indisponible.')});
   }
 }
