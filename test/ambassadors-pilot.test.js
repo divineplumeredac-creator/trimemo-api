@@ -16,3 +16,4 @@ test('les versements sont manuels, sur commandes confirmées et après 14 jours'
  assert.match(src,/14\*24\*3600\*1000/);
  assert.match(src,/refund_status!=='none'/);
 });
+test('une attribution tardive à un ancien projet est refusée',()=>{assert.match(src,/Date\.now\(\)-created>15\*60\*1000/);});

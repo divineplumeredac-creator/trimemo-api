@@ -132,10 +132,15 @@ export default async function handler(req,res){
    const projectId=trim(body.projectId,100),referral=trim(body.code,20).toUpperCase();
    if(!projectPattern.test(projectId)||!codePattern.test(referral))throw fail(400,'Référence de parrainage invalide.');
    const [membership,ambassadors]=await Promise.all([
-    db('trimemo_client_projects?project_id=eq.'+encodeURIComponent(projectId)+'&user_id=eq.'+encodeURIComponent(user.id)+'&select=project_id&limit=1'),
+    db('trimemo_client_projects?project_id=eq.'+encodeURIComponent(projectId)+'&user_id=eq.'+encodeURIComponent(user.id)+'&select=project_id,created_at&limit=1'),
     db('trimemo_ambassadors?referral_code=eq.'+encodeURIComponent(referral)+'&status=eq.active&select=id,user_id,approved_at&limit=1')
    ]);
    if(membership.length!==1)throw fail(403,'Ce projet ne correspond pas à votre compte.');
+   // La commission récompense une acquisition réelle : on n'attribue pas
+   // rétroactivement des projets créés avant le clic ambassadeur.
+   const created=Date.parse(String(membership[0].created_at||''));
+   if(!Number.isFinite(created)||Date.now()-created>15*60*1000||created>Date.now()+60000)
+    throw fail(409,'Le parrainage doit être enregistré au moment de créer un nouveau projet.');
    const ambassador=ambassadors?.[0];
    if(!ambassador)throw fail(404,'Ce lien ambassadeur n’est pas actif.');
    if(ambassador.user_id===user.id)throw fail(403,'Vous ne pouvez pas parrainer votre propre projet.');
