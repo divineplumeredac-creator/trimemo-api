@@ -323,6 +323,10 @@ CONTRAT DE SORTIE DU BLOC, PRIORITAIRE ET OBLIGATOIRE :
 - L'ouverture d'une partie, d'un chapitre ou d'une section est un paragraphe analytique sous le titre, jamais un intertitre supplémentaire.
 - N'écris jamais de marqueurs de travail comme (), [à compléter], « à développer », ou de commentaires techniques.
 - Les citations auteur-date doivent correspondre à une source réelle retournée dans SOURCES.
+- Toute source citée doit être retournée dans SOURCES avec auteur, année (y compris suffixe a/b), titre exact et DOI ou URL vérifiable.
+- N'ajoute jamais un auteur dans le corps du texte sans fournir ses métadonnées dans SOURCES.
+- N'utilise pas de notes de bas de page pour répéter les notices bibliographiques déjà présentes en références APA.
+- N'écris jamais des formulations techniques telles que « faute de précision fournie » ou « le client n’a pas précisé » ; justifie naturellement le périmètre de l'étude.
 - Avant le JSON final, contrôle l'ordre des titres, leur unicité, la couverture des unités attendues, la cohérence avec la problématique et l'absence de répétitions.
 - Corrige les défauts dans ta réponse avant de la retourner. Ne laisse pas au contrôle final le soin de réparer une structure mal conçue.
 ` + "\n\n" + `
@@ -543,7 +547,9 @@ Utilise des références vérifiables si elles sont nécessaires.
     // When the model supplies no notes, use only already-retained source
     // metadata that corresponds to a citation in this block. No source is
     // fabricated, and export attaches these notes at the end of this block.
-    if (!notes.length) notes.push(...sourceFootnotes(correctedContent, retainedSources));
+    // Les références auteur-date sont regroupées dans la bibliographie finale.
+    // Ne jamais ajouter la notice bibliographique entière comme note isolée.
+    // Les notes explicatives demandées par l'auteur restent possibles.
     let publicResponse = {
       id: String(body.block?.id || body.blockId || `block-${Date.now()}`),
       title: correctedTitle,

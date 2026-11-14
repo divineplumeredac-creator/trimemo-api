@@ -20,7 +20,8 @@ import {
 import compileDocument from '../lib/compile-document.js';
 import { resolveFormatting } from '../lib/academic-format.js';
 import { auditCitationReferences } from '../lib/citation-audit.js';
-import { sourceFootnotes } from '../lib/source-footnotes.js';
+import { buildBibliography } from '../lib/build-bibliography.js';
+
 import { requirePremiumOrOwner } from '../lib/premium-auth.js';
 import { assertOrderUsable, claimOrderExportAttempt, consumeOrderAfterExport } from '../lib/order-ledger.js';
 import { enforceAcademicStyle } from '../lib/style-control.js';
@@ -158,6 +159,9 @@ function stripLeadingTitle(value, title) {
 }
 function cleanAcademicText(value) {
   return text(value)
+    .replace(/&amp;/gi, '&')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
     .replace(/\*\*(.*?)\*\*/g, '$1')
     .replace(/\*(.*?)\*/g, '$1')
     .replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, '$1')
@@ -338,7 +342,15 @@ function addStructuredBlock(children, block, formatting, hierarchy = {}) {
 }
 function addBlockFootnotes(children, block) {
   const ids = Array.isArray(block._footnoteIds) ? block._footnoteIds : [];
-  if (ids.length) children.push(new Paragraph({ children: ids.map(id => new FootnoteReferenceRun(id)) }));
+  if (!ids.length) return;
+  // Une note explicative de l'auteur reste possible. Ne jamais placer une
+  // succession de numéros seuls : afficher un appel de notes lisible.
+  children.push(new Paragraph({
+    spacing: { before: 0, after: 0 },
+    children: ids.flatMap((id, index) => index
+      ? [new TextRun({ text: ' ' }), new FootnoteReferenceRun(id)]
+      : [new FootnoteReferenceRun(id)]),
+  }));
 }
 function addPlanOutline(children, plan, formatting) {
   for (const part of plan.parts || []) {
@@ -538,9 +550,7 @@ export default async function handler(req, res) {
         error.status = 422;
         throw error;
       }
-      const attempt = await claimOrderExportAttempt(access.token, body.project || body);
-      res.setHeader('X-Trimemo-Export-Attempt', String(attempt));
-      res.setHeader('X-Trimemo-Export-Attempts-Remaining', String(Math.max(0, 3 - attempt)));
+
     }
 
     // Le contrôle stylistique améliore le document, mais ne doit jamais empêcher
@@ -572,6 +582,9 @@ export default async function handler(req, res) {
       res.setHeader('X-Trimemo-Style-Control', 'skipped');
       res.setHeader('X-Trimemo-Style-Warning', 'Le document a été exporté sans correction stylistique automatique.');
     }
+    // Les corrections stylistiques peuvent agir sur le texte : reconstruire la
+    // bibliographie après cette étape, puis bloquer tout export incomplet.
+    compiled.bibliography = buildBibliography({ ...body, blocks: compiled.blocks });
     const uniqueSources = Array.isArray(compiled.bibliography?.sources) ? compiled.bibliography.sources : [];
     const missingLinks = uniqueSources.filter((source) => !source.doi && !source.url).length;
     const citationAudit = auditCitationReferences(compiled.blocks, uniqueSources);
@@ -581,6 +594,31 @@ export default async function handler(req, res) {
     res.setHeader('X-Trimemo-Bibliography-Missing-Links', String(missingLinks));
     res.setHeader('X-Trimemo-Citation-Warning', citationAudit.count ? 'true' : 'false');
     res.setHeader('X-Trimemo-Citation-Issue-Count', String(citationAudit.count));
+    if (citationAudit.count) {
+      const names = citationAudit.unmatched.slice(0, 6).map(ref => ref.surname + ' (' + ref.year + ')').join(', ');
+      const e = new Error(
+        'Export interrompu : des citations du document ne correspondent pas à des références bibliographiques retrouvées : ' +
+        names + (citationAudit.count > 6 ? ', …' : '') +
+        '. Complétez ou corrigez ces références avant le téléchargement.'
+      );
+      e.status = 422;
+      throw e;
+    }
+    const strayGeneratorComments = compiled.blocks.some(block =>
+      /faute de pr[eé]cision fournie|aucune (?:information|consigne) (?:n['’]a [eé]t[eé] )?fournie|le client n['’]a pas pr[eé]cis[eé]/iu.test(String(block.content || ''))
+    );
+    if (strayGeneratorComments) {
+      const e = new Error('Export interrompu : la rédaction contient une remarque technique sur les consignes manquantes. Corrigez ce passage avant le téléchargement.');
+      e.status = 422;
+      throw e;
+    }
+    // Ne consommer une tentative d'export payante qu'après les contrôles
+    // structurels et bibliographiques : une erreur qualité ne coûte rien au client.
+    if (access.mode === 'premium') {
+      const attempt = await claimOrderExportAttempt(access.token, body.project || body);
+      res.setHeader('X-Trimemo-Export-Attempt', String(attempt));
+      res.setHeader('X-Trimemo-Export-Attempts-Remaining', String(Math.max(0, 3 - attempt)));
+    }
 
     const formatting = resolveFormatting(body.formatting || {});
     // Generated notes have no precise text anchors. Associate them with the
@@ -589,8 +627,13 @@ export default async function handler(req, res) {
     let nextFootnoteId = 1;
     compiled.blocks = compiled.blocks.map(block => {
       const ids = [];
-      const supplied = (Array.isArray(block.footnotes) ? block.footnotes : []).filter(note => typeof note === 'string' && note.trim());
-      const notes = supplied.length ? supplied : sourceFootnotes(block.content, uniqueSources);
+      const notes = (Array.isArray(block.footnotes) ? block.footnotes : [])
+        .filter(note => typeof note === 'string' && note.trim())
+        // Une référence auteur-date est déjà présente dans la bibliographie.
+        // Ne pas la répéter en note à la fin de chaque bloc : cela produisait
+        // des pages quasi vides et des numéros de notes accolés.
+        .filter(note => !(/\((?:19|20)\d{2}[a-z]?\)/iu.test(note) &&
+          /https?:\/\/|doi:|journal|revue|vol\.|édition|publisher/iu.test(note)));
       for (const note of notes) {
         const content = String(note || '').trim();
         if (!content) continue;
