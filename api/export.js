@@ -553,6 +553,25 @@ export default async function handler(req, res) {
 
     }
 
+    // Précontrôle déterministe avant tout appel IA : une bibliographie
+    // manifestement incomplète ne doit pas consommer de crédits stylistiques.
+    const preflightAudit = auditCitationReferences(
+      compiled.blocks, Array.isArray(compiled.bibliography?.sources) ? compiled.bibliography.sources : []
+    );
+    if (preflightAudit.count) {
+      res.setHeader('X-Trimemo-Citation-Warning', 'true');
+      res.setHeader('X-Trimemo-Citation-Issue-Count', String(preflightAudit.count));
+      const names = preflightAudit.unmatched.slice(0, 6)
+        .map(ref => ref.surname + ' (' + ref.year + ')').join(', ');
+      const error = new Error(
+        'Export interrompu : des citations du document ne correspondent pas à des références bibliographiques retrouvées : ' +
+        names + (preflightAudit.count > 6 ? ', …' : '') +
+        '. Complétez ou corrigez ces références avant le téléchargement.'
+      );
+      error.status = 422;
+      throw error;
+    }
+
     // Le contrôle stylistique améliore le document, mais ne doit jamais empêcher
     // l'export d'un travail déjà rédigé lorsque le fournisseur IA est indisponible
     // ou renvoie une réponse incomplète. Le contenu original reste alors intact.
