@@ -12,6 +12,7 @@ import { requireOwnedProject } from "../lib/owned-project-gate.js";
 import { buildProjectDocumentContext, buildDocumentInstructions, uploadProjectFiles, deleteOpenAIFiles, buildImageInputs } from "../lib/project-documents.js";
 import { assertFilesSize } from "../lib/limits.js";
 import { enforceAcademicStyle } from "../lib/style-control.js";
+import { unexpectedGeographicScope } from "../lib/geographic-scope.js";
 const OPENAI_URL = "https://api.openai.com/v1/responses";
 
 function cors(res, req) { setCors(res, req, "POST, OPTIONS"); }
@@ -182,6 +183,11 @@ RÈGLES DE FOND :
 10. Les problématiques doivent être compatibles avec le niveau d'études
     et le type de document.
 11. Les problématiques doivent être différentes les unes des autres.
+13. Pour un sujet général, ne jamais limiter la question à l’Asie, à l’Afrique, à l’Europe
+    ou à un pays absent du dossier. Une illustration géographique ne vaut pas délimitation.
+14. La problématique ne doit pas justifier un périmètre par le manque de consignes.
+    Aucun commentaire sur les informations « non précisées » ne doit apparaître
+    dans le document académique final.
 12. Ne répète pas la même question avec des synonymes.
 
 VARIATION DES PROBLÉMATIQUES :
@@ -557,8 +563,31 @@ export default async function handler(req, res) {
         improvementComments: String(body.improvementComments || ""),
         rejectedProblematics: Array.isArray(body.rejectedProblematics) ? body.rejectedProblematics.slice(0, 3) : [],
       });
-      const generated = validateProblematiques(rawResponse, count);
+      let generated = validateProblematiques(rawResponse, count);
+      let unexpected = generated.flatMap(item => unexpectedGeographicScope(
+        [item.question, item.title, item.angle].join(' '), project
+      ));
+      if (unexpected.length) {
+        // Deuxième essai uniquement si la première réponse impose une zone non demandée.
+        const correctedRaw = await callOpenAI({
+          project: { ...project, consignes: [project.consignes,
+            "La question doit rester générale : aucun pays ou continent non demandé, notamment " + [...new Set(unexpected)].join(", ") + "."].filter(Boolean).join("\\n") },
+          apiKey, fileIds, count,
+          problematicAction: String(body.problematicAction || "new"),
+          currentProblematic: body.currentProblematic || null,
+          improvementComments: String(body.improvementComments || ""),
+          rejectedProblematics: [],
+        });
+        generated = validateProblematiques(correctedRaw, count);
+        unexpected = generated.flatMap(item => unexpectedGeographicScope(
+          [item.question, item.title, item.angle].join(' '), project
+        ));
+        if (unexpected.length) throw fail("La problématique introduit une délimitation géographique non demandée. Relancez sa génération.", 422);
+      }
       const styleResult = await enforceAcademicStyle({ problematiques: generated }, { apiKey, timeoutMs: 25000 });
+      if (styleResult.value?.problematiques?.some(item => unexpectedGeographicScope(
+        [item.question, item.title, item.angle].join(' '), project
+      ).length)) throw fail("La problématique a introduit une zone géographique non demandée.", 422);
       if (body.ownerMode !== true) await recordGenerationQuotaUse("generate-problematics", projectId, count);
       return res.status(200).json({
         problematiques: styleResult.value.problematiques,

@@ -16,6 +16,8 @@ import { extractMethodologyContract, methodologyContractText, validateMethodolog
 import { enforceAcademicStyle } from "../lib/style-control.js";
 import { TRIMEMO_PLAN_WRITING_CONTRACT, TRIMEMO_STRICT_STYLE_CONTRACT } from "../lib/strict-writing-contract.js";
 import { parsePlanJson, retryMalformedPlan } from "../lib/plan-json.js";
+import { academicStructureProfile } from "../lib/document-profile.js";
+import { unexpectedGeographicScope } from "../lib/geographic-scope.js";
 
 const OPENAI_URL="https://api.openai.com/v1/responses";
 const WORDS_PER_PAGE=320;
@@ -443,6 +445,11 @@ Le plan doit être exploitable pour une rédaction de mémoire, thèse ou rappor
 N'invente jamais un terrain, une enquête, des données, une organisation, une population ou une méthode.
 Ne transforme pas une recherche documentaire en étude empirique.
 Si une donnée manque, construis autour de ce qui est réellement fourni.
+N'ajoute jamais de délimitation géographique ou sectorielle qui ne figure pas
+dans le sujet, le contexte, les consignes ou une problématique expressément choisie.
+Pour une dissertation de Licence, n'impose pas une architecture de mémoire avec
+quatre chapitres : préfère un plan argumentatif court, adapté aux pages demandées.
+N'écris pas dans les titres ou textes académiques que des précisions font défaut.
 
 ${count > 1 ? "Pour plusieurs plans, produis des architectures argumentatives réellement différentes. La différence doit porter sur le raisonnement scientifique, pas seulement sur les titres." : "Pour un plan unique, choisis l’architecture argumentative la plus pertinente selon le sujet et les consignes du client."}
 Un même nombre de parties est autorisé si les logiques sont réellement différentes.
@@ -490,6 +497,7 @@ ${TRIMEMO_STRICT_STYLE_CONTRACT}`;
       "CONTRAINTE DE VOLUME : "+requestedPages+" pages visées, soit "+words+" mots au total.",
       "Répartition indicative : introduction "+introductionPages+" pages, corps "+bodyPages+" pages, conclusion "+conclusionPages+" pages.",
       "Les chapitres doivent se partager les "+bodyWords+" mots du corps. Ne crée pas une architecture dont la rédaction normale dépasserait ce budget.",
+      "ARCHITECTURE ADAPTÉE AU TYPE DE TRAVAIL : "+academicStructureProfile(p).instruction,
       "ARCHITECTURES STRUCTURELLES OBLIGATOIRES:",
       ...structureTargets.map(item => "- "+item),
       "ORDRE DE PRIORITÉ FINAL : guide méthodologique client > autres instructions client > problématique/plan/contexte client > règles générales Trimémo.",
@@ -498,14 +506,13 @@ ${TRIMEMO_STRICT_STYLE_CONTRACT}`;
       "Les différences entre plans doivent porter sur la logique scientifique, sans modifier aucune contrainte imposée par le guide. Les contraintes numériques détectées dans le contrat sont obligatoires."
     ].join("\n\n");
 
-    const defaultPartMin=2, defaultPartMax=3;
-    const defaultChapterMin=2, defaultChapterMax=3;
-    const requiredPartMin=methodologyContract.partCount||defaultPartMin;
-    const requiredPartMax=methodologyContract.partCount||defaultPartMax;
-    const requiredChapterMin=methodologyContract.chaptersPerPart||defaultChapterMin;
-    const requiredChapterMax=methodologyContract.chaptersPerPart||defaultChapterMax;
-    const requiredSectionMin=methodologyContract.sectionsPerChapter||2;
-    const requiredSectionMax=methodologyContract.sectionsPerChapter||3;
+    const profile = academicStructureProfile(p);
+    const requiredPartMin=methodologyContract.partCount||profile.partMin;
+    const requiredPartMax=methodologyContract.partCount||profile.partMax;
+    const requiredChapterMin=methodologyContract.chaptersPerPart||profile.chapterMin;
+    const requiredChapterMax=methodologyContract.chaptersPerPart||profile.chapterMax;
+    const requiredSectionMin=methodologyContract.sectionsPerChapter||profile.sectionMin;
+    const requiredSectionMax=methodologyContract.sectionsPerChapter||profile.sectionMax;
     // Construire explicitement tout le sous-schema imbrique.
     // OpenAI Responses API exige un type sur chaque niveau de properties.
     const schema={
@@ -617,6 +624,16 @@ ${TRIMEMO_STRICT_STYLE_CONTRACT}`;
       }
       for(let i=0;i<count;i++){
         const plan=plans[i];
+        const planScope = [
+          plan.title,
+          ...(Array.isArray(plan?.parts) ? plan.parts : []).flatMap(part => [
+            part.title, ...(Array.isArray(part?.chapters) ? part.chapters : []).map(chapter => chapter.title)
+          ])
+        ].join(" ");
+        const unexpected = unexpectedGeographicScope(
+          planScope, p, JSON.stringify(b.problematic || b.problematique || {})
+        );
+        if(unexpected.length) return {valid:false,reason:"Délimitation géographique non demandée : "+unexpected.join(", ")+"."};
         const guideCheck=validateMethodologyStructure(plan,methodologyContract);
         if(!guideCheck.valid) return {valid:false,reason:"Plan "+(i+1)+" : "+guideCheck.reason};
         const parts=Array.isArray(plan?.parts)?plan.parts:[];
