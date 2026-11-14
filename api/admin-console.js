@@ -434,7 +434,7 @@ export default async function handler(req, res) {
         return reply(res,201,{ok:true,request:{id:saved.id,status:saved.status,created_at:saved.created_at},emailSent,estimatedPages:pages,detectedWordCount:wordCount,estimatedAmount:totalPrice,currency:marketInfo.currency,deliveryDays:{min:minDays,max:maxDays},deliveryLabel:minDays+" à "+maxDays+" jours ouvrés",message:(emailSent?"Demande envoyée et notification e-mail transmise.":"Demande enregistrée. La notification e-mail doit être configurée côté serveur.")+" Volume analysé automatiquement : environ "+pages+" page(s)."});
       }
       if(action==="revision-client-list"){
-        const rows=await supabaseAdminRequest("/rest/v1/trimemo_human_revisions?user_id=eq."+encodeURIComponent(clientUser.id)+"&select=id,project_id,document_title,status,admin_notes,delivery_name,created_at,updated_at,completed_at&order=created_at.desc&limit=200");
+        const rows=await supabaseAdminRequest("/rest/v1/trimemo_human_revisions?user_id=eq."+encodeURIComponent(clientUser.id)+"&select=id,project_id,document_title,status,delivery_name,created_at,updated_at,completed_at&order=created_at.desc&limit=200");
         return reply(res,200,{ok:true,requests:rows.data||[]});
       }
       const id=safeStr(body.id,30);if(!/^\d+$/.test(id))return reply(res,400,{ok:false,error:"Identifiant invalide."});
