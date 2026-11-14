@@ -614,12 +614,6 @@ export default async function handler(req, res) {
     }
     // Ne consommer une tentative d'export payante qu'après les contrôles
     // structurels et bibliographiques : une erreur qualité ne coûte rien au client.
-    if (access.mode === 'premium') {
-      const attempt = await claimOrderExportAttempt(access.token, body.project || body);
-      res.setHeader('X-Trimemo-Export-Attempt', String(attempt));
-      res.setHeader('X-Trimemo-Export-Attempts-Remaining', String(Math.max(0, 3 - attempt)));
-    }
-
     const formatting = resolveFormatting(body.formatting || {});
     // Generated notes have no precise text anchors. Associate them with the
     // end of their source block rather than inventing a sentence-level citation.
@@ -678,6 +672,13 @@ export default async function handler(req, res) {
     });
 
     const buffer = await Packer.toBuffer(doc);
+    // Une tentative payante n'est comptée qu'une fois le fichier Word
+    // réellement assemblé et les contrôles académiques terminés.
+      if (access.mode === 'premium') {
+        const attempt = await claimOrderExportAttempt(access.token, body.project || body);
+        res.setHeader('X-Trimemo-Export-Attempt', String(attempt));
+        res.setHeader('X-Trimemo-Export-Attempts-Remaining', String(Math.max(0, 3 - attempt)));
+      }
     if (access.mode === 'premium') await consumeOrderAfterExport(access.token, body.project || body);
     const title = safeFileName(compiled.project?.sujet || 'trimemo-document');
     res.setHeader('Content-Type', DOCX_MIME);
