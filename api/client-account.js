@@ -36,6 +36,15 @@ async function supabase(path, init = {}) {
   }
   return data;
 }
+function confirmationReturnUrl(req,body={}) {
+  const origin = getFrontendOrigin(req);
+  const callback = new URL("/", origin);
+  callback.searchParams.set("account", "confirmed");
+  if (body.startProject === true) callback.searchParams.set("start", "1");
+  else if (body.ambassador === true) callback.searchParams.set("next", "ambassadors");
+  return callback.toString();
+}
+
 function validEmail(value) {
   const email = String(value || "").trim().toLowerCase();
   return email.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : "";
@@ -195,6 +204,41 @@ export default async function handler(req, res) {
       if (!response.ok) return fail(res, 502, "Impossible d'enregistrer le nom du profil.");
       return res.status(200).json({ success: true, user: { id: updated.id || user.id, email: updated.email || user.email || "", firstName, lastName } });
     }
+    if (action === "verify-email") {
+      // Certains modèles de courriel renvoient un token_hash à usage unique,
+      // plutôt qu'un jeton de session dans le fragment de retour.
+      const tokenHash = String(body.tokenHash || "").trim();
+      const type = String(body.type || "email").toLowerCase();
+      if (!/^[a-zA-Z0-9_-]{20,512}$/.test(tokenHash) || !["signup", "email"].includes(type)) {
+        return fail(res, 400, "Ce lien de confirmation est incomplet. Demandez un nouveau lien.");
+      }
+      const { url, key } = config();
+      const response = await fetch(url + "/auth/v1/verify", {
+        method: "POST",
+        headers: { apikey: key, "Content-Type": "application/json" },
+        body: JSON.stringify({ token_hash: tokenHash, type }),
+        signal: AbortSignal.timeout(10000),
+      });
+      const confirmed = await response.json().catch(() => ({}));
+      if (!response.ok || !confirmed?.access_token || !confirmed?.user?.id) {
+        return fail(res, 400, "Ce lien de confirmation est expiré ou déjà utilisé. Connectez-vous si votre compte est activé, ou demandez un nouveau lien.");
+      }
+      if (!confirmed.user.email_confirmed_at) {
+        return fail(res, 400, "La confirmation de votre adresse e-mail est encore en attente.");
+      }
+      return res.status(200).json({
+        success: true,
+        token: confirmed.access_token,
+        refresh_token: confirmed.refresh_token || "",
+        expires_at: confirmed.expires_at || null,
+        user: {
+          id: confirmed.user.id,
+          email: confirmed.user.email || "",
+          firstName: String(confirmed.user.user_metadata?.first_name || ""),
+          lastName: String(confirmed.user.user_metadata?.last_name || ""),
+        },
+      });
+    }
     if (action === "confirm-session") {
       const user = await authenticate(String(body.token || "").trim());
       if (!user.email_confirmed_at) return fail(res, 403, "Confirmez votre adresse e-mail avant de continuer.");
@@ -204,8 +248,7 @@ export default async function handler(req, res) {
       const email = validEmail(body.email);
       if (!email) return fail(res, 400, "Saisissez une adresse e-mail valide.");
       const { url, key } = config();
-      const frontendUrl = getFrontendOrigin(req);
-      const redirectTo = frontendUrl + "/?account=confirmed" + (body.startProject === true ? "&start=1" : "");
+      const redirectTo = confirmationReturnUrl(req, body);
       const response = await fetch(url + "/auth/v1/resend?redirect_to=" + encodeURIComponent(redirectTo), {
         method: "POST", headers: { apikey: key, "Content-Type": "application/json" },
         body: JSON.stringify({ type: "signup", email }), signal: AbortSignal.timeout(10000),
@@ -223,8 +266,7 @@ export default async function handler(req, res) {
       if (action === "signup" && (!firstName || !lastName)) return fail(res, 400, "Le prénom et le nom sont obligatoires pour créer un compte.");
       if (action === "signup") {
         const { url, key } = config();
-        const frontendUrl = getFrontendOrigin(req);
-        const redirectTo = frontendUrl + "/?account=confirmed" + (body.startProject === true ? "&start=1" : "");
+        const redirectTo = confirmationReturnUrl(req, body);
         const created = await fetch(url + "/auth/v1/signup?redirect_to=" + encodeURIComponent(redirectTo), {
           method: "POST",
           headers: { apikey: key, Authorization: "Bearer " + key, "Content-Type": "application/json" },
