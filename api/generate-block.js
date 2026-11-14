@@ -21,7 +21,7 @@ import { buildProjectDocumentContext, buildDocumentInstructions, buildImageInput
 import { assertFilesSize } from "../lib/limits.js";
 import { verifySources } from "../lib/verify-sources.js";
 import { auditCitationReferences } from "../lib/citation-audit.js";
-import { sourceFootnotes } from "../lib/source-footnotes.js";
+
 import { requireOwnedProject } from "../lib/owned-project-gate.js";
 import { hasMissingPartOpening } from "../lib/part-opening-audit.js";
 import { hasClearlyIncompleteEnding } from "../lib/incomplete-ending.js";
