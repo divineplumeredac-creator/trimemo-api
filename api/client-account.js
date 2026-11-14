@@ -254,7 +254,7 @@ export default async function handler(req, res) {
         body: JSON.stringify({ type: "signup", email }), signal: AbortSignal.timeout(10000),
       });
       if (!response.ok) return fail(res, response.status === 429 ? 429 : 502, "Le renvoi du lien n’a pas pu être effectué. Réessayez plus tard.");
-      return res.status(200).json({ success: true, message: "Si ce compte attend une confirmation, un nouveau lien sera envoyé." });
+      return res.status(200).json({ success: true, message: "Si cette adresse attend encore une confirmation, un nouveau lien pourra arriver. Si vous possédez déjà un compte, connectez-vous plutôt." });
     }
     if (action === "signup" || action === "login") {
       const email = validEmail(body.email);
@@ -280,7 +280,7 @@ export default async function handler(req, res) {
           return fail(res, created.status === 422 ? 400 : 502, "La création du compte a échoué. Vérifiez l'adresse e-mail et réessayez.");
         }
         if (result?.access_token || result?.session?.access_token) return fail(res, 503, "La confirmation par e-mail n’est pas configurée. Contactez le support.");
-        return res.status(200).json({ success: true, confirmation_required: true, message: "Consultez votre messagerie et cliquez sur le lien de confirmation pour activer votre compte." });
+        return res.status(200).json({ success: true, confirmation_required: true, message: "Si vous avez déjà un compte Trimémo, connectez-vous directement : un nouveau lien n’est pas envoyé. Pour une nouvelle inscription, vérifiez votre messagerie et les courriers indésirables." });
       }
       const session = await supabase("/auth/v1/token?grant_type=password", {
         method: "POST",
