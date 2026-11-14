@@ -456,7 +456,7 @@ Utilise des références vérifiables si elles sont nécessaires.
         const noCredits = /no credits|credit balance|insufficient_quota|quota|billing/i.test(details);
         return res.status(429).json({
           error: noCredits
-            ? "Les crédits Claude (Anthropic) disponibles pour la rédaction sont épuisés. Ajoutez des crédits à votre compte Anthropic avant de relancer la rédaction."
+            ? "La rédaction est momentanément indisponible. Votre projet et votre progression sont conservés. Veuillez réessayer ultérieurement ou contacter notre assistance."
             : "Le service de rédaction Claude est temporairement indisponible. Veuillez réessayer plus tard.",
         });
       }
