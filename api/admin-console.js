@@ -3,6 +3,7 @@ import { setCors } from "../lib/http.js";
 import { readAdminSettings, writeAdminSettings, defaultAdminSettings, supabaseAdminConfig, supabaseAdminRequest } from "../lib/admin-data.js";
 import { logAdminEvent } from "../lib/admin-telemetry.js";
 import mammoth from "mammoth";
+import { COMMERCIAL_LAUNCH_AT, inCommercialPeriod, isCommercialOrder, isCommercialProject, filterCommercialRows } from "../lib/commercial-tracking.js";
 
 const DEFAULT_MARKETS = ["africa", "europe", "northAmerica", "international"];
 const DOCUMENT_TYPES = ["devoir", "rapport", "memoire", "article", "these"];
@@ -133,16 +134,16 @@ function aggregateRevenue(orders) {
     by_month: Object.values(months).sort((a, b) => a.month.localeCompare(b.month)).map(v => ({ ...v, gross: Number(v.gross.toFixed(2)), refunds: Number(v.refunds.toFixed(2)), net: Number(v.net.toFixed(2)) })),
   };
 }
-async function loadClients() {
+async function loadClients(includeHistory = false) {
   const [users, memberships] = await Promise.all([
     getAllAuthUsers(),
     getAllRows("/rest/v1/trimemo_client_projects?select=user_id,project_id"),
   ]);
   const counts = {};
   for (const row of memberships) counts[row.user_id] = (counts[row.user_id] || 0) + 1;
-  return users.map(user => formatUser(user, counts)).sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+  return users.map(user => formatUser(user, counts)).filter(user => includeHistory || inCommercialPeriod(user.created_at)).sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
 }
-async function loadProjects() {
+async function loadProjects(includeHistory = false) {
   const [memberships, states, users] = await Promise.all([
     getAllRows("/rest/v1/trimemo_client_projects?select=user_id,project_id,subject,payment_status,created_at,updated_at&order=updated_at.desc"),
     getAllRows("/rest/v1/trimemo_project_state?select=project_id,state,updated_at&order=updated_at.desc"),
@@ -173,10 +174,11 @@ async function loadProjects() {
       created_at: membership.created_at || null,
       updated_at: stats.updated_at,
     };
-  }).sort((a, b) => String(b.updated_at || b.created_at || "").localeCompare(String(a.updated_at || a.created_at || "")));
+  }).filter(p => includeHistory || isCommercialProject(p)).sort((a, b) => String(b.updated_at || b.created_at || "").localeCompare(String(a.updated_at || a.created_at || "")));
 }
-async function loadOrders() {
-  const orders = await getAllRows("/rest/v1/trimemo_orders?select=order_id,project_id,status,amount,currency,capture_id,created_at,paid_at,consumed_at,refund_status,refunded_at,refund_id,refund_amount,updated_at&order=created_at.desc");
+async function loadOrders(includeHistory = false) {
+  const allOrders = await getAllRows("/rest/v1/trimemo_orders?select=order_id,project_id,status,amount,currency,capture_id,created_at,paid_at,consumed_at,refund_status,refunded_at,refund_id,refund_amount,updated_at&order=created_at.desc");
+  const orders = includeHistory ? allOrders : allOrders.filter(isCommercialOrder);
   const memberships = await getAllRows("/rest/v1/trimemo_client_projects?select=project_id,subject,user_id");
   const states = await getAllRows("/rest/v1/trimemo_project_state?select=project_id,state");
   const users = await getAllAuthUsers();
@@ -202,8 +204,9 @@ async function loadOrders() {
   });
   return { orders: clean, revenue: aggregateRevenue(orders) };
 }
-async function loadUsage() {
-  const rows = await getAllRows("/rest/v1/trimemo_openai_usage?select=id,endpoint,model,input_tokens,output_tokens,total_tokens,estimated_cost_usd,status,duration_ms,request_id,error_code,metadata,created_at&order=created_at.desc", 1000, 5000);
+async function loadUsage(includeHistory = false) {
+  const fullRows = await getAllRows("/rest/v1/trimemo_openai_usage?select=id,endpoint,model,input_tokens,output_tokens,total_tokens,estimated_cost_usd,status,duration_ms,request_id,error_code,metadata,created_at&order=created_at.desc", 1000, 5000);
+  const rows = filterCommercialRows(fullRows, includeHistory);
   const counters = ["uncached_input_tokens","cache_creation_input_tokens","cache_read_input_tokens","web_search_requests"];
   const summary = rows.reduce((acc, row) => {
     if (row.metadata?.provider === "anthropic") acc.detailed_requests += 1;
@@ -442,6 +445,7 @@ export default async function handler(req, res) {
     }
     const owner = requireOwner(req);
     actor = safeStr(owner.sub || "owner", 254);
+    const includeHistory = req.body?.includeHistory === true;
     if (action === "revisions") {
       const rows=await supabaseAdminRequest("/rest/v1/trimemo_human_revisions?select=id,user_id,project_id,client_email,document_title,instructions,attachment_name,attachment_type,status,admin_notes,delivery_name,created_at,updated_at,completed_at&order=created_at.desc&limit=500");
       const revisions=rows.data||[];
@@ -481,36 +485,37 @@ export default async function handler(req, res) {
 
     if (action === "overview") {
       const [clients, projects, orderData, usageData, logs] = await Promise.all([
-        loadClients(), loadProjects(), loadOrders(), loadUsage(),
+        loadClients(includeHistory), loadProjects(includeHistory), loadOrders(includeHistory), loadUsage(includeHistory),
         getAllRows("/rest/v1/trimemo_admin_logs?select=id,actor,category,severity,action,message,request_path,status_code,request_id,metadata,created_at&order=created_at.desc", 300, 300),
       ]);
       const allOrders = orderData.orders;
+      const visibleLogs = filterCommercialRows(logs, includeHistory);
       return reply(res, 200, {
         ok: true,
-        summary: { clients: clients.length, projects: projects.length, orders: allOrders.length,
+        summary: { period: includeHistory ? "historique" : "commercial", commercialLaunchAt: COMMERCIAL_LAUNCH_AT, clients: clients.length, projects: projects.length, orders: allOrders.length,
           paidOrders: allOrders.filter(o => ["paid", "consumed"].includes(o.status)).length,
           pendingOrders: allOrders.filter(o => o.status === "pending").length,
           refundedOrders: allOrders.filter(o => o.status === "refunded" || o.refund_status === "refunded").length,
           activeProjects: projects.filter(p => p.progress_percent < 100).length,
-          revenue: orderData.revenue, usage: usageData.summary, errorLogs: logs.filter(l => ["error", "critical"].includes(l.severity)).length },
+          revenue: orderData.revenue, usage: usageData.summary, errorLogs: visibleLogs.filter(l => ["error", "critical"].includes(l.severity)).length },
         recentOrders: allOrders.slice(0, 8), recentProjects: projects.slice(0, 8),
-        recentLogs: logs.slice(0, 10), usageByEndpoint: usageData.by_endpoint,
+        recentLogs: visibleLogs.slice(0, 10), usageByEndpoint: usageData.by_endpoint,
       });
     }
-    if (action === "clients") return reply(res, 200, { ok: true, clients: await loadClients() });
-    if (action === "projects") return reply(res, 200, { ok: true, projects: await loadProjects() });
+    if (action === "clients") return reply(res, 200, { ok: true, clients: await loadClients(includeHistory), commercialLaunchAt: COMMERCIAL_LAUNCH_AT });
+    if (action === "projects") return reply(res, 200, { ok: true, projects: await loadProjects(includeHistory), commercialLaunchAt: COMMERCIAL_LAUNCH_AT });
     if (action === "orders") {
-      const data = await loadOrders();
-      return reply(res, 200, { ok: true, ...data });
+      const data = await loadOrders(includeHistory);
+      return reply(res, 200, { ok: true, ...data, commercialLaunchAt: COMMERCIAL_LAUNCH_AT });
     }
     if (action === "pricing") {
       const settings = await readAdminSettings({ strict: true });
       return reply(res, 200, { ok: true, settings });
     }
-    if (action === "usage") return reply(res, 200, { ok: true, ...(await loadUsage()) });
+    if (action === "usage") return reply(res, 200, { ok: true, ...(await loadUsage(includeHistory)), commercialLaunchAt: COMMERCIAL_LAUNCH_AT });
     if (action === "logs") {
       const logs = await getAllRows("/rest/v1/trimemo_admin_logs?select=id,actor,category,severity,action,message,request_path,status_code,request_id,metadata,created_at&order=created_at.desc", 1000, 3000);
-      return reply(res, 200, { ok: true, logs: logs.slice(0, 1000) });
+      return reply(res, 200, { ok: true, logs: filterCommercialRows(logs, includeHistory).slice(0, 1000), commercialLaunchAt: COMMERCIAL_LAUNCH_AT });
     }
     if (action === "save-settings") {
       const validated = validateSettings(req.body || {});
