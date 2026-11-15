@@ -1,4 +1,4 @@
-import { setCors, getFrontendOrigin } from "../lib/http.js";
+import { setCors, getAccountFrontendOrigin } from "../lib/http.js";
 import { createPremiumToken } from "../lib/premium-auth.js";
 import { getOrderRecord } from "../lib/order-ledger.js";
 
@@ -37,7 +37,7 @@ async function supabase(path, init = {}) {
   return data;
 }
 function confirmationReturnUrl(req,body={}) {
-  const origin = getFrontendOrigin(req);
+  const origin = getAccountFrontendOrigin(req);
   const callback = new URL("/", origin);
   callback.searchParams.set("account", "confirmed");
   if (body.startProject === true) callback.searchParams.set("start", "1");
@@ -236,13 +236,14 @@ export default async function handler(req, res) {
           email: confirmed.user.email || "",
           firstName: String(confirmed.user.user_metadata?.first_name || ""),
           lastName: String(confirmed.user.user_metadata?.last_name || ""),
+          signupIntent: ["ambassador", "project"].includes(confirmed.user.user_metadata?.onboarding_intent) ? confirmed.user.user_metadata.onboarding_intent : "",
         },
       });
     }
     if (action === "confirm-session") {
       const user = await authenticate(String(body.token || "").trim());
       if (!user.email_confirmed_at) return fail(res, 403, "Confirmez votre adresse e-mail avant de continuer.");
-      return res.status(200).json({ success: true, user: { id: user.id, email: user.email || "", firstName: String(user.user_metadata?.first_name || ""), lastName: String(user.user_metadata?.last_name || "") } });
+      return res.status(200).json({ success: true, user: { id: user.id, email: user.email || "", firstName: String(user.user_metadata?.first_name || ""), lastName: String(user.user_metadata?.last_name || ""), signupIntent: ["ambassador", "project"].includes(user.user_metadata?.onboarding_intent) ? user.user_metadata.onboarding_intent : "" } });
     }
     if (action === "resend-confirmation") {
       const email = validEmail(body.email);
@@ -270,7 +271,7 @@ export default async function handler(req, res) {
         const created = await fetch(url + "/auth/v1/signup?redirect_to=" + encodeURIComponent(redirectTo), {
           method: "POST",
           headers: { apikey: key, Authorization: "Bearer " + key, "Content-Type": "application/json" },
-          body: JSON.stringify({ email, password, data: { product: "Trimémo", first_name: firstName, last_name: lastName, full_name: (firstName + " " + lastName).trim() } }),
+          body: JSON.stringify({ email, password, data: { product: "Trimémo", first_name: firstName, last_name: lastName, full_name: (firstName + " " + lastName).trim(), onboarding_intent: body.ambassador === true ? "ambassador" : body.startProject === true ? "project" : "dashboard" } }),
           signal: AbortSignal.timeout(10000),
         });
         const result = await created.json().catch(() => ({}));
@@ -299,7 +300,7 @@ export default async function handler(req, res) {
       const email = validEmail(body.email);
       if (!email) return fail(res, 400, "Saisissez une adresse e-mail valide.");
       const { url, key } = config();
-      const frontendUrl = getFrontendOrigin(req);
+      const frontendUrl = getAccountFrontendOrigin(req);
       const redirectTo = frontendUrl + "/?reset-password=1";
       try {
         await fetch(url + "/auth/v1/recover?redirect_to=" + encodeURIComponent(redirectTo), {
