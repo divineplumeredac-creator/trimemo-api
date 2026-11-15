@@ -207,6 +207,7 @@ import { createPremiumToken, paymentBinding, projectFingerprint } from "../lib/p
 import { verifyPricingQuote } from "../lib/pricing.js";
 import { assertOrderLedgerReady, recordPendingOrder, recordPaidOrder, getOrderRecord } from "../lib/order-ledger.js";
 import { hydrateProjectFiles } from "../lib/project-file-store.js";
+import { notifyOwnerPayment } from "../lib/owner-payment-alert.js";
 import { logAdminEvent } from "../lib/admin-telemetry.js";
 import { requireClientProject } from "../lib/client-project-auth.js";
 
@@ -331,6 +332,7 @@ export default async function handler(req, res) {
 
       // Le paiement doit être inscrit durablement avant de délivrer un droit premium.
       await recordPaidOrder({ orderId: order.id, project: { ...project, formula }, amount: paidPrice, currency: expectedCurrency, captureId: capture.id });
+      await notifyOwnerPayment(order.id, "paypal");
       // 3) Le jeton est émis pour le projet réellement payé.
       return res.status(200).json({
         status: "PAID",
