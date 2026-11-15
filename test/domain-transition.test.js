@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { getAllowedOrigin, getFrontendOrigin } from '../lib/http.js';
+import { getAllowedOrigin, getFrontendOrigin, getAccountFrontendOrigin } from '../lib/http.js';
 import account from '../api/client-account.js';
 import academic from '../api/academic.js';
 import { calculateQuote, signPricingQuote } from '../lib/pricing.js';
@@ -67,4 +67,19 @@ test('création PayPal simulée : les retours restent sur le domaine de la sessi
    assert.equal(orderPayload.payment_source.paypal.experience_context.cancel_url,expected+'/?payment=paypal_cancelled');
   }
  } finally {globalThis.fetch=original;}
+});
+
+test('les confirmations de production utilisent le domaine public, même depuis l’ancien alias',()=>{
+  const previous=process.env.VERCEL_ENV;
+  process.env.VERCEL_ENV='production';
+  try {
+    for(const origin of [old,current,'https://evil.invalid']) {
+      assert.equal(getAccountFrontendOrigin(req(origin)),current);
+    }
+    // Les retours de paiement restent indépendants de ce routage d'e-mail.
+    assert.equal(getFrontendOrigin(req(old)),old);
+  } finally {
+    if(previous===undefined) delete process.env.VERCEL_ENV;
+    else process.env.VERCEL_ENV=previous;
+  }
 });
