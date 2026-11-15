@@ -8,6 +8,7 @@ import { previewLedgerMock } from './preview-ledger-mock.js';
 process.env.NODE_ENV = 'test';
 process.env.TRIMEMO_CLAUDE_API_KEY = 'synthetic';
 process.env.TRIMEMO_OWNER_AUTH_SECRET = 'synthetic-secret';
+process.env.TRIMEMO_PRICING_SECRET = 'synthetic-test-pricing-secret';
 process.env.TRIMEMO_OWNER_EMAIL = 'owner@example.invalid';
 process.env.SUPABASE_URL = 'https://database.invalid';
 process.env.SUPABASE_SERVICE_ROLE_KEY = 'synthetic';

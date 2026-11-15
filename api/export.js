@@ -25,6 +25,7 @@ import { buildBibliography } from '../lib/build-bibliography.js';
 import { requirePremiumOrOwner } from '../lib/premium-auth.js';
 import { assertOrderUsable, claimOrderExportAttempt, consumeOrderAfterExport } from '../lib/order-ledger.js';
 import { enforceAcademicStyle } from '../lib/style-control.js';
+import JSZip from "jszip";
 import { rateLimit } from '../lib/rate-limit.js';
 import { logAdminEvent } from '../lib/admin-telemetry.js';
 import { assertClientProjectActive } from '../lib/admin-data.js';
@@ -690,7 +691,20 @@ export default async function handler(req, res) {
       }],
     });
 
-    const buffer = await Packer.toBuffer(doc);
+    const packed = await Packer.toBuffer(doc);
+    // docx v8 ignores settings.updateFields: ensure Word refreshes TOC/page fields on opening.
+    // Keep all existing package entries intact; do not touch document text or footnotes.
+    const archive = await JSZip.loadAsync(packed);
+    const settingsPart = archive.file('word/settings.xml');
+    let modified = false;
+    if (settingsPart) {
+      const xml = await settingsPart.async('string');
+      if (!/<w:updateFields\b/u.test(xml) && xml.includes('</w:settings>')) {
+        archive.file('word/settings.xml', xml.replace('</w:settings>', '<w:updateFields w:val="true"/></w:settings>'));
+        modified = true;
+      }
+    }
+    const buffer = modified ? await archive.generateAsync({type:'nodebuffer',compression:'DEFLATE'}) : packed;
     // Une tentative payante n'est comptée qu'une fois le fichier Word
     // réellement assemblé et les contrôles académiques terminés.
       if (access.mode === 'premium') {
