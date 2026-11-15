@@ -573,34 +573,46 @@ export default async function handler(req, res) {
       throw error;
     }
 
-    // Le contrôle stylistique améliore le document, mais ne doit jamais empêcher
-    // l'export d'un travail déjà rédigé lorsque le fournisseur IA est indisponible
-    // ou renvoie une réponse incomplète. Le contenu original reste alors intact.
-    try {
-      const styleResult = await enforceAcademicStyle({
-        blocks: compiled.blocks,
-        planIntro: compiled.plan?.introductionGeneral || compiled.plan?.introduction || {},
-        planConclusion: compiled.plan?.conclusionGeneral || compiled.plan?.conclusion || {}
-      }, {
-        apiKey: process.env.TRIMEMO_CLAUDE_API_KEY,
-        timeoutMs: 60000,
-        batchSize: 1
-      });
-      compiled.blocks = styleResult.value.blocks;
-      if (compiled.plan?.introductionGeneral) compiled.plan.introductionGeneral = styleResult.value.planIntro;
-      else if (compiled.plan?.introduction) compiled.plan.introduction = styleResult.value.planIntro;
-      if (compiled.plan?.conclusionGeneral) compiled.plan.conclusionGeneral = styleResult.value.planConclusion;
-      else if (compiled.plan?.conclusion) compiled.plan.conclusion = styleResult.value.planConclusion;
-      res.setHeader('X-Trimemo-Style-Control', styleResult.unresolvedIssues?.length ? 'partial' : 'passed');
-      res.setHeader('X-Trimemo-Style-Corrected-Fields', String(styleResult.correctedFields));
-    } catch (styleError) {
-      console.error('TRIMEMO_EXPORT_STYLE_WARNING', {
-        name: String(styleError?.name || 'Error'),
-        code: String(styleError?.code || 'STYLE_CONTROL_FAILED'),
-        message: String(styleError?.message || 'Contrôle stylistique indisponible').slice(0, 500)
-      });
-      res.setHeader('X-Trimemo-Style-Control', 'skipped');
-      res.setHeader('X-Trimemo-Style-Warning', 'Le document a été exporté sans correction stylistique automatique.');
+    // Les blocs déjà relus pendant la rédaction ne sont pas réécrits à chaque export.
+    // Cela préserve le texte validé et évite une nouvelle facturation Claude.
+    const reviewedBlocks = compiled.blocks.length > 0 && compiled.blocks.every(block =>
+      block?.styleControl?.status === 'passed' || block?.styleControl?.status === 'warning'
+    );
+    if (reviewedBlocks) {
+      const hasWarnings = compiled.blocks.some(block => block.styleControl?.status === 'warning');
+      res.setHeader('X-Trimemo-Style-Control', hasWarnings ? 'skipped' : 'passed');
+      res.setHeader('X-Trimemo-Style-Corrected-Fields', '0');
+      if (hasWarnings) res.setHeader('X-Trimemo-Style-Warning', 'Certains blocs nécessitent une relecture stylistique humaine.');
+    } else {
+      // Le contrôle stylistique améliore le document, mais ne doit jamais empêcher
+      // l'export d'un travail déjà rédigé lorsque le fournisseur IA est indisponible
+      // ou renvoie une réponse incomplète. Le contenu original reste alors intact.
+      try {
+        const styleResult = await enforceAcademicStyle({
+          blocks: compiled.blocks,
+          planIntro: compiled.plan?.introductionGeneral || compiled.plan?.introduction || {},
+          planConclusion: compiled.plan?.conclusionGeneral || compiled.plan?.conclusion || {}
+        }, {
+          apiKey: process.env.TRIMEMO_CLAUDE_API_KEY,
+          timeoutMs: 60000,
+          batchSize: 1
+        });
+        compiled.blocks = styleResult.value.blocks;
+        if (compiled.plan?.introductionGeneral) compiled.plan.introductionGeneral = styleResult.value.planIntro;
+        else if (compiled.plan?.introduction) compiled.plan.introduction = styleResult.value.planIntro;
+        if (compiled.plan?.conclusionGeneral) compiled.plan.conclusionGeneral = styleResult.value.planConclusion;
+        else if (compiled.plan?.conclusion) compiled.plan.conclusion = styleResult.value.planConclusion;
+        res.setHeader('X-Trimemo-Style-Control', styleResult.unresolvedIssues?.length ? 'partial' : 'passed');
+        res.setHeader('X-Trimemo-Style-Corrected-Fields', String(styleResult.correctedFields));
+      } catch (styleError) {
+        console.error('TRIMEMO_EXPORT_STYLE_WARNING', {
+          name: String(styleError?.name || 'Error'),
+          code: String(styleError?.code || 'STYLE_CONTROL_FAILED'),
+          message: String(styleError?.message || 'Contrôle stylistique indisponible').slice(0, 500)
+        });
+        res.setHeader('X-Trimemo-Style-Control', 'skipped');
+        res.setHeader('X-Trimemo-Style-Warning', 'Le document a été exporté sans correction stylistique automatique.');
+      }
     }
     // Les corrections stylistiques peuvent agir sur le texte : reconstruire la
     // bibliographie après cette étape, puis bloquer tout export incomplet.

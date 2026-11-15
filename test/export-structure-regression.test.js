@@ -10,3 +10,17 @@ const request={method:'POST',headers:{authorization:'Bearer '+createOwnerToken('
 test('export récupère les parties, les sauts de page et les notes sans modifier le texte',async()=>{const result=response();await handler(request,result);assert.equal(result.code,200,JSON.stringify(result.body));const zip=await JSZip.loadAsync(result.body);const xml=await zip.file('word/document.xml').async('string');const notes=await zip.file('word/footnotes.xml').async('string'); const settings=await zip.file('word/settings.xml').async('string'); assert.match(settings,/updateFields/);for(const x of ['PARTIE I : Fondements','PARTIE II : Applications','CHAPITRE 1 : Concepts','CHAPITRE 2 : Exemples','Texte chapitre premier.','Texte chapitre second.','INTRODUCTION'])if(x==='INTRODUCTION')assert.match(xml,/Introduction générale/);else assert.ok(xml.includes(x),x);for(const x of ['Introduction générale','PARTIE I : Fondements','PARTIE II : Applications','Conclusion générale','Bibliographie']){const para=xml.split('</w:p>').find(p=>p.includes(x));assert.ok(para?.includes('<w:pageBreakBefore'),x)}assert.match(notes,/Note de test documentée/);assert.match(xml,/footnoteReference/);assert.match(xml,/1-5/);await writeFile('/tmp/trimemo-export-structure.docx',result.body)});
 test('les citations APA restent dans le texte et la bibliographie, sans notes bibliographiques répétées',async()=>{const fixture=structuredClone(request);fixture.body.blocks[1].content='Un constat (UNICEF, 2020).';fixture.body.blocks[1].footnotes=[];fixture.body.blocks[1].sources=[{author:'UNICEF',year:'2020',title:'Cadre nutritionnel',verified:true,url:'https://example.org/doc'}];const result=response();await handler(fixture,result);assert.equal(result.code,200,JSON.stringify(result.body));const zip=await JSZip.loadAsync(result.body);const xml=await zip.file('word/document.xml').async('string');assert.match(xml,/UNICEF, 2020/);assert.match(xml,/Cadre nutritionnel/);assert.doesNotMatch(xml,/footnoteReference/);});
 test('un titre déjà présent reste unique et son texte est conservé',async()=>{const body=structuredClone(request.body);body.blocks[1].structure=['PARTIE I : Fondements','CHAPITRE 1 : Concepts'];body.blocks[1].content='PARTIE I : Fondements\n\nIntroduction de la partie.\n\nCHAPITRE 1 : Concepts\n\nTexte chapitre premier.';const result=response();await handler({...request,body},result);assert.equal(result.code,200);const z=await JSZip.loadAsync(result.body);const xml=await z.file('word/document.xml').async('string');assert.equal((xml.match(/PARTIE I\s*: Fondements/g)||[]).length,1);assert.equal((xml.match(/CHAPITRE 1\s*: Concepts/g)||[]).length,1);assert.ok(xml.includes('Introduction de la partie.'));assert.ok(xml.indexOf('Introduction de la partie.')<xml.search(/CHAPITRE 1\s*: Concepts/))});
+
+
+test('un document déjà contrôlé ne consomme pas de nouvel appel de style lors de l’export', async () => {
+  const body=structuredClone(request.body);
+  body.blocks=body.blocks.map(b=>({...b,styleControl:{status:'passed',correctedFields:0}}));
+  const result=response();
+  await handler({...request,body},result);
+  assert.equal(result.code,200);
+  assert.equal(result.headers['X-Trimemo-Style-Control'],'passed');
+  assert.equal(result.headers['X-Trimemo-Style-Corrected-Fields'],'0');
+  const zip=await JSZip.loadAsync(result.body);
+  const xml=await zip.file('word/document.xml').async('string');
+  assert.match(xml,/Texte chapitre premier/);
+});
