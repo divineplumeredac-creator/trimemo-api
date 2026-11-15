@@ -6,7 +6,7 @@ const JSON_OUTPUT_INSTRUCTION = `
 
 FORMAT DE SORTIE OBLIGATOIRE :
 Réponds UNIQUEMENT avec un objet JSON valide, sans texte avant ni après, sans balise markdown.
-Clés exactes : {"id": string, "title": string, "content": string, "wordCount": integer, "footnotes": [string], "sources": [{"author": string, "year": string, "title": string, "doi": string, "url": string}]}.
+Clés exactes : {"id": string, "title": string, "content": string, "wordCount": integer, "footnotes": [string], "sources": [{"author": string, "year": string, "title": string, "type": string, "journal": string, "volume": string, "issue": string, "pages": string, "articleNumber": string, "publisher": string, "institution": string, "doi": string, "url": string}]}.
 Utilise une chaîne vide pour tout champ sans valeur ; "sources" peut être une liste vide.`;import { TRIMEMO_MASTER_ACADEMIC_RULES } from "../lib/trimemo-academic-rules.js";
 import { enforceAcademicStyle } from "../lib/style-control.js";
 import { TRIMEMO_BLOCK_WRITING_CONTRACT, TRIMEMO_STRICT_STYLE_CONTRACT } from "../lib/strict-writing-contract.js";
@@ -248,7 +248,7 @@ INSTRUCTIONS SPÉCIFIQUES DU BLOC :
 12. N’introduis pas de nouvelle introduction, de nouvelle problématique ou de nouvelle annonce du plan si ces éléments ont déjà été traités.
 12 bis. Lorsque tu utilises une source, cite-la dans le texte avec une citation auteur-date correspondant à la référence retournée dans SOURCES, par exemple (Organisation internationale du Travail, 2022). N’utilise pas les seuls domaines tels que (ilo.org), (osha.gov) ou (cdc.gov) comme citations académiques finales.
 12 quater. N’insère jamais d’URL, de lien cliquable, de domaine web brut ni de lien OpenAI dans le corps académique. Les URL vérifiées doivent rester dans les métadonnées des sources ou dans la bibliographie, jamais remplacer une citation auteur-date.
-12 quinquies. Présente les sources dans SOURCES avec auteur ou organisme, année, titre, publication et DOI/URL vérifié si disponible. Dans le corps du texte, utilise uniquement les citations auteur-date.
+12 quinquies. Présente les sources dans SOURCES avec les métadonnées APA 7 authentiques : auteurs, année, titre COMPLET, type (article, book, thesis, report, webpage), nom exact de revue (journal), volume, issue, pages ou articleNumber, publisher pour un livre/rapport, institution pour une thèse, DOI/URL vérifiable. Les champs inconnus restent vides : n'invente rien. Une notice tronquée comme un titre incomplet ne doit pas être présentée comme complète. Dans le corps du texte, cite uniquement auteur-date.
 12 sexies. Si une précision documentaire, méthodologique ou explicative justifie une note de bas de page, ajoute son texte dans le tableau footnotes. Ne crée pas de note artificielle et n'invente aucune référence. Laisse ce tableau vide lorsqu'aucune note n'est justifiée.
 12 ter. Chaque citation auteur-date du texte doit correspondre à une source retournée. N’invente jamais une correspondance bibliographique.
 13. Le découpage en blocs est subordonné à la cohérence scientifique, jamais à un quota mécanique de mots.
@@ -419,6 +419,9 @@ Le bloc doit suivre la cohérence scientifique du plan. Il peut contenir plusieu
 Une section ne doit pas être artificiellement découpée pour atteindre un nombre de mots prédéfini.
 Si une section est dense et scientifiquement cohérente, sa longueur peut s'adapter à son contenu.
 Si plusieurs sections consécutives forment une unité argumentative cohérente, elles peuvent être regroupées dans un même bloc.
+
+PROFONDEUR DE L'ANALYSE :
+Pour chaque idée scientifique déterminante, relie le constat à un mécanisme explicatif, aux preuves disponibles, à ses conditions d'application et à une limite pertinente. Lorsque les sources le permettent, compare deux approches sur leur définition, leur méthode ou leurs conclusions. Distingue les notions voisines et les résultats établis des interprétations personnelles. Préfère ce travail critique aux phrases de remplissage, à la paraphrase et à l'empilement d'auteurs. Dans une introduction ou conclusion brève, applique ces exigences avec proportion.
 
 OBJECTIF DE LONGUEUR :
 Environ ${safeWordTarget} mots.
