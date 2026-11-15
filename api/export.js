@@ -590,7 +590,7 @@ export default async function handler(req, res) {
       else if (compiled.plan?.introduction) compiled.plan.introduction = styleResult.value.planIntro;
       if (compiled.plan?.conclusionGeneral) compiled.plan.conclusionGeneral = styleResult.value.planConclusion;
       else if (compiled.plan?.conclusion) compiled.plan.conclusion = styleResult.value.planConclusion;
-      res.setHeader('X-Trimemo-Style-Control', 'passed');
+      res.setHeader('X-Trimemo-Style-Control', styleResult.unresolvedIssues?.length ? 'partial' : 'passed');
       res.setHeader('X-Trimemo-Style-Corrected-Fields', String(styleResult.correctedFields));
     } catch (styleError) {
       console.error('TRIMEMO_EXPORT_STYLE_WARNING', {

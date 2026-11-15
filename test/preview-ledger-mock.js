@@ -3,6 +3,7 @@ export function previewLedgerMock() {
   const rows = new Map();
   return async (input, options = {}) => {
     const url = new URL(String(input));
+    if (url.pathname.endsWith('/rpc/trimemo_claim_preview_project')) return Response.json(true);
     if (!url.pathname.endsWith('/trimemo_preview_ledger')) return null;
     const method = options.method || 'GET';
     if (method === 'POST') {

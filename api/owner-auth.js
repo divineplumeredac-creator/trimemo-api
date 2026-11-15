@@ -5,7 +5,7 @@ import {
   verifyOwnerToken,
   TTL_SECONDS,
 } from "../lib/owner-auth.js";
-import { rateLimit } from "../lib/rate-limit.js";
+import { rateLimit, rateLimitByKey } from "../lib/rate-limit.js";
 import { setCors } from "../lib/http.js";
 
 function applyCors(res, req) { setCors(res, req, "POST, OPTIONS"); }
@@ -35,8 +35,9 @@ export default async function handler(req, res) {
   if (action === "login") {
     try {
       await rateLimit(req, "owner-login", 8, 15 * 60 * 1000);
+      await rateLimitByKey("owner-login-global", 100, 15 * 60 * 1000);
     } catch (error) {
-      return json(res, 429, { ok: false, error: "TOO_MANY_ATTEMPTS", message: error.message }, req);
+      return json(res, error.status === 503 ? 503 : 429, { ok: false, error: error.status === 503 ? "RATE_LIMIT_UNAVAILABLE" : "TOO_MANY_ATTEMPTS", message: error.status === 503 ? "Authentification temporairement indisponible." : error.message }, req);
     }
     if (!checkOwnerCredentials(email, password)) {
       return json(res, 401, { ok: false, error: "INVALID_CREDENTIALS", message: "Identifiants invalides." }, req);

@@ -523,7 +523,7 @@ Utilise des références vérifiables si elles sont nécessaires.
       const styleResult = await enforceAcademicStyle({ title: correctedTitle, content: correctedContent }, { apiKey, timeoutMs: 25000, projectId: project.projectId || project.project_id });
       correctedContent = styleResult?.value?.content || correctedContent;
       correctedTitle = styleResult?.value?.title || correctedTitle;
-      styleControl = { status: "passed", correctedFields: styleResult?.correctedFields || 0, checkedFields: styleResult?.checkedFields || 0 };
+      styleControl = { status: styleResult?.unresolvedIssues?.length ? "warning" : "passed", correctedFields: styleResult?.correctedFields || 0, checkedFields: styleResult?.checkedFields || 0 };
     } catch (styleError) {
       console.error("BLOCK_STYLE_CONTROL_FAILED", { name: String(styleError?.name || "Error"), code: String(styleError?.code || "STYLE_CONTROL_FAILED") });
     }

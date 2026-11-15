@@ -370,7 +370,7 @@ export default async function handler(req, res) {
         const tier=String(body.revisionTier||"standard");
         const tierLabels={essential:"Correction essentielle",standard:"Révision standard",deep:"Révision approfondie"};
         const marketRates={west_africa:{currency:"FCFA",rates:{essential:750,standard:1500,deep:2500}},africa_other:{currency:"FCFA",rates:{essential:1000,standard:1800,deep:3000}},fr_be:{currency:"EUR",rates:{essential:2,standard:3.5,deep:6}},canada:{currency:"CAD",rates:{essential:3,standard:5,deep:8}}};
-        const countryCode=String(req.headers["x-vercel-ip-country"]||req.headers["cf-ipcountry"]||"").trim().toUpperCase();
+        const countryCode=String(req.headers["x-vercel-ip-country"]||"").trim().toUpperCase();
         const westAfricaCountries=new Set(["BJ","CI","SN","TG","BF","ML","NE","GN","GW","MR"]);
         const market=countryCode==="FR"||countryCode==="BE" ? "fr_be" : countryCode==="CA" ? "canada" : westAfricaCountries.has(countryCode) ? "west_africa" : ["CD","CG","GA","CM","TD","MG","RW","BI"].includes(countryCode) ? "africa_other" : "";
         if(!Object.prototype.hasOwnProperty.call(tierLabels,tier)) return reply(res,400,{ok:false,error:"Niveau de révision invalide."});
@@ -399,7 +399,7 @@ export default async function handler(req, res) {
         const tier=String(body.revisionTier||"standard");
         const tierLabels={essential:"Correction essentielle",standard:"Révision standard",deep:"Révision approfondie"};
         const marketRates={west_africa:{label:"Bénin et Afrique de l’Ouest francophone",currency:"FCFA",rates:{essential:750,standard:1500,deep:2500}},africa_other:{label:"Autres marchés africains francophones",currency:"FCFA",rates:{essential:1000,standard:1800,deep:3000}},fr_be:{label:"France et Belgique",currency:"EUR",rates:{essential:2,standard:3.5,deep:6}},canada:{label:"Canada francophone",currency:"CAD",rates:{essential:3,standard:5,deep:8}}};
-        const countryCode=String(req.headers["x-vercel-ip-country"]||req.headers["cf-ipcountry"]||"").trim().toUpperCase();
+        const countryCode=String(req.headers["x-vercel-ip-country"]||"").trim().toUpperCase();
         const westAfricaCountries=new Set(["BJ","CI","SN","TG","BF","ML","NE","GN","GW","MR"]);
         const market=countryCode==="FR"||countryCode==="BE" ? "fr_be" : countryCode==="CA" ? "canada" : westAfricaCountries.has(countryCode) ? "west_africa" : ["CD","CG","GA","CM","TD","MG","RW","BI"].includes(countryCode) ? "africa_other" : "";
         if(!Object.prototype.hasOwnProperty.call(tierLabels,tier)) return reply(res,400,{ok:false,error:"Niveau de révision invalide."});

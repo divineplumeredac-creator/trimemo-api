@@ -46,6 +46,9 @@ test('le coût sépare entrée, écritures de cache, relectures, sortie et reche
  assert.ok(Math.abs(estimateUsageCost('claude-sonnet-5-5',m).cost-0.02274)<1e-10);
  assert.equal(estimateUsageCost('unknown',m).cost,null);
  assert.equal(estimateUsageCost('claude-sonnet-5-5',{...m,cache_creation_unclassified_input_tokens:5}).cost,null);
+ const inferred=estimateUsageCost('claude-sonnet-5-5',{...m,cache_creation_unclassified_input_tokens:5,cache_ttl:'5m'});
+ assert.ok(inferred.cost>0.02274);
+ assert.match(inferred.source,/ttl_inferred/);
  const haiku=estimateUsageCost('claude-haiku-5-5',{...m,input_tokens:100001,web_search_requests:0});
  assert.equal(haiku.source,'anthropic_2026-11-12');
  assert.ok(haiku.cost>0);
