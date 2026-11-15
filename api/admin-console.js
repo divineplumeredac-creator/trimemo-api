@@ -1,11 +1,18 @@
 import { requireOwner } from "../lib/owner-auth.js";
 import { setCors } from "../lib/http.js";
-import { readAdminSettings, writeAdminSettings, supabaseAdminConfig, supabaseAdminRequest } from "../lib/admin-data.js";
+import { readAdminSettings, writeAdminSettings, defaultAdminSettings, supabaseAdminConfig, supabaseAdminRequest } from "../lib/admin-data.js";
 import { logAdminEvent } from "../lib/admin-telemetry.js";
 import mammoth from "mammoth";
 
 const DEFAULT_MARKETS = ["africa", "europe", "northAmerica", "international"];
 const DOCUMENT_TYPES = ["devoir", "rapport", "memoire", "article", "these"];
+// Human revision has a distinct tariff grid, but only one source of truth.
+const REVISION_MARKETS = Object.freeze({
+  west_africa:{label:"Bénin et Afrique de l’Ouest francophone",currency:"FCFA",rates:{essential:750,standard:1500,deep:2500}},
+  africa_other:{label:"Autres marchés africains francophones",currency:"FCFA",rates:{essential:1000,standard:1800,deep:3000}},
+  fr_be:{label:"France et Belgique",currency:"EUR",rates:{essential:2,standard:3.5,deep:6}},
+  canada:{label:"Canada francophone",currency:"CAD",rates:{essential:3,standard:5,deep:8}}
+});
 
 function reply(res, status, payload) { return res.status(status).json(payload); }
 function errorStatus(error) { return Number(error?.status) || 500; }
@@ -228,16 +235,7 @@ async function loadUsage() {
   return { summary, by_endpoint: Object.values(summary.by_endpoint).map(v => ({ ...v, estimated_cost_usd: Number(v.estimated_cost_usd.toFixed(6)) })), records: rows.slice(0, 300).map(row => ({ ...row, metadata: row.metadata || {} })) };
 }
 function validateSettings(body) {
-  const currentDefaults = {
-    markets: {
-      africa: { currency: "XOF", label: "Afrique francophone", rates: { devoir: 150, rapport: 200, memoire: 250, article: 300, these: 300 } },
-      europe: { currency: "EUR", label: "Europe", rates: { devoir: 0.4, rapport: 0.6, memoire: 0.8, article: 1, these: 1.3 } },
-      northAmerica: { currency: "USD", label: "Canada / États-Unis", rates: { devoir: 0.5, rapport: 0.75, memoire: 1, article: 1.25, these: 1.6 } },
-      international: { currency: "USD", label: "Marché international", rates: { devoir: 0.5, rapport: 0.75, memoire: 1, article: 1.25, these: 1.6 } },
-    },
-    levelCoefficients: { licence: 1, master: 1.15, doctorat: 1.4 },
-    complexityCoefficients: { faible: 0.9, moyenne: 1, elevee: 1.2 },
-  };
+  const currentDefaults = defaultAdminSettings().pricing_config;
   const supplied = body.pricing_config || {};
   const config = { markets: {}, levelCoefficients: {}, complexityCoefficients: {} };
   for (const market of DEFAULT_MARKETS) {
@@ -369,7 +367,7 @@ export default async function handler(req, res) {
         const file=body.file||{}, name=safeStr(file.name,180), base64=String(file.base64||"");
         const tier=String(body.revisionTier||"standard");
         const tierLabels={essential:"Correction essentielle",standard:"Révision standard",deep:"Révision approfondie"};
-        const marketRates={west_africa:{currency:"FCFA",rates:{essential:750,standard:1500,deep:2500}},africa_other:{currency:"FCFA",rates:{essential:1000,standard:1800,deep:3000}},fr_be:{currency:"EUR",rates:{essential:2,standard:3.5,deep:6}},canada:{currency:"CAD",rates:{essential:3,standard:5,deep:8}}};
+        const marketRates=REVISION_MARKETS;
         const countryCode=String(req.headers["x-vercel-ip-country"]||"").trim().toUpperCase();
         const westAfricaCountries=new Set(["BJ","CI","SN","TG","BF","ML","NE","GN","GW","MR"]);
         const market=countryCode==="FR"||countryCode==="BE" ? "fr_be" : countryCode==="CA" ? "canada" : westAfricaCountries.has(countryCode) ? "west_africa" : ["CD","CG","GA","CM","TD","MG","RW","BI"].includes(countryCode) ? "africa_other" : "";
@@ -398,7 +396,7 @@ export default async function handler(req, res) {
         const rawInstructions=safeStr(body.instructions,8000), file=body.file||{}, name=safeStr(file.name,180), base64=String(file.base64||"");
         const tier=String(body.revisionTier||"standard");
         const tierLabels={essential:"Correction essentielle",standard:"Révision standard",deep:"Révision approfondie"};
-        const marketRates={west_africa:{label:"Bénin et Afrique de l’Ouest francophone",currency:"FCFA",rates:{essential:750,standard:1500,deep:2500}},africa_other:{label:"Autres marchés africains francophones",currency:"FCFA",rates:{essential:1000,standard:1800,deep:3000}},fr_be:{label:"France et Belgique",currency:"EUR",rates:{essential:2,standard:3.5,deep:6}},canada:{label:"Canada francophone",currency:"CAD",rates:{essential:3,standard:5,deep:8}}};
+        const marketRates=REVISION_MARKETS;
         const countryCode=String(req.headers["x-vercel-ip-country"]||"").trim().toUpperCase();
         const westAfricaCountries=new Set(["BJ","CI","SN","TG","BF","ML","NE","GN","GW","MR"]);
         const market=countryCode==="FR"||countryCode==="BE" ? "fr_be" : countryCode==="CA" ? "canada" : westAfricaCountries.has(countryCode) ? "west_africa" : ["CD","CG","GA","CM","TD","MG","RW","BI"].includes(countryCode) ? "africa_other" : "";
