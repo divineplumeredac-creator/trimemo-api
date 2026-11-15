@@ -9,6 +9,7 @@ import { liveRepository } from '../lib/fedapay-live-repository.js';
 import { createLivePaymentFlow } from '../lib/fedapay-live-flow.js';
 import { rateLimit } from '../lib/rate-limit.js';
 import { hydrateProjectFiles } from '../lib/project-file-store.js';
+import { notifyOwnerPayment } from '../lib/owner-payment-alert.js';
 
 export default async function handler(req,res) {
   setCors(res,req,'POST, OPTIONS');
@@ -47,6 +48,7 @@ export default async function handler(req,res) {
       const result=await flow.verify({userId:String(user.id),providerId});
       if(result.status==='CANCELLED') return res.status(200).json({status:'CANCELLED',message:'Paiement annulé ou refusé. Aucun accès payant n’a été activé. Vous pouvez réessayer depuis votre projet.'});
       if(result.status!=='PAID') return res.status(202).json({status:'PENDING',error:'Paiement en cours de confirmation.'});
+      await notifyOwnerPayment(result.order_id, 'fedapay');
       return res.status(200).json({...result,premium_token:createPremiumToken(result.project,result.order_id),preview:result.project?.paidPreviewSnapshot||null});
     }
     return res.status(404).json({error:'Action inconnue.'});
