@@ -29,3 +29,32 @@ test('le renvoi conserve la destination du projet sans créer de session',async(
  try {const res=result();await handler({method:'POST',headers:{},body:{action:'resend-confirmation',email:'test@example.invalid',startProject:true}},res);assert.equal(res.code,200);assert.equal(sent.url.pathname,'/auth/v1/resend');assert.equal(sent.body.type,'signup');assert.equal(new URL(sent.url.searchParams.get('redirect_to')).searchParams.get('start'),'1');assert.equal(res.body.token,undefined);}
  finally {globalThis.fetch=old}
 });
+
+test('candidature ambassadeur : origine canonique et intention conservée sur le compte',async()=>{
+ const original=globalThis.fetch, previous=process.env.VERCEL_ENV;
+ process.env.VERCEL_ENV='production';
+ let request;
+ globalThis.fetch=async(input,init)=>{request={url:new URL(String(input)),body:JSON.parse(init.body)};return json({id:'candidate'});};
+ try {
+   const res=result();
+   await handler({method:'POST',headers:{origin:'https://trimemo-frontend.vercel.app'},body:{action:'signup',email:'candidate@example.invalid',password:'abcdefgh',firstName:'Test',lastName:'Ambassadeur',ambassador:true}},res);
+   assert.equal(res.code,200);
+   assert.equal(new URL(request.url.searchParams.get('redirect_to')).origin,'https://trimemo-redac.company');
+   assert.equal(new URL(request.url.searchParams.get('redirect_to')).searchParams.get('next'),'ambassadors');
+   assert.equal(request.body.data.onboarding_intent,'ambassador');
+ } finally {
+   globalThis.fetch=original;
+   if(previous===undefined)delete process.env.VERCEL_ENV;
+   else process.env.VERCEL_ENV=previous;
+ }
+});
+test('confirmation ambassadeur : le serveur renvoie la destination même sans next dans l’URL',async()=>{
+ const original=globalThis.fetch;
+ globalThis.fetch=async()=>json({id:'candidate',email:'candidate@example.invalid',email_confirmed_at:'2026-11-15T00:00:00Z',user_metadata:{first_name:'Test',last_name:'Ambassadeur',onboarding_intent:'ambassador'}});
+ try {
+   const res=result();
+   await handler({method:'POST',headers:{},body:{action:'confirm-session',token:'synthetic'}},res);
+   assert.equal(res.code,200);
+   assert.equal(res.body.user.signupIntent,'ambassador');
+ } finally { globalThis.fetch=original; }
+});
