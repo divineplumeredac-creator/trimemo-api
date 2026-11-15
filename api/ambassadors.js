@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { setCors } from '../lib/http.js';
 import { rateLimit } from '../lib/rate-limit.js';
 import { requireOwner } from '../lib/owner-auth.js';
+import { notifyAmbassadorDecision } from '../lib/ambassador-notification.js';
 
 const fail=(status,message)=>Object.assign(new Error(message),{status});
 const trim=(value,max=200)=>String(value??'').trim().slice(0,max);
@@ -62,17 +63,32 @@ async function adminAction(action,body,req){
   return {ok:true,limit:ACTIVE_LIMIT,rate:10,ambassadors,referrals,commissions};
  }
  if(action==='admin-decision'){
-  const id=trim(body.id,80), status=trim(body.status,20);
+  const id=trim(body.id,80),status=trim(body.status,20);
   if(!projectPattern.test(id)||!['active','rejected','suspended'].includes(status))throw fail(400,'Décision invalide.');
-  const rows=await db('trimemo_ambassadors?id=eq.'+encodeURIComponent(id)+'&select=id,status&limit=1');
+  const rows=await db('trimemo_ambassadors?id=eq.'+encodeURIComponent(id)+'&select='+selectAmbassador+'&limit=1');
   if(!Array.isArray(rows)||rows.length!==1)throw fail(404,'Candidature introuvable.');
-  if(rows[0].status===status)return {ok:true,ambassador:rows[0]};
-  if(rows[0].status==='rejected'&&status==='suspended')throw fail(400,'Décision incompatible.');
-  const updated=await db('trimemo_ambassadors?id=eq.'+encodeURIComponent(id),{
+  const previous=rows[0];
+  if(previous.status===status)return {ok:true,ambassador:previous,changed:false,notification:{status:'unchanged',message:'Décision déjà enregistrée : aucun nouvel e-mail envoyé.'}};
+  if(previous.status==='rejected'&&status==='suspended')throw fail(400,'Décision incompatible.');
+  // Verrouillage optimiste : un double clic ne produit pas deux notifications.
+  const updated=await db('trimemo_ambassadors?id=eq.'+encodeURIComponent(id)+'&status=eq.'+encodeURIComponent(previous.status),{
    method:'PATCH',body:JSON.stringify({status})
   });
   if(!Array.isArray(updated)||updated.length!==1)throw fail(409,'Cette candidature a changé. Actualisez la liste.');
-  return {ok:true,ambassador:updated[0]};
+  const notification=['active','rejected'].includes(status)
+   ? await notifyAmbassadorDecision(updated[0])
+   : {status:'unchanged',message:'Statut mis à jour.'};
+  return {ok:true,ambassador:updated[0],changed:true,notification};
+ }
+ if(action==='admin-resend-notification'){
+  // Renvoi uniquement sur demande explicite de l’administrateur.
+  await rateLimit(req,'ambassador-resend',10,3600000);
+  const id=trim(body.id,80);
+  if(!projectPattern.test(id))throw fail(400,'Candidature invalide.');
+  const rows=await db('trimemo_ambassadors?id=eq.'+encodeURIComponent(id)+'&select='+selectAmbassador+'&limit=1');
+  if(!Array.isArray(rows)||rows.length!==1)throw fail(404,'Candidature introuvable.');
+  if(!['active','rejected'].includes(rows[0].status))throw fail(409,'Aucune décision à notifier.');
+  return {ok:true,ambassador:rows[0],changed:false,notification:await notifyAmbassadorDecision(rows[0])};
  }
  if(action==='admin-payout'){
   const orderId=trim(body.orderId,180), reference=trim(body.reference,120);
