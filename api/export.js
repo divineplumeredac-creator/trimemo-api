@@ -21,6 +21,7 @@ import compileDocument from '../lib/compile-document.js';
 import { resolveFormatting } from '../lib/academic-format.js';
 import { auditCitationReferences } from '../lib/citation-audit.js';
 import { buildBibliography } from '../lib/build-bibliography.js';
+import { sourceToApaParts } from '../lib/normalize-sources.js';
 
 import { requirePremiumOrOwner } from '../lib/premium-auth.js';
 import { assertOrderUsable, claimOrderExportAttempt, consumeOrderAfterExport } from '../lib/order-ledger.js';
@@ -406,12 +407,14 @@ function addBibliography(children, compiled, formatting) {
     addContent(children, 'Aucune référence bibliographique validée n’a été transmise.', formatting);
     return;
   }
-  for (const entry of entries) {
-    children.push(paragraph(entry, formatting, {
+  const sources = Array.isArray(compiled.bibliography?.sources) ? compiled.bibliography.sources : [];
+  for (const [index, entry] of entries.entries()) {
+    const segments = sources[index] ? sourceToApaParts(sources[index]) : [{ text: entry, italics: false }];
+    children.push(new Paragraph({
       alignment: AlignmentType.LEFT,
-      after: 180,
-      indent: 360,
-      hanging: 360,
+      indent: { left: 360, hanging: 360 },
+      spacing: { line: Math.round(formatting.lineSpacing * 240), after: 180 },
+      children: segments.map(segment => run(segment.text, formatting, { italics: segment.italics })),
     }));
   }
 }
