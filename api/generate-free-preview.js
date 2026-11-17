@@ -1,3 +1,4 @@
+import { trackProjectFailures } from "../lib/incident-recovery.js";
 import { verifyPricingQuote } from "../lib/pricing.js";
 import { setCors } from "../lib/http.js";
 import { getClaudeModel, claudeFetch } from "../lib/claude-client.js";
@@ -149,6 +150,7 @@ export default async function handler(req, res) {
     if (previewWordLimit < 1) throw fail("L’aperçu gratuit est désactivé par l’administrateur.", 403);
     let project = req.body?.project || req.body || {};
     const projectOwner = await requireOwnedProject(req, project);
+    trackProjectFailures(res, projectOwner, project, "apercu");
     const proportionalLimit = proportionalPreviewLimit(project.pages);
     if (!proportionalLimit) throw fail("Indiquez le nombre de pages du projet avant de générer l’aperçu.", 400);
     previewWordLimit = Math.min(previewWordLimit, proportionalLimit);

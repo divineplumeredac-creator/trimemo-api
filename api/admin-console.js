@@ -1,3 +1,4 @@
+import { notifyResolvedIncident } from "../lib/incident-recovery.js";
 import { requireOwner } from "../lib/owner-auth.js";
 import { setCors } from "../lib/http.js";
 import { readAdminSettings, writeAdminSettings, defaultAdminSettings, supabaseAdminConfig, supabaseAdminRequest } from "../lib/admin-data.js";
@@ -446,6 +447,17 @@ export default async function handler(req, res) {
     const owner = requireOwner(req);
     actor = safeStr(owner.sub || "owner", 254);
     const includeHistory = req.body?.includeHistory === true;
+    if (action === "incidents") {
+      const result = await supabaseAdminRequest("/rest/v1/trimemo_project_incidents?select=id,project_id,stage,status,created_at,updated_at,error_code&order=created_at.desc&limit=200");
+      const projects = await loadProjects(true);
+      const byId = new Map(projects.map(project => [String(project.project_id), project]));
+      const incidents = asArray(result.data).map(row => ({...row, subject: byId.get(String(row.project_id))?.subject || "Projet", email: byId.get(String(row.project_id))?.email || ""}));
+      return reply(res,200,{ok:true,incidents});
+    }
+    if (action === "incident-resolved") {
+      const result=await notifyResolvedIncident(safeStr(req.body?.id,80));
+      return reply(res,200,{ok:true,...result});
+    }
     if (action === "revisions") {
       const rows=await supabaseAdminRequest("/rest/v1/trimemo_human_revisions?select=id,user_id,project_id,client_email,document_title,instructions,attachment_name,attachment_type,status,admin_notes,delivery_name,created_at,updated_at,completed_at&order=created_at.desc&limit=500");
       const revisions=rows.data||[];

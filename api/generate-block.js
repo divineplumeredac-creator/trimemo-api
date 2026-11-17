@@ -1,3 +1,4 @@
+import { trackProjectFailures } from "../lib/incident-recovery.js";
 import { cachedWritingPrompt, needsWritingSearch, writingCacheTtl } from "../lib/writing-context.js";
 import { setCors } from "../lib/http.js";
 import { callClaude, getClaudeModel } from "../lib/claude-client.js";
@@ -97,7 +98,7 @@ export default async function handler(req, res) {
     let previewRemaining = null;
     let projectOwner = null;
     if (body.ownerMode === true) requireOwner(req);
-    else projectOwner = await requireOwnedProject(req, project);
+    else { projectOwner = await requireOwnedProject(req, project); trackProjectFailures(res, projectOwner, project, "redaction"); }
     if (body.ownerMode !== true && previewMode) {
       // Les pages et les pièces jointes doivent correspondre à l'analyse signée.
       // Une modification du corps HTTP ne doit pas augmenter le quota gratuit.

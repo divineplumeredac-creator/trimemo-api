@@ -1,3 +1,4 @@
+import { trackProjectFailures } from "../lib/incident-recovery.js";
 import { getClaudeModel, claudeFetch } from "../lib/claude-client.js";
 import { readAdminSettings } from "../lib/admin-data.js";
 import { logAdminEvent, recordOpenAIUsage } from "../lib/admin-telemetry.js";
@@ -46,7 +47,7 @@ export default async function handler(req, res) {
   if (!Number.isInteger(pages) || pages < 1 || pages > maxPages) return fail(res, 400, "Le volume doit être un nombre entier compris entre 1 et " + maxPages + " pages.");
   try {
     if (req.body?.ownerMode === true) requireOwner(req);
-    else await requireOwnedProject(req, project);
+    else { const user = await requireOwnedProject(req, project); trackProjectFailures(res, user, project, "estimation"); }
     await rateLimit(req, "project-estimate", 5, 60 * 60 * 1000);
     const hasFiles = Array.isArray(project.files) && project.files.length > 0;
     const bundleWrite = hasFiles ? await authorizeProjectBundleWrite(project, req) : null;

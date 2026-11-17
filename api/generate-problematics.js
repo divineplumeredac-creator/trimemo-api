@@ -1,3 +1,4 @@
+import { trackProjectFailures } from "../lib/incident-recovery.js";
 import { rateLimit, rateLimitByKey } from "../lib/rate-limit.js";
 import { hydrateProjectFiles } from "../lib/project-file-store.js";
 import { setCors } from "../lib/http.js";
@@ -490,7 +491,7 @@ export default async function handler(req, res) {
     const body = req.body || {};
     let project = body.project || body;
     if (body.ownerMode === true) requireOwner(req);
-    else await requireOwnedProject(req, project);
+    else { const user = await requireOwnedProject(req, project); trackProjectFailures(res, user, project, "problematique"); }
     if (String(project.projectId || project.project_id || "").trim()) {
       await rateLimitByKey("problematic-project-" + String(project.projectId || project.project_id).trim(), 30, 24 * 60 * 60 * 1000);
     }
