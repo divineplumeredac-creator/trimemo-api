@@ -1,3 +1,4 @@
+import { sendFollowup } from "../lib/followup-email.js";
 import { notifyResolvedIncident } from "../lib/incident-recovery.js";
 import { requireOwner } from "../lib/owner-auth.js";
 import { setCors } from "../lib/http.js";
@@ -176,6 +177,36 @@ async function loadProjects(includeHistory = false) {
       updated_at: stats.updated_at,
     };
   }).filter(p => includeHistory || isCommercialProject(p)).sort((a, b) => String(b.updated_at || b.created_at || "").localeCompare(String(a.updated_at || a.created_at || "")));
+}
+export function classifyFollowup({membership,state,orders,incidents,reminders,optouts,now=Date.now()}) {
+  if (!membership || !state || !membership.user_id || !membership.project_id || !inCommercialPeriod(membership.created_at)) return null;
+  const last=Math.max(Date.parse(membership.updated_at||'')||0,Date.parse(state.updated_at||'')||0);
+  if (!last || now-last < 48*60*60*1000) return null;
+  if (optouts.some(x=>x.user_id===membership.user_id)) return null;
+  if (incidents.some(x=>x.project_id===membership.project_id && ['open','sending','failed'].includes(x.status))) return null;
+  const ownOrders=orders.filter(x=>x.project_id===membership.project_id);
+  const active=ownOrders.filter(x=>['paid','consumed','refunded'].includes(x.status));
+  const live=active.filter(x=>isCommercialOrder(x) && x.status==='paid' && x.paid_at && (!x.refund_status || x.refund_status==='none'));
+  const blocks=Array.isArray(state.state?.blocks)?state.state.blocks:[];
+  const complete=blocks.length>0 && blocks.every(x=>x.status==='done' && String(x.content||'').trim());
+  let kind=null;
+  if (live.length && !complete) kind='paid_incomplete';
+  else if (!active.length && !['paid','consumed','refunded'].includes(String(membership.payment_status||'').toLowerCase())) kind='unpaid';
+  if (!kind || reminders.some(x=>x.project_id===membership.project_id && x.kind===kind)) return null;
+  return {project_id:membership.project_id,user_id:membership.user_id,subject:membership.subject||'Projet',kind,last_activity:new Date(last).toISOString()};
+}
+async function loadFollowups() {
+  const [memberships,states,orders,incidents,reminders,optouts,users]=await Promise.all([
+    getAllRows('/rest/v1/trimemo_client_projects?select=user_id,project_id,subject,payment_status,created_at,updated_at'),
+    getAllRows('/rest/v1/trimemo_project_state?select=project_id,state,updated_at'),
+    getAllRows('/rest/v1/trimemo_orders?select=order_id,project_id,status,paid_at,created_at,refund_status'),
+    getAllRows('/rest/v1/trimemo_project_incidents?select=project_id,status'),
+    getAllRows('/rest/v1/trimemo_followup_messages?select=project_id,kind,status'),
+    getAllRows('/rest/v1/trimemo_followup_optouts?select=user_id'),
+    getAllAuthUsers(),
+  ]);
+  const stateMap=new Map(states.map(x=>[String(x.project_id),x])); const userMap=new Map(users.map(x=>[String(x.id),x]));
+  return memberships.map(m=>classifyFollowup({membership:m,state:stateMap.get(String(m.project_id)),orders,incidents,reminders,optouts})).filter(Boolean).map(row=>{const u=userMap.get(String(row.user_id));return {...row,email:u?.email||'',eligible:!!(u?.email_confirmed_at&&u?.email&&u?.app_metadata?.trimemo_access!=='suspended')};}).filter(x=>x.eligible).sort((a,b)=>a.last_activity.localeCompare(b.last_activity));
 }
 async function loadOrders(includeHistory = false) {
   const allOrders = await getAllRows("/rest/v1/trimemo_orders?select=order_id,project_id,status,amount,currency,capture_id,created_at,paid_at,consumed_at,refund_status,refunded_at,refund_id,refund_amount,updated_at&order=created_at.desc");
@@ -447,6 +478,13 @@ export default async function handler(req, res) {
     const owner = requireOwner(req);
     actor = safeStr(owner.sub || "owner", 254);
     const includeHistory = req.body?.includeHistory === true;
+    if (action === "followups") return reply(res,200,{ok:true,followups:await loadFollowups()});
+    if (action === "send-followup") {
+      const id=safeStr(req.body?.projectId,80), kind=safeStr(req.body?.kind,30);
+      const rows=await loadFollowups();const row=rows.find(x=>x.project_id===id&&x.kind===kind);
+      if(!row)return reply(res,409,{ok:false,error:"Ce projet ne remplit plus les conditions pour ce rappel."});
+      return reply(res,200,{ok:true,...(await sendFollowup(row))});
+    }
     if (action === "incidents") {
       const result = await supabaseAdminRequest("/rest/v1/trimemo_project_incidents?select=id,project_id,stage,status,created_at,updated_at,error_code&order=created_at.desc&limit=200");
       const projects = await loadProjects(true);
