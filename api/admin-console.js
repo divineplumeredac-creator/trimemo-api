@@ -185,6 +185,7 @@ export function classifyFollowup({membership,state,orders,incidents,reminders,op
   if (optouts.some(x=>x.user_id===membership.user_id)) return null;
   if (incidents.some(x=>x.project_id===membership.project_id && ['open','sending','failed'].includes(x.status))) return null;
   const ownOrders=orders.filter(x=>x.project_id===membership.project_id);
+  if (ownOrders.some(x=>x.status==='pending')) return null;
   const active=ownOrders.filter(x=>['paid','consumed','refunded'].includes(x.status));
   const live=active.filter(x=>isCommercialOrder(x) && x.status==='paid' && x.paid_at && (!x.refund_status || x.refund_status==='none'));
   const blocks=Array.isArray(state.state?.blocks)?state.state.blocks:[];
