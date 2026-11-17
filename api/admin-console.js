@@ -194,7 +194,7 @@ export function classifyFollowup({membership,state,orders,incidents,reminders,op
   if (live.length && !complete) kind='paid_incomplete';
   else if (!active.length && !['paid','consumed','refunded'].includes(String(membership.payment_status||'').toLowerCase())) kind='unpaid';
   if (!kind || reminders.some(x=>x.project_id===membership.project_id && x.kind===kind)) return null;
-  return {project_id:membership.project_id,user_id:membership.user_id,subject:membership.subject||'Projet',kind,last_activity:new Date(last).toISOString()};
+  return {project_id:membership.project_id,user_id:membership.user_id,subject:membership.subject||'Projet',kind,payment_verification:kind==='paid_incomplete' && !live.some(x=>String(x.order_id||'').startsWith('fedapay-live:'))?'to_verify':'recorded',last_activity:new Date(last).toISOString()};
 }
 async function loadFollowups() {
   const [memberships,states,orders,incidents,reminders,optouts,users]=await Promise.all([
