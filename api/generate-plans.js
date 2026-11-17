@@ -1,3 +1,4 @@
+import { trackProjectFailures } from "../lib/incident-recovery.js";
 import { rateLimit, rateLimitByKey } from "../lib/rate-limit.js";
 import { hydrateProjectFiles } from "../lib/project-file-store.js";
 import { getClaudeModel, claudeFetch } from "../lib/claude-client.js";
@@ -255,7 +256,7 @@ export default async function handler(req,res){
     const b=req.body||{};
     let p=b.project||b.projet||b;
     if(b.ownerMode===true) requireOwner(req);
-    else await requireOwnedProject(req,p);
+    else { const user = await requireOwnedProject(req,p); trackProjectFailures(res, user, p, "plan"); }
     if (String(p.projectId || p.project_id || "").trim()) await rateLimitByKey("plan-project-" + String(p.projectId || p.project_id).trim(), 30, 24 * 60 * 60 * 1000);
     if (Array.isArray(p.files) && p.files.length) p = await hydrateProjectFiles(p);
     if(b.ownerMode!==true) {
