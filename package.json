@@ -5,10 +5,11 @@
   "description": "API universelle Trimemo - tous domaines - memoire, these, dissertation",
   "main": "api/index.js",
   "dependencies": {
+    "@napi-rs/canvas": "^1.1.1",
     "docx": "^8.5.0",
+    "jszip": "^3.10.1",
     "mammoth": "^1.10.0",
-    "pdf-parse": "^2.4.5",
-    "jszip": "^3.10.1"
+    "pdf-parse": "^2.4.5"
   },
   "engines": {
     "node": "24.x"
