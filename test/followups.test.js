@@ -10,6 +10,7 @@ test('sépare projets non payés et commandes réelles inachevées',()=>{
 });
 test('exclut les projets récents, incidents, désabonnements et rappels déjà envoyés',()=>{
  assert.equal(classifyFollowup({...base,now:Date.parse('2026-11-17T09:00:00Z')}),null);
+ assert.equal(classifyFollowup({...base,orders:[{project_id:id,status:'pending'}]}),null);
  assert.equal(classifyFollowup({...base,incidents:[{project_id:id,status:'open'}]}),null);
  assert.equal(classifyFollowup({...base,optouts:[{user_id:user}]}),null);
  assert.equal(classifyFollowup({...base,reminders:[{project_id:id,kind:'unpaid'}]}),null);
