@@ -1,3 +1,5 @@
+import { chooseRefundAmount, parseRefundAmount } from "../lib/paypal-refund-amount.js";
+import crypto from "node:crypto";
 import { sendFollowup } from "../lib/followup-email.js";
 import { notifyResolvedIncident } from "../lib/incident-recovery.js";
 import { requireOwner } from "../lib/owner-auth.js";
@@ -336,41 +338,58 @@ async function refreshRefund(order) {
   const data = await response.json().catch(() => ({}));
   if (!response.ok) { const e = new Error("Impossible de vérifier l'état du remboursement PayPal."); e.status = 502; throw e; }
   const status = String(data.status || "").toUpperCase();
-  if (status === "COMPLETED") return updateOrder(order.order_id, { status: "refunded", refund_status: "refunded", refunded_at: new Date().toISOString(), refund_amount: String(data?.amount?.value || order.amount) });
+  if (status === "COMPLETED") {
+    if (!order.refund_amount || (data?.amount?.currency_code && data.amount.currency_code !== String(order.currency).toUpperCase()) || (data?.amount?.value && parseRefundAmount(data.amount.value,order.currency) !== parseRefundAmount(order.refund_amount,order.currency))) { const e = new Error("Le montant ou la devise doit être vérifié dans PayPal."); e.status = 502; throw e; }
+    return updateOrder(order.order_id, { status: "refunded", refund_status: "refunded", refunded_at: new Date().toISOString(), refund_amount: order.refund_amount });
+  }
   if (status === "FAILED" || status === "CANCELLED") return updateOrder(order.order_id, { refund_status: "failed" });
   return order;
 }
-async function refundOrder(orderId, actor) {
+export async function refundOrder(orderId, actor, mode = "full", amount = "") {
   let order = await findOrder(orderId);
   if (!order) { const e = new Error("Commande introuvable."); e.status = 404; throw e; }
-  if (order.refund_status === "refunded" || order.status === "refunded") { const e = new Error("Cette commande a déjà été remboursée."); e.status = 409; throw e; }
+  if (/^(fedapay|sandbox:)/i.test(order.order_id)) { const e = new Error("Ce paiement ne relève pas de PayPal."); e.status = 409; throw e; }
+  if (order.refund_status === "refunded" || order.status === "refunded") { const e = new Error("Un remboursement a déjà été effectué pour cette commande."); e.status = 409; throw e; }
   if (order.refund_status === "processing") return refreshRefund(order);
   if (!["paid", "consumed"].includes(order.status)) { const e = new Error("Seules les commandes payées peuvent être remboursées."); e.status = 409; throw e; }
-  if (!order.capture_id) { const e = new Error("Aucun identifiant de capture PayPal n'est associé à cette commande. Remboursement automatique indisponible."); e.status = 409; throw e; }
+  if (!order.capture_id) { const e = new Error("La référence de capture PayPal est absente."); e.status = 409; throw e; }
+  let selected;
+  try { selected = chooseRefundAmount({mode, amount, currency:order.currency, total:order.amount}); }
+  catch (error) { error.status = 400; throw error; }
   const token = await getPaypalToken();
-  const response = await fetch(paypalBaseUrl() + "/v2/payments/captures/" + encodeURIComponent(order.capture_id) + "/refund", {
-    method: "POST",
-    headers: { Authorization: "Bearer " + token, "Content-Type": "application/json", Accept: "application/json", "PayPal-Request-Id": "trimemo-refund-" + String(order.order_id).replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 70) },
-    body: JSON.stringify({}),
-    signal: AbortSignal.timeout(15000),
+  // The conditional database claim prevents two administrators initiating refunds simultaneously.
+  const claim = await supabaseAdminRequest("/rest/v1/trimemo_orders?order_id=eq." + encodeURIComponent(order.order_id) + "&refund_status=in.(none,failed)&status=in.(paid,consumed)", {
+    method:"PATCH", headers:{Prefer:"return=representation"},
+    body:JSON.stringify({refund_status:"processing",refund_id:null,refund_amount:selected.amount,updated_at:new Date().toISOString()})
   });
+  if (!Array.isArray(claim.data) || claim.data.length !== 1) { const e = new Error("Un remboursement est déjà en cours ou la commande a changé."); e.status = 409; throw e; }
+  order = claim.data[0];
+  const requestId = "trimemo-refund-" + crypto.createHash("sha256").update(order.order_id + ":" + selected.amount + ":" + selected.currency).digest("hex").slice(0, 48);
+  let response;
+  try {
+    response = await fetch(paypalBaseUrl() + "/v2/payments/captures/" + encodeURIComponent(order.capture_id) + "/refund", {
+      method:"POST", headers:{Authorization:"Bearer " + token, "Content-Type":"application/json", Accept:"application/json", "PayPal-Request-Id":requestId},
+      body:JSON.stringify(mode === "partial" ? {amount:{value:selected.amount,currency_code:selected.currency}} : {}), signal:AbortSignal.timeout(15000),
+    });
+  } catch {
+    const e = new Error("La réponse de PayPal est inconnue. Vérifiez la transaction dans PayPal avant toute nouvelle tentative."); e.status = 502; throw e;
+  }
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    await updateOrder(order.order_id, { refund_status: "failed" }).catch(() => null);
-    await logAdminEvent({ actor, category: "payment", severity: "error", action: "refund_failed", message: "PayPal a rejeté le remboursement.", statusCode: response.status, metadata: { orderId: order.order_id, providerIssue: safeStr(data?.details?.[0]?.issue || data?.name || "", 100) } });
-    const e = new Error("PayPal a rejeté le remboursement. Consultez les journaux et vérifiez la commande avant une nouvelle tentative."); e.status = 502; throw e;
+    // A provider/server error can be ambiguous. Never release the lock automatically.
+    if (response.status >= 400 && response.status < 500 && ![408,409,429].includes(response.status)) await updateOrder(order.order_id, {refund_status:"failed"}).catch(()=>null);
+    await logAdminEvent({actor,category:"payment",severity:"error",action:"refund_failed",message:"Le remboursement PayPal n'a pas pu être confirmé.",statusCode:response.status,metadata:{orderId:order.order_id}});
+    const e = new Error("Le remboursement n’a pas pu être confirmé. Vérifiez la transaction dans PayPal."); e.status = 502; throw e;
   }
   const status = String(data.status || "").toUpperCase();
-  const payload = {
-    refund_id: data.id || null,
-    refund_status: status === "COMPLETED" ? "refunded" : "processing",
-    refund_amount: String(data?.amount?.value || order.amount),
-    refunded_at: status === "COMPLETED" ? new Date().toISOString() : null,
-    ...(status === "COMPLETED" ? { status: "refunded" } : {}),
-  };
-  const updated = await updateOrder(order.order_id, payload);
-  await logAdminEvent({ actor, category: "payment", severity: status === "COMPLETED" ? "warning" : "info", action: "refund_" + (status === "COMPLETED" ? "completed" : "processing"), message: status === "COMPLETED" ? "Remboursement PayPal confirmé." : "Remboursement PayPal lancé et en attente.", metadata: { orderId: order.order_id, refundId: data.id || null, currency: order.currency, amount: payload.refund_amount } });
-  return updated || { ...order, ...payload };
+  if (!data.id || !['COMPLETED','PENDING'].includes(status)) {
+    const e = new Error("L’état du remboursement est incertain. Vérifiez la transaction dans PayPal."); e.status = 502; throw e;
+  }
+  if (!data.amount?.value || data.amount.currency_code !== selected.currency || parseRefundAmount(data.amount.value,selected.currency) !== selected.minorUnits) { const e = new Error("Montant ou devise du remboursement non confirmé. Vérifiez PayPal."); e.status = 502; throw e; }
+  const payload = {refund_id:data.id,refund_status:status === "COMPLETED" ? "refunded" : "processing",refund_amount:selected.amount,refunded_at:status === "COMPLETED" ? new Date().toISOString() : null,...(status === "COMPLETED" ? {status:"refunded"} : {})};
+  const updated = await updateOrder(order.order_id,payload);
+  await logAdminEvent({actor,category:"payment",severity:"warning",action:status === "COMPLETED" ? "refund_completed" : "refund_processing",message:"Remboursement PayPal " + (status === "COMPLETED" ? "confirmé." : "en cours."),metadata:{orderId:order.order_id,refundId:data.id,currency:selected.currency,amount:selected.amount,mode}});
+  return updated || {...order,...payload};
 }
 
 export default async function handler(req, res) {
@@ -591,7 +610,7 @@ export default async function handler(req, res) {
     if (action === "refund-order") {
       const orderId = safeStr(req.body?.orderId, 160);
       if (!orderId) return reply(res, 400, { ok: false, error: "Référence de commande absente." });
-      const order = await refundOrder(orderId, actor);
+      const order = await refundOrder(orderId, actor, req.body?.refundMode || "full", req.body?.refundAmount || "");
       return reply(res, 200, { ok: true, order: { order_id: order?.order_id, status: order?.status, refund_status: order?.refund_status, refund_id: order?.refund_id, refund_amount: order?.refund_amount, refunded_at: order?.refunded_at } });
     }
     return reply(res, 400, { ok: false, error: "Action administrateur inconnue." });
