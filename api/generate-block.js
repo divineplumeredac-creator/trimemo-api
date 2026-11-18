@@ -1,3 +1,4 @@
+import { setWritingProgress } from "../lib/writing-progress.js";
 import { trackProjectFailures } from "../lib/incident-recovery.js";
 import { cachedWritingPrompt, needsWritingSearch, writingCacheTtl, deduplicateHistorySources } from "../lib/writing-context.js";
 import { setCors } from "../lib/http.js";
@@ -99,6 +100,9 @@ export default async function handler(req, res) {
     let projectOwner = null;
     if (body.ownerMode === true) requireOwner(req);
     else { projectOwner = await requireOwnedProject(req, project); trackProjectFailures(res, projectOwner, project, "redaction"); }
+    const progressProjectId = String(project.projectId || project.project_id || '');
+    const progressId = String(body.generationId || '');
+    await setWritingProgress(progressProjectId, progressId, 'preparation');
     if (body.ownerMode !== true && previewMode) {
       // Les pages et les pièces jointes doivent correspondre à l'analyse signée.
       // Une modification du corps HTTP ne doit pas augmenter le quota gratuit.
@@ -438,6 +442,8 @@ Ne crée aucune donnée empirique.
 Utilise des références vérifiables si elles sont nécessaires.
 `;
 
+    const useWritingSearch = needsWritingSearch({title:blockTitle,kind:blockKind,targetWords:safeWordTarget,preceding,instructions:[consignes,documentPrefix].join("\n")});
+    await setWritingProgress(progressProjectId, progressId, useWritingSearch ? 'writing_search' : 'writing');
     const requestStartedAt = Date.now();
     const response = await callClaude({
       apiKey,
@@ -445,7 +451,7 @@ Utilise des références vérifiables si elles sont nécessaires.
       user: cachedWritingPrompt(userPrompt, documentPrefix, writingCacheTtl(project.pages)),
       cacheTtl: writingCacheTtl(project.pages),
       maxTokens: 16000,
-      webSearch: needsWritingSearch({title:blockTitle,kind:blockKind,targetWords:safeWordTarget,preceding,instructions:[consignes,documentPrefix].join("\n")}),
+      webSearch: useWritingSearch,
       task: "writing"
     });
 
@@ -525,6 +531,7 @@ Utilise des références vérifiables si elles sont nécessaires.
     let correctedTitle = String(result.title || blockTitle);
     let styleControl = { status: "warning", correctedFields: 0, checkedFields: 0 };
     // Style and source checks do not depend on each other; wait for both before returning.
+    await setWritingProgress(progressProjectId, progressId, 'verification');
     const [styleResult, sourceResult] = await Promise.allSettled([
       enforceAcademicStyle({ title: correctedTitle, content }, { apiKey, timeoutMs: 25000, projectId: project.projectId || project.project_id }),
       verifySources(Array.isArray(result.sources) ? result.sources : [])
@@ -554,6 +561,7 @@ Utilise des références vérifiables si elles sont nécessaires.
     // Les références auteur-date sont regroupées dans la bibliographie finale.
     // Ne jamais ajouter la notice bibliographique entière comme note isolée.
     // Les notes explicatives demandées par l'auteur restent possibles.
+    await setWritingProgress(progressProjectId, progressId, 'finalisation');
     let publicResponse = {
       id: String(body.block?.id || body.blockId || `block-${Date.now()}`),
       title: correctedTitle,
