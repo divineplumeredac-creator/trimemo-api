@@ -523,14 +523,17 @@ Utilise des références vérifiables si elles sont nécessaires.
     let correctedContent = content;
     let correctedTitle = String(result.title || blockTitle);
     let styleControl = { status: "warning", correctedFields: 0, checkedFields: 0 };
-    try {
-      const styleResult = await enforceAcademicStyle({ title: correctedTitle, content: correctedContent }, { apiKey, timeoutMs: 25000, projectId: project.projectId || project.project_id });
-      correctedContent = styleResult?.value?.content || correctedContent;
-      correctedTitle = styleResult?.value?.title || correctedTitle;
-      styleControl = { status: styleResult?.unresolvedIssues?.length ? "warning" : "passed", correctedFields: styleResult?.correctedFields || 0, checkedFields: styleResult?.checkedFields || 0 };
-    } catch (styleError) {
-      console.error("BLOCK_STYLE_CONTROL_FAILED", { name: String(styleError?.name || "Error"), code: String(styleError?.code || "STYLE_CONTROL_FAILED") });
-    }
+    // Style and source checks do not depend on each other; wait for both before returning.
+    const [styleResult, sourceResult] = await Promise.allSettled([
+      enforceAcademicStyle({ title: correctedTitle, content }, { apiKey, timeoutMs: 25000, projectId: project.projectId || project.project_id }),
+      verifySources(Array.isArray(result.sources) ? result.sources : [])
+    ]);
+    if (styleResult.status === "fulfilled") {
+      const value = styleResult.value;
+      correctedContent = value?.value?.content || correctedContent;
+      correctedTitle = value?.value?.title || correctedTitle;
+      styleControl = { status: value?.unresolvedIssues?.length ? "warning" : "passed", correctedFields: value?.correctedFields || 0, checkedFields: value?.checkedFields || 0 };
+    } else console.error("BLOCK_STYLE_CONTROL_FAILED", { name: String(styleResult.reason?.name || "Error"), code: String(styleResult.reason?.code || "STYLE_CONTROL_FAILED") });
     let publicContent = correctedContent;
     let privateRemainder = '';
     if (previewRemaining !== null) {
@@ -539,12 +542,8 @@ Utilise des références vérifiables si elles sont nécessaires.
       privateRemainder = split.remainder;
     }
     const wordCount = publicContent.split(/\s+/).filter(Boolean).length;
-    let verifiedSources = [];
-    try {
-      verifiedSources = await verifySources(Array.isArray(result.sources) ? result.sources : []);
-    } catch (sourceError) {
-      console.error("BLOCK_SOURCE_VERIFICATION_FAILED", { name: String(sourceError?.name || "Error"), code: String(sourceError?.code || "SOURCE_VERIFICATION_FAILED") });
-    }
+    const verifiedSources = sourceResult.status === "fulfilled" ? sourceResult.value : [];
+    if (sourceResult.status === "rejected") console.error("BLOCK_SOURCE_VERIFICATION_FAILED", { name: String(sourceResult.reason?.name || "Error"), code: String(sourceResult.reason?.code || "SOURCE_VERIFICATION_FAILED") });
     const retainedSources = verifiedSources.filter((source) => source?.verified === true);
     const unmatchedCitations = auditCitationReferences([{ content: correctedContent }], retainedSources);
     const notes = (Array.isArray(result.footnotes) ? result.footnotes : []).filter(note => typeof note === "string" && note.trim());
