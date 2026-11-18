@@ -72,3 +72,10 @@ test('les projets courts évitent le surcoût du cache d’une heure',()=>{
  assert.equal(parts[0].cache_control.ttl,'5m');
  assert.equal(parts.map(p=>p.text).join(''),text);
 });
+test('historique : seules les notices identiques sont dédupliquées, textes et variantes préservés',async()=>{
+ const {deduplicateHistorySources}=await import('../lib/writing-context.js');
+ const ref={doi:'10.1000/test',title:'Source A',verified:true};
+ const blocks=[{title:'A',content:'Idée une',sources:[ref]},{title:'B',content:'Idée deux',sources:[{...ref},{...ref,title:'Source différente'}]}];
+ const out=deduplicateHistorySources(blocks);
+ assert.deepEqual(out.map(x=>x.content),['Idée une','Idée deux']);assert.equal(out[0].sources.length,1);assert.equal(out[1].sources.length,1);assert.equal(out[1].sources[0].title,'Source différente');
+});
