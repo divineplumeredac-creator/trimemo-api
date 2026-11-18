@@ -1,0 +1,8 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import {setWritingProgress,getWritingProgress} from '../lib/writing-progress.js';
+import handler from '../api/writing-progress.js';
+const project='11111111-1111-4111-8111-111111111111', run='22222222-2222-4222-8222-222222222222';
+function res(){return {setHeader(){},status(x){this.code=x;return this},json(x){this.data=x;return this},end(){return this}}}
+test('les étapes connues sont enregistrées avec une expiration et relues',async()=>{process.env.UPSTASH_REDIS_REST_URL='https://redis.invalid';process.env.UPSTASH_REDIS_REST_TOKEN='fake';const old=global.fetch;let value=null,calls=0;global.fetch=async(_url,opt)=>{calls++;const body=JSON.parse(opt.body);if(body[0]==='SET'){assert.equal(body[3],'EX');assert.equal(body[4],600);value=body[2];}return Response.json({result:value});};try{await setWritingProgress(project,run,'verification');assert.equal(await getWritingProgress(project,run),'verification');await setWritingProgress(project,run,'inventee');assert.equal(calls,2)}finally{global.fetch=old}});
+test('l’indisponibilité du suivi ne bloque pas la rédaction',async()=>{const old=global.fetch;global.fetch=async()=>{throw Error('offline')};try{await setWritingProgress(project,run,'writing');assert.equal(await getWritingProgress(project,run),null)}finally{global.fetch=old}});
+test('le suivi ne révèle pas les étapes sans authentification',async()=>{const r=res();await handler({method:'POST',headers:{},body:{project:{projectId:project},generationId:run}},r);assert.equal(r.code,401);assert.equal(r.data.stage,undefined)});
