@@ -378,7 +378,12 @@ export async function refundOrder(orderId, actor, mode = "full", amount = "") {
   if (!response.ok) {
     // A provider/server error can be ambiguous. Never release the lock automatically.
     if (response.status >= 400 && response.status < 500 && ![408,409,429].includes(response.status)) await updateOrder(order.order_id, {refund_status:"failed"}).catch(()=>null);
-    await logAdminEvent({actor,category:"payment",severity:"error",action:"refund_failed",message:"Le remboursement PayPal n'a pas pu être confirmé.",statusCode:response.status,metadata:{orderId:order.order_id}});
+    // Store only PayPal's non-personal diagnostic identifiers, never its raw response.
+    const issue = String(data?.details?.[0]?.issue || data?.name || "").toUpperCase();
+    const safeIssue = /^[A-Z0-9_]{1,100}$/.test(issue) ? issue : "UNKNOWN";
+    const debugId = String(data?.debug_id || "");
+    const safeDebugId = /^[A-Za-z0-9-]{1,80}$/.test(debugId) ? debugId : "";
+    await logAdminEvent({actor,category:"payment",severity:"error",action:"refund_failed",message:"Le remboursement PayPal n'a pas pu être confirmé.",statusCode:response.status,metadata:{orderId:order.order_id,providerIssue:safeIssue,providerDebugId:safeDebugId}});
     const e = new Error("Le remboursement n’a pas pu être confirmé. Vérifiez la transaction dans PayPal."); e.status = 502; throw e;
   }
   const status = String(data.status || "").toUpperCase();
