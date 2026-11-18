@@ -1,3 +1,4 @@
+import { assertWritingOrder } from "../lib/writing-order.js";
 import { setWritingProgress } from "../lib/writing-progress.js";
 import { trackProjectFailures } from "../lib/incident-recovery.js";
 import { cachedWritingPrompt, needsWritingSearch, writingCacheTtl, deduplicateHistorySources } from "../lib/writing-context.js";
@@ -127,6 +128,7 @@ export default async function handler(req, res) {
         }
       }
     }
+    await assertWritingOrder({projectId:String(project.projectId || project.project_id || ''),ownerMode:body.ownerMode === true,blockId:String(body.block?.id || body.blockId || ''),planId:String(body.plan?.id || '')});
     if (!(body.ownerMode !== true && previewMode) && Array.isArray(project.files) && project.files.length) project = await hydrateProjectFiles(project);
     assertFilesSize(project.files);
     const documentContext = project.documentContext || await buildProjectDocumentContext(project.files);

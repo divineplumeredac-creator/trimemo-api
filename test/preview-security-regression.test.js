@@ -16,7 +16,7 @@ const project = { projectId: 'projet-test', sujet: 'Sujet fictif', pages: 15, fi
 project.pricingQuoteToken = signPricingQuote(calculateQuote({ project }), project);
 const makeRes = () => ({ setHeader() {}, status(code) { this.code = code; return this; }, json(body) { this.body = body; return this; }, end() { return this; } });
 
-async function withMocks(run, {dropCommitResponse = false} = {}) {
+async function withMocks(run, {dropCommitResponse = false, blockOrder = ['bloc-test']} = {}) {
   const originalFetch = globalThis.fetch;
   let calls = 0;
   const ledger = previewLedgerMock();
@@ -41,7 +41,7 @@ async function withMocks(run, {dropCommitResponse = false} = {}) {
     }
     if (url.includes('/auth/v1/user')) return Response.json({ id: 'client-test' });
     if (url.includes('/trimemo_client_projects')) return Response.json([{ project_id: 'projet-test' }]);
-    if (url.includes('/trimemo_project_state')) return Response.json([{ owner_id: 'client-test' }]);
+    if (url.includes('/trimemo_project_state')) return Response.json(url.includes('select=state') ? [{state:{selectedPlan:{id:'plan-test'},blocks:blockOrder.map(id=>({id,status:'pending',content:''}))}}] : [{ owner_id: 'client-test' }]);
     if (url.includes('/trimemo_preview_continuations') && options.method === 'POST') return Response.json([JSON.parse(options.body)]);
     return Response.json([]);
   };
@@ -98,7 +98,7 @@ test('deux générations simultanées ne consomment pas deux fois le quota', asy
     const [a,b] = await Promise.all([request({block:{id:'premier'}}),request({block:{id:'deuxieme'}})]);
     assert.deepEqual([a.code,b.code].sort(),[200,409]);
     assert.equal(calls(),1);
-  });
+  }, {blockOrder:['premier','deuxieme']});
 });
 
 test('sécurité : la réponse publique ne doit pas dépasser le quota du projet', async () => {

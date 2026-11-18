@@ -44,7 +44,7 @@ test('la suite reste privée et seul le compte avec commande payée peut la réc
     if (url.includes('/auth/v1/admin/users/')) return Response.json({id:'client-test'});
     if (url.includes('/auth/v1/user')) return Response.json({id:userId});
     if (url.includes('/trimemo_client_projects')) return Response.json(userId === 'client-test' ? [{project_id:project.projectId,user_id:'client-test'}] : []);
-    if (url.includes('/trimemo_project_state')) return Response.json([{owner_id:'client-test'}]);
+    if (url.includes('/trimemo_project_state')) return Response.json(url.includes('select=state') ? [{state:{selectedPlan:{id:'plan-test'},blocks:[{id:'bloc-test',status:'pending',content:''}]}}] : [{owner_id:'client-test'}]);
     if (url.includes('/trimemo_orders?')) return Response.json([{order_id:'commande-test',project_id:project.projectId,project_fingerprint:projectFingerprint(project),status:'paid',refund_status:refundStatus,project_snapshot:{paymentPlanId:'plan-test',paymentProblematicId:'question-test'}}]);
     return Response.json([]);
   };

@@ -34,14 +34,15 @@ test('la cible suit le plan au-delà de 1 000 mots tout en respectant le quota d
     }
     if (url.includes('/auth/v1/user')) return Response.json({ id: 'client-test' });
     if (url.includes('/trimemo_client_projects')) return Response.json([{ project_id: 'projet-test' }]);
-    if (url.includes('/trimemo_project_state')) return Response.json([{ owner_id: 'client-test', ...(url.includes('limited-project') ? {state:{blocks:[{status:'done',content:Array(1000).fill('mot').join(' ')}]}} : {}) }]);
+    if (url.includes('/trimemo_owner_projects')) return Response.json([{state:{selectedPlan:{id:'plan-test'},blocks:[{id:'bloc-test',status:'pending',content:''}]}}]);
+    if (url.includes('/trimemo_project_state')) return Response.json([{ owner_id: 'client-test', state:{selectedPlan:{id:'plan-test'},blocks:[...(url.includes('limited-project') ? [{id:'previous',status:'done',content:Array(1000).fill('mot').join(' ')}] : []),{id:'bloc-test',status:'pending',content:''}]} }]);
     return Response.json([]);
   };
   try {
     const project = { projectId: 'projet-test', sujet: 'Sujet fictif', pages: 30, files: [] };
     project.pricingQuoteToken = signPricingQuote(calculateQuote({ project }), project);
     const owner = response();
-    await generateBlock({ method: 'POST', headers: { authorization: `Bearer ${createOwnerToken('owner@example.invalid')}` }, body: { project, ownerMode: true, targetWords: 2400 } }, owner);
+    await generateBlock({ method: 'POST', headers: { authorization: `Bearer ${createOwnerToken('owner@example.invalid')}` }, body: { project, ownerMode: true, targetWords: 2400, block:{id:'bloc-test'}, plan:{id:'plan-test'} } }, owner);
     assert.equal(owner.code, 200);
     assert.match(prompts[0], /Environ 2400 mots/);
     const preview = response();
