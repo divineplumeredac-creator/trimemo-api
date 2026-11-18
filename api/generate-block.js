@@ -1,5 +1,5 @@
 import { trackProjectFailures } from "../lib/incident-recovery.js";
-import { cachedWritingPrompt, needsWritingSearch, writingCacheTtl } from "../lib/writing-context.js";
+import { cachedWritingPrompt, needsWritingSearch, writingCacheTtl, deduplicateHistorySources } from "../lib/writing-context.js";
 import { setCors } from "../lib/http.js";
 import { callClaude, getClaudeModel } from "../lib/claude-client.js";
 
@@ -195,7 +195,7 @@ export default async function handler(req, res) {
     const isChapterStart = ["chapter", "chapitre", "chapter_intro", "chapitre_intro", "chapter-intro", "chapitre-intro"].includes(blockKind);
     // Conserver l'historique des blocs pour éviter qu'une suite ne reparte de l'introduction.
     // Les blocs récents gardent leur texte intégral ; les anciens gardent un extrait pour le contexte.
-    const preceding = Array.isArray(body.preceding)
+    const rawPreceding = Array.isArray(body.preceding)
       ? body.preceding.slice(-30).map((item, index, all) => ({
           title: String(item?.title || "").slice(0, 240),
           content: index >= all.length - 3
@@ -204,6 +204,7 @@ export default async function handler(req, res) {
           sources: Array.isArray(item?.sources) ? item.sources.slice(0, 12) : []
         })).filter((item) => item.title || item.content)
       : [];
+    const preceding = deduplicateHistorySources(rawPreceding);
 
     const targetWords = Number(
       body.targetWords ||
