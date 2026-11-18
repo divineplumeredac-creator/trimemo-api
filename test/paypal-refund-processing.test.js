@@ -38,3 +38,12 @@ test('échec de connexion PayPal : opération en attente sans renvoi automatique
 test('un paiement FedaPay ne peut pas passer par PayPal',async()=>{
  const real=global.fetch,t=setup();t.order.order_id='fedapay-live:123';global.fetch=t.fetch;try{await assert.rejects(()=>refundOrder(t.order.order_id,'owner','full'),e=>e.status===409);assert.equal(t.calls.some(x=>x.url.includes('paypal.com')),false)}finally{global.fetch=real}
 });
+test('le refus PayPal est diagnostiqué sans enregistrer sa réponse brute',async()=>{
+ const real=global.fetch,t=setup();let logs=[];
+ global.fetch=async(url,init={})=>{
+  if(String(url).includes('/v2/payments/captures/'))return json({name:'UNPROCESSABLE_ENTITY',details:[{issue:'INSUFFICIENT_FUNDS',description:'sensitive'}],debug_id:'abc123'},422);
+  if(String(url).includes('/trimemo_admin_logs')){logs.push(JSON.parse(init.body));return json([])}
+  return t.fetch(url,init);
+ };
+ try{await assert.rejects(()=>refundOrder(t.order.order_id,'owner','full'),e=>e.status===502);assert.equal(t.order.refund_status,'failed');assert.equal(logs[0].metadata.providerIssue,'INSUFFICIENT_FUNDS');assert.equal(logs[0].metadata.providerDebugId,'abc123');assert.doesNotMatch(JSON.stringify(logs),/sensitive/)}finally{global.fetch=real}
+});
