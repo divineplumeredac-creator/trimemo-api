@@ -40,3 +40,21 @@ test('le retour après 24 h ouvre PayPal avec le prix confirmé sans nouvel appe
  };
  try {const res={setHeader(){},status(code){this.code=code;return this},json(body){this.body=body;return this},end(){return this}};await handler({method:'POST',headers:{authorization:'Bearer client'},query:{action:'create-paypal-order'},body:{project}},res);assert.equal(res.code,200);assert.equal(charged.value,calculateQuote({project,country:'BJ'}).checkoutAmount);assert.equal(record.status,'pending');assert.ok(verifyPricingQuote(record.project_snapshot.pricingQuoteToken,project));} finally {globalThis.fetch=oldFetch}
 });
+
+test('FedaPay en configuration réelle crée une tentative simulée après expiration',async()=>{
+ const saved={...process.env},oldFetch=globalThis.fetch;let row=null,amount=null;
+ Object.assign(process.env,{VERCEL_ENV:'production',FEDAPAY_ENV:'live',FEDAPAY_LIVE_SECRET_KEY:'sk_live_fake',FEDAPAY_LIVE_CALLBACK_URL:'https://trimemo-redac.company/?payment=fedapay',SUPABASE_URL:'https://myzaepudoqnqnvpbopoy.supabase.co'});
+ delete process.env.UPSTASH_REDIS_REST_URL;delete process.env.UPSTASH_REDIS_REST_TOKEN;
+ const project=p();project.pricingQuoteToken=oldQuote(project);
+ globalThis.fetch=async(input,opts={})=>{const u=String(input),method=opts.method||'GET',body=opts.body?JSON.parse(opts.body):{};
+  if(u.includes('/auth/v1/user'))return Response.json({id:'owner',email:'fictif@example.invalid'});
+  if(u.includes('/trimemo_client_projects?'))return Response.json([{project_id:project.projectId}]);
+  if(u.includes('/trimemo_admin_settings?'))return Response.json([{id:'main',...settings()}]);
+  if(u.endsWith('/trimemo_live_payment_intents')&&method==='POST'){row={...body,state:'creating'};return Response.json([row]);}
+  if(u.includes('/trimemo_live_payment_intents?')&&method==='PATCH'){Object.assign(row,body);return Response.json([row]);}
+  if(u==='https://api.fedapay.com/v1/transactions'){amount=body.amount;return Response.json({'v1/transaction':{id:42,status:'pending',amount}});}
+  if(u==='https://api.fedapay.com/v1/transactions/42/token')return Response.json({url:'https://fpay.li/simulated'});
+  throw Error('Requête de test non prévue');
+ };
+ try {const res={setHeader(){},status(code){this.code=code;return this},json(body){this.body=body;return this},end(){return this}};await handler({method:'POST',headers:{authorization:'Bearer client'},query:{action:'create-mobile-money'},body:{project}},res);assert.equal(res.code,200);assert.equal(amount,calculateQuote({project,country:'BJ'}).estimatedAmount);assert.equal(row.state,'ready');assert.ok(verifyPricingQuote(row.project_snapshot.pricingQuoteToken,project));} finally {globalThis.fetch=oldFetch;for(const k of Object.keys(process.env))if(!(k in saved))delete process.env[k];Object.assign(process.env,saved)}
+});
