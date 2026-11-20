@@ -1,3 +1,4 @@
+import { renewPaymentQuote } from "../lib/payment-quote.js";
 import { rateLimit } from "../lib/rate-limit.js";
 import { setCors, getFrontendOrigin } from "../lib/http.js";
 
@@ -233,7 +234,6 @@ export default async function handler(req, res) {
     if (action === "verify-paypal") await rateLimit(req, "verify-paypal", 20, 60 * 60 * 1000);
     if (action === "create-mobile-money") await rateLimit(req, "create-mobile-money", 5, 60 * 60 * 1000);
     if (action === "verify-mobile-money") await rateLimit(req, "verify-mobile-money", 10, 60 * 60 * 1000);
-    if (action === "create-paypal-order" && Array.isArray(project.files) && project.files.length) project = await hydrateProjectFiles(project);
     if (action === "create-paypal-order") {
       if (process.env.VERCEL_ENV === "preview" && process.env.FEDAPAY_SANDBOX_ENABLED === "true") return fail(res, 503, "PayPal est désactivé dans cet environnement de test FedaPay.");
       if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) return fail(res, 503, "Le registre sécurisé des commandes n'est pas configuré. Le paiement est temporairement indisponible.");
@@ -249,6 +249,8 @@ export default async function handler(req, res) {
         return fail(res, 400, "Identifiant de projet manquant.");
       }
       await requireClientProject(req, String(project.projectId || project.project_id));
+      if (Array.isArray(project.files) && project.files.length) project = await hydrateProjectFiles(project, {allowExpired:true});
+      project = (await renewPaymentQuote(project)).project;
       if (!String(project.paymentProblematicId || "").trim() || !String(project.paymentPlanId || "").trim()) {
         return fail(res, 400, "Validez une problématique et un plan avant de payer.");
       }

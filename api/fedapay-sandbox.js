@@ -2,7 +2,7 @@ import { sandboxEnabled, publicSandboxEnabled } from '../lib/fedapay-sandbox-con
 import crypto from 'node:crypto';
 import { setCors } from '../lib/http.js';
 import { requireClientProject } from '../lib/client-project-auth.js';
-import { verifyPricingQuote } from '../lib/pricing.js';
+import { renewPaymentQuote } from '../lib/payment-quote.js';
 import { createPremiumToken } from '../lib/premium-auth.js';
 import { normalizePreviewWordLimit } from './academic.js';
 import { sandboxRepository } from '../lib/fedapay-sandbox-repository.js';
@@ -26,9 +26,10 @@ export default async function handler(req,res) {
       let project=req.body?.project||{};
       const projectId=String(project.projectId||project.project_id||'');
       const user=await requireClientProject(req,projectId);
-      if(Array.isArray(project.files) && project.files.length) project=await hydrateProjectFiles(project);
-      const quote=verifyPricingQuote(project.pricingQuoteToken,project);
-      if(!quote) return res.status(400).json({error:'Relancez l’estimation du projet.'});
+      if(Array.isArray(project.files) && project.files.length) project=await hydrateProjectFiles(project,{allowExpired:true});
+      const renewed=await renewPaymentQuote(project);
+      project=renewed.project;
+      const quote=renewed.quote;
       const formula=String(project.formula||project.formule||'').toUpperCase();
       const preview=project.paidPreviewSnapshot;
       if(!String(project.sujet||'').trim()||!['LICENCE','MASTER','DOCTORAT'].includes(formula)||!preview?.problematic?.question||preview.problematic.id!==project.paymentProblematicId||!preview?.plan?.parts?.length||preview.plan.id!==project.paymentPlanId||!String(preview?.introduction?.content||'').trim()) return res.status(400).json({error:'Validez le projet, le plan et l’aperçu avant le paiement.'});

@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import handler from '../api/academic.js';
-import {signPricingQuote,calculateQuote} from '../lib/pricing.js';
+import {signPricingQuote,calculateQuote,defaultPricingConfig} from '../lib/pricing.js';
 function response(){return {headers:{},setHeader(k,v){this.headers[k]=v},status(v){this.code=v;return this},json(v){this.body=v;return this},end(){return this}}}
-test('parcours Mobile Money commun : création, propriétaire et confirmation FedaPay',async()=>{
+test('retour après 24 h : création Mobile Money, propriétaire et confirmation FedaPay',async()=>{
  const saved={...process.env},oldFetch=globalThis.fetch;
  Object.assign(process.env,{VERCEL_ENV:'preview',FEDAPAY_SANDBOX_ENABLED:'true',SUPABASE_URL:'https://abcdefghijklmnopqrst.supabase.co',SUPABASE_SERVICE_ROLE_KEY:'fake',FEDAPAY_SANDBOX_SUPABASE_REF:'abcdefghijklmnopqrst',FEDAPAY_SANDBOX_SECRET_KEY:'fake',FEDAPAY_SANDBOX_CALLBACK_URL:'https://trimemo-frontend-sandbox.vercel.app/?payment=fedapay',TRIMEMO_PRICING_SECRET:'fake-price',TRIMEMO_PREMIUM_AUTH_SECRET:'fake-premium',NODE_ENV:'test'});
  delete process.env.UPSTASH_REDIS_REST_URL;delete process.env.UPSTASH_REDIS_REST_TOKEN;
@@ -12,6 +12,7 @@ test('parcours Mobile Money commun : création, propriétaire et confirmation Fe
   const u=String(url),method=opts.method||'GET',body=opts.body?JSON.parse(opts.body):{};
   if(u.includes('/auth/v1/user'))return Response.json({id:opts.headers.Authorization==='Bearer user1'?'00000000-0000-4000-8000-000000000001':'00000000-0000-4000-8000-000000000002',email:'client@example.test'});
   if(u.includes('/trimemo_client_projects'))return Response.json([{project_id:'p1'}]);
+  if(u.includes('/trimemo_admin_settings'))return Response.json([{id:'main',pricing_config:defaultPricingConfig()}]);
   if(u.endsWith('/trimemo_payment_intents')&&method==='POST'){if(row)return Response.json({}, {status:409});row={...body,state:'creating'};return Response.json([row]);}
   if(u.includes('/trimemo_payment_intents?')&&method==='PATCH'){Object.assign(row,body);return Response.json([row]);}
   if(u.includes('/trimemo_payment_intents?')&&method==='GET')return Response.json(row?[row]:[]);
@@ -23,7 +24,7 @@ test('parcours Mobile Money commun : création, propriétaire et confirmation Fe
  };
  try {
   const project={projectId:'p1',sujet:'Sujet',pages:10,typeDoc:'Mémoire',niveau:'Master',formula:'MASTER',files:[],paymentProblematicId:'q',paymentPlanId:'p',paidPreviewSnapshot:{problematic:{id:'q',question:'Question ?'},plan:{id:'p',parts:[{}]},introduction:{content:'Première phrase.'}}};
-  project.pricingQuoteToken=signPricingQuote(calculateQuote({project,country:'BJ'}),project);
+  const realNow=Date.now; try {Date.now=()=>realNow()-3*86400000;project.pricingQuoteToken=signPricingQuote(calculateQuote({project,country:'BJ'}),project);} finally {Date.now=realNow;}
   const call=async(body,token='user1')=>{const r=response();const req={method:'POST',query:{action:body.action==='create'?'create-mobile-money':'verify-mobile-money'},socket:{remoteAddress:'127.0.0.4'},body};Object.defineProperty(req,'headers',{get:()=>({authorization:'Bearer '+token}),enumerable:false});await handler(req,r);return r};
   const made=await call({action:'create',project});assert.equal(made.code,200);assert.equal(made.body.id,'42');assert.equal(row.state,'ready');
   const dup=await call({action:'create',project});assert.equal(dup.code,409);
