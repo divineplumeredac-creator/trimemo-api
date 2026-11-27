@@ -19,6 +19,7 @@ import { TRIMEMO_PLAN_WRITING_CONTRACT, TRIMEMO_STRICT_STYLE_CONTRACT } from "..
 import { parsePlanJson, retryMalformedPlan } from "../lib/plan-json.js";
 import { academicStructureProfile } from "../lib/document-profile.js";
 import { unexpectedGeographicScope } from "../lib/geographic-scope.js";
+import { targetedSpec, buildTargetedPlan } from "../lib/targeted-writing.js";
 
 const OPENAI_URL="https://api.openai.com/v1/responses";
 const WORDS_PER_PAGE=320;
@@ -296,6 +297,18 @@ export default async function handler(req,res){
     stage="transfert des documents vers OpenAI";
     ids=files.length?await uploadProjectFiles(files,key):[];
 
+    const targeted = targetedSpec(p);
+    if (targeted) {
+      stage="structure ciblée";
+      const schema={type:"object",additionalProperties:false,properties:{groups:{type:"array",items:{type:"object",additionalProperties:false,properties:{sections:{type:"array",items:{type:"object",additionalProperties:false,properties:{title:{type:"string"}},required:["title"]}}},required:["sections"]}}},required:["groups"]};
+      const system=TRIMEMO_MASTER_ACADEMIC_RULES+"\n\nMODE RÉDACTION CIBLÉE PRIORITAIRE : construis exclusivement la structure interne des parties demandées, dans leur ordre. Aucune introduction générale, conclusion générale ou problématique supplémentaire. Le plan personnel et les documents méthodologiques priment pour la partie concernée. Respecte exactement le nombre de sections demandé par partie. Chaque titre est naturel, précis, distinct et non numéroté. Pour une partie courte à une section, le titre peut être celui de la partie. N’invente aucune donnée ni résultat. Retourne uniquement le JSON demandé.";
+      const user=JSON.stringify({subject,domain:p.domaine,level:p.niveau,type:p.typeDoc,context:p.contexte,instructions:p.consignes,personalPlan:p.planPersonnel,personalProblematic:p.problematiquePersonnelle,requested:targeted.portions,evidence:targeted.evidence})+"\n\n"+buildDocumentInstructions(docs);
+      const result=await callModel({key,system,user,schema,name:"trimemo_targeted_plan",files:ids,imageInputs,timeoutMs:75000});
+      const plan=buildTargetedPlan(p,result.groups);
+      if(b.ownerMode!==true) await recordGenerationQuotaUse("generate-plans",projectId,1);
+      await safeCleanup();
+      return res.status(200).json({plans:[plan]});
+    }
     const context=[
       "SUJET : "+subject,
       "DOMAINE : "+(txt(p.domaine||p.domain)||"Non précisé"),

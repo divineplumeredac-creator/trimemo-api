@@ -429,6 +429,12 @@ function buildChildren(compiled, formatting) {
     headingStyleRange: '1-5',
   }));
 
+  if (compiled.project?.writingMode === 'targeted_writing') {
+    const hierarchy = {};
+    for (const block of compiled.blocks) addStructuredBlock(children, block, formatting, hierarchy);
+    addBibliography(children, compiled, formatting);
+    return children;
+  }
   children.push(heading('Introduction générale', 1, formatting));
   const introductionBlocks = compiled.blocks.filter((block) => block.kind === 'introduction');
   const chapterBlocks = compiled.blocks.filter((block) => block.kind === 'chapter' || block.kind === 'section' || block.kind === 'part' || block.kind === 'part_intro' || block.kind === 'chapter_intro' || block.kind === 'partie_intro' || block.kind === 'chapitre_intro' || !block.kind);
