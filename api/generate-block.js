@@ -450,7 +450,7 @@ Utilise des références vérifiables si elles sont nécessaires.
     const requestStartedAt = Date.now();
     const response = await callClaude({
       apiKey,
-      system: fullSystemPrompt + JSON_OUTPUT_INSTRUCTION,
+      system: fullSystemPrompt + (project.writingMode === "targeted_writing" ? "\n\nMODE CIBLÉ : les règles de structure d’un document intégral ne s’appliquent pas. Rédige seulement les unités commandées et les titres du bloc. Ne crée aucune unité non demandée. Préserve les données et ne présente jamais une méthode prévue comme réalisée." : "") + JSON_OUTPUT_INSTRUCTION,
       user: cachedWritingPrompt(userPrompt, documentPrefix, writingCacheTtl(project.pages)),
       cacheTtl: writingCacheTtl(project.pages),
       maxTokens: 16000,

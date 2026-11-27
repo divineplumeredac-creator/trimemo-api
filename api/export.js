@@ -237,7 +237,7 @@ function addContent(children, content, formatting, options = {}) {
   }
   flush();
 }
-function addStructuredBlock(children, block, formatting, hierarchy = {}) {
+function addStructuredBlock(children, block, formatting, hierarchy = {}, headingLevels = null) {
   const content = text(block.content);
   const labels = Array.isArray(block.structure) ? block.structure.filter(Boolean) : [];
   const labelByKey = new Map(
@@ -245,6 +245,7 @@ function addStructuredBlock(children, block, formatting, hierarchy = {}) {
       .map((label) => [normalizeHeadingKey(label), cleanAcademicText(label)])
       .filter(([key]) => key)
   );
+  const levelOf = label => headingLevels?.get(normalizeHeadingKey(label)) || structureLevel(label);
   const lines = content.split(/\r?\n/);
   let buffer = [];
 
@@ -256,7 +257,7 @@ function addStructuredBlock(children, block, formatting, hierarchy = {}) {
   };
 
   const emitStructuralHeading = (label) => {
-    const level = structureLevel(label);
+    const level = levelOf(label);
     if (!level) return;
     const key = normalizeHeadingKey(label);
     if (!key) return;
@@ -275,7 +276,7 @@ function addStructuredBlock(children, block, formatting, hierarchy = {}) {
   // Only synthesize a heading if it is absent from the block's text.
   const presentKeys = new Set(lines.map(line => normalizeHeadingKey(line.replace(/^\s*#{1,6}\s*/, ''))).filter(Boolean));
   for (const label of labels) {
-    if ([1, 2].includes(structureLevel(label)) && !presentKeys.has(normalizeHeadingKey(label))) emitStructuralHeading(label);
+    if ([1, 2].includes(levelOf(label)) && !presentKeys.has(normalizeHeadingKey(label))) emitStructuralHeading(label);
   }
 
   for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
@@ -322,7 +323,7 @@ function addStructuredBlock(children, block, formatting, hierarchy = {}) {
       flush();
       // Respecter le niveau académique du titre, même si le Markdown généré
       // lui attribue un niveau différent (ex. #### SECTION 1.2 doit rester un titre de section).
-      const level = structureLevel(markdown.title) || markdown.level;
+      const level = levelOf(markdown.title) || markdown.level;
       const key = normalizeHeadingKey(markdown.title);
       const parentKey = hierarchy[level - 1] || '';
       const occurrenceKey = parentKey + '|' + level + '|' + key;
@@ -431,7 +432,17 @@ function buildChildren(compiled, formatting) {
 
   if (compiled.project?.writingMode === 'targeted_writing') {
     const hierarchy = {};
-    for (const block of compiled.blocks) addStructuredBlock(children, block, formatting, hierarchy);
+    for (const block of compiled.blocks) {
+      const levels = new Map();
+      for (const part of compiled.plan.parts) {
+        levels.set(normalizeHeadingKey(part.title), 1);
+        for (const chapter of part.chapters) for (const section of chapter.sections) {
+          const key=normalizeHeadingKey(section.title);
+          if(!levels.has(key)) levels.set(key,2);
+        }
+      }
+      addStructuredBlock(children, block, formatting, hierarchy, levels);
+    }
     addBibliography(children, compiled, formatting);
     return children;
   }
