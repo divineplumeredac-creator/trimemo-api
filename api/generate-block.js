@@ -350,7 +350,8 @@ Cette exception prévaut sur toute règle générale de vérification préalable
 `;
 
     const documentPrefix = `${buildDocumentInstructions(documentContext)}\n\n`;
-    const userPrompt = documentPrefix + `
+    const targetedInstruction = project.writingMode === "targeted_writing" ? "MODE RÉDACTION CIBLÉE PRIORITAIRE : rédige exclusivement le contenu des parties commandées. Ne crée pas de plan global, introduction générale, conclusion générale ou problématique si elles ne sont pas sélectionnées. Les titres techniques du plan ne sont pas des titres à reproduire : seuls les titres de STRUCTURE DU BLOC sont attendus. Ne présente jamais une méthodologie prévue comme réalisée et ne simule aucun résultat, échantillon ni enquête. Informations de recherche fournies : " + String(project.targetedEvidence || "") + "\n\n" : ""; 
+    const userPrompt = documentPrefix + targetedInstruction + `
 PRIORITÉ DES CONSIGNES DU PROJET : le guide méthodologique et les instructions explicites du client priment sur les règles génériques. Applique-les à la rédaction de ce bloc, pas seulement au plan. Ne transforme jamais ces consignes en commentaires visibles dans le texte final.
 
 DONNÉES DU PROJET
@@ -449,7 +450,7 @@ Utilise des références vérifiables si elles sont nécessaires.
     const requestStartedAt = Date.now();
     const response = await callClaude({
       apiKey,
-      system: fullSystemPrompt + JSON_OUTPUT_INSTRUCTION,
+      system: fullSystemPrompt + (project.writingMode === "targeted_writing" ? "\n\nMODE CIBLÉ : les règles de structure d’un document intégral ne s’appliquent pas. Rédige seulement les unités commandées et les titres du bloc. Ne crée aucune unité non demandée. Préserve les données et ne présente jamais une méthode prévue comme réalisée." : "") + JSON_OUTPUT_INSTRUCTION,
       user: cachedWritingPrompt(userPrompt, documentPrefix, writingCacheTtl(project.pages)),
       cacheTtl: writingCacheTtl(project.pages),
       maxTokens: 16000,
